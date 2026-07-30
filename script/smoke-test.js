@@ -97,6 +97,15 @@ fs.writeFileSync(BINARY_PROBE, Buffer.from([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 
 // slice produced a document version that incremented correctly while
 // `didChange` never left the process, and Light Table catches exceptions
 // inside behavior reactions, so neither said anything.
+// A file to edit and save. Saving is the operation an editor exists for, and
+// it was broken for an entire release without anything noticing: a stat
+// crossing the preload boundary lost its `mtime`, `check-mtime` threw reading
+// it, the throw was swallowed by the behavior that raised it, and `save`
+// aborted before writing a byte. The tab stayed dirty and the console carried
+// the only evidence. Nothing here looked at the bytes on disk.
+const SAVE_PROBE = path.join(os.tmpdir(), 'lt-smoke-save.txt');
+fs.writeFileSync(SAVE_PROBE, 'before\n');
+
 const LSP_DIR = path.join(os.tmpdir(), 'lt-smoke-lsp');
 const LSP_PROBE = path.join(LSP_DIR, 'src', 'probe.ts');
 fs.rmSync(LSP_DIR, { recursive: true, force: true });
@@ -120,7 +129,9 @@ const LSP_START = `(function () {
     var tag = kw('editor.typescript');
     var table = cljs.core.deref(lt.objs.editor.lsp.servers);
     var entry = cljs.core.get.call(null, table, tag);
-    entry = assoc(entry, kw('command'), 'node_modules/.bin/fake-language-server');
+    // The bare name. lt.objs.editor.lsp looks for it under the project's
+    // node_modules/.bin first, then on PATH.
+    entry = assoc(entry, kw('command'), 'fake-language-server');
     entry = assoc(entry, kw('args'), cljs.core.PersistentVector.EMPTY);
     cljs.core.reset_BANG_(lt.objs.editor.lsp.servers, assoc(table, tag, entry));
     lt.objs.command.exec_BANG_(kw('open-path'), ${JSON.stringify(LSP_PROBE)});
@@ -152,6 +163,29 @@ const LSP_REPORT = `JSON.stringify((function () {
         });
     } catch (e) { out.error = String((e && e.message) || e); }
     return out;
+})())`;
+
+const SAVE_EDIT = `(function () {
+    var ed = cljs.core.first.call(null, lt.objs.editor.pool.by_path(${JSON.stringify(SAVE_PROBE)}));
+    if (!ed) { return 'no editor'; }
+    lt.objs.editor.__GT_cm_ed(ed).replaceRange('after\\n', { line: 0, ch: 0 });
+    // What the :save command does once it has an editor. Not the command
+    // itself: that starts from pool/last-active, which is maintained by focus,
+    // and this window is created with show:false and never focused. Testing
+    // through it would be testing the harness.
+    lt.object.raise.cljs$core$IFn$_invoke$arity$variadic(
+        ed, cljs.core.keyword.call(null, 'save'),
+        cljs.core.prim_seq.cljs$core$IFn$_invoke$arity$2([], 0));
+    return 'saved';
+})()`;
+
+const SAVE_REPORT = `JSON.stringify((function () {
+    var ed = cljs.core.first.call(null, lt.objs.editor.pool.by_path(${JSON.stringify(SAVE_PROBE)}));
+    if (!ed) { return { error: 'no editor' }; }
+    return {
+        // A tab still marked dirty after a save is the symptom a user sees.
+        dirty: cljs.core.get.call(null, cljs.core.deref(ed), cljs.core.keyword.call(null, 'dirty')) === true
+    };
 })())`;
 
 // The harness reuses the real main.js so that ipc handlers, command line
@@ -314,6 +348,19 @@ app.on('ready', function () {
                     } catch (e) { out.error = String((e && e.message) || e); }
                     return JSON.stringify(out);
                 })()\`));
+
+                // Open a file, change it, save it, and look at the bytes.
+                step = 'saving a file';
+                await w.webContents.executeJavaScript(
+                    'lt.objs.command.exec_BANG_(cljs.core.keyword.call(null,"open-path"),' +
+                    JSON.stringify(${JSON.stringify(SAVE_PROBE)}) + ')');
+                await new Promise(function (r) { setTimeout(r, 2500); });
+                await w.webContents.executeJavaScript(${JSON.stringify(SAVE_EDIT)});
+                await new Promise(function (r) { setTimeout(r, 2500); });
+                const save = JSON.parse(await w.webContents.executeJavaScript(${JSON.stringify(SAVE_REPORT)}));
+                // From this side, so it is the file on disk being asserted on
+                // and not the editor's opinion of it.
+                save.onDisk = fsx.readFileSync(${JSON.stringify(SAVE_PROBE)}, 'utf8');
 
                 // A language server, end to end: spawn, frame, handshake,
                 // synchronise, and render.
@@ -725,6 +772,7 @@ app.on('ready', function () {
                 report.stdio = stdio;
                 report.treesitter = treesitter;
                 report.lsp = lsp;
+                report.save = save;
                 // The menubar is set by a behavior at startup, and it lands
                 // over here, so this is the only side it can be seen from.
                 step = 'reading the application menu';
@@ -1004,6 +1052,8 @@ async function main() {
         // Only meaningful when the published flagships were cloned, which
         // build.sh does and CI does not.
         ['bundled plugins loaded', !r.pluginsPresent || r.behaviors > 500],
+        ['a save reaches the disk', !!r.save && r.save.onDisk === 'after\nbefore\n'],
+        ['and the tab stops saying it is dirty', !!r.save && r.save.dirty === false],
         // The language server spine. `before` is after didOpen, `after` is
         // after one keystroke.
         ['a language server starts for a project that provides one',
@@ -1055,6 +1105,8 @@ async function main() {
                 (unstyledCaptures.length ? ' UNSTYLED: ' + unstyledCaptures.join(', ') : ''));
     console.log('process stdio: ' + r.stdio.bytesLen + ' bytes back, decoded "' + r.stdio.decoded +
                 '"; file bytes: [' + r.readBytes.magic + ']');
+    console.log('save: on disk ' + JSON.stringify((r.save || {}).onDisk) +
+                ', dirty ' + (r.save || {}).dirty);
     console.log('language server: ' + (lsp.after ? lsp.after.widgets + ' widgets, ' +
                 lsp.after.messages.length + ' diagnostics, said "' + lspFirst + '"'
                 : 'no report' + (lsp.before && lsp.before.error ? ' — ' + lsp.before.error : '')));

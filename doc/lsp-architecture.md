@@ -162,16 +162,32 @@ Server table in `lt.objs.editor.lsp/servers`, an atom keyed by editor tag, so a
 language plugin can add one without waiting for an editor release. One
 connection per project root and server, shared by every editor under it.
 
-To try it, install the server *in the project you are editing* — that is the
-rule, not a shortcut for the demo:
+The server is looked for in the project first, then on `PATH`:
 
 ```
-npm install --save-dev typescript-language-server
+<project root>/node_modules/.bin/typescript-language-server
+$PATH
 ```
 
-Open a `.ts` file from that project and errors appear under the lines they are
-about. A project without the server installed is not an error: nothing starts,
-and nothing else about the editor changes.
+Project first because a language server is a compiler, and checking against a
+different one than the project builds with reports differences that are not the
+code's. `PATH` second because refusing to start when a perfectly good server is
+installed globally is worse than a version skew nobody has hit yet.
+
+```
+npm install --save-dev typescript-language-server    # or -g
+```
+
+On macOS the `PATH` half works only because `lt.objs.proc/set-path-OSX` sources
+the login shell's at startup: an application launched from Finder inherits
+almost nothing, so a version manager's shims are otherwise invisible.
+
+A project with no server installed is not an error — nothing starts, and
+nothing else about the editor changes. Which makes it indistinguishable from a
+bug, so **Language server: Status for this editor** says which of the ways this
+can be quiet is the one in play: no server configured for the file type, no
+project root above the file, nothing installed under either name, or connected
+and working.
 
 Deliberately *not* in it: multi-root workspaces, workspace edits, server-side
 file watching, and any surface other than diagnostics. Nor is the plugin-side

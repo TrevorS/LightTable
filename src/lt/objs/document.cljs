@@ -168,9 +168,18 @@
                        (when cb
                          (cb d))))))
 
-(defn check-mtime [prev updated]
+(defn check-mtime
+  "Whether two stats describe the same version of a file.
+
+  `mtimeMs`, and not `mtime`. A stat crossing the preload boundary is plain
+  data: an `fs.Stats` keeps its timestamps on prototype accessors, a structured
+  clone keeps only own properties, and so `.mtime` arrives undefined. Reading
+  `.getTime` off that threw — inside a behavior reaction, which `lt.object`
+  catches — so a save aborted before writing anything and said so only in the
+  console, and an edit made outside the editor was never noticed."
+  [prev updated]
   (if (and prev updated)
-    (= (.getTime (.-mtime ^js prev)) (.getTime (.-mtime ^js updated)))
+    (= (.-mtimeMs ^js prev) (.-mtimeMs ^js updated))
     true))
 
 (defui button [label & [cb]]

@@ -22,7 +22,9 @@
             [lt.object :as object]
             [lt.objs.clients.lsp :as lsp]
             [lt.objs.clients.lsp.sync :as sync]
+            [lt.objs.command :as cmd]
             [lt.objs.editor :as editor]
+            [lt.objs.editor.pool :as pool]
             [lt.objs.notifos :as notifos]
             [lt.util.bridge :as bridge])
   (:require-macros [lt.macros :refer [behavior defui]]))
@@ -34,19 +36,16 @@
   plugin should be able to bring its own server without waiting for an editor
   release.
 
-  `:root` is the marker list that decides a project's root, and `:command` is
-  resolved relative to that root — the same rule the TypeScript plugin's
-  type-check uses, and for the same reason. Checking against a different
-  compiler than the project builds with reports differences that are not the
-  code's."
+  `:root` is the marker list that decides a project's root. `:command` is the
+  bare executable name; see [[server-command]] for where it is looked for."
   (atom
    {:editor.typescript {:language-id "typescript"
                         :root ["tsconfig.json" "jsconfig.json" "package.json"]
-                        :command "node_modules/.bin/typescript-language-server"
+                        :command "typescript-language-server"
                         :args ["--stdio"]}
     :editor.tsx {:language-id "typescriptreact"
                  :root ["tsconfig.json" "jsconfig.json" "package.json"]
-                 :command "node_modules/.bin/typescript-language-server"
+                 :command "typescript-language-server"
                  :args ["--stdio"]}}))
 
 (defn server-for [tags]
@@ -74,6 +73,45 @@
         (recur (parent dir))))))
 
 ;;*********************************************************
+;; Finding the server itself
+;;*********************************************************
+
+(defn- on-path
+  "The first directory on `PATH` holding `command`, or nil.
+
+  Resolved here rather than left to `spawn` so that a server which is not
+  installed anywhere is a plain answer instead of a process that fails to
+  start, and so [[status]] can say exactly where it looked.
+
+  `:` and no `.cmd`, because nothing here builds for Windows."
+  [command]
+  (let [path (aget (.env bridge/host) "PATH")]
+    (when-not (string/blank? path)
+      (some (fn [dir]
+              (let [full (str dir "/" command)]
+                (when (.existsSync bridge/files full) full)))
+            (string/split path #":")))))
+
+(defn server-command
+  "Where to find the server for `root`, or nil if it is not installed.
+
+  The project's own copy first: a language server is a compiler, and checking
+  against a different one than the project builds with reports differences
+  that are not the code's. Then `PATH`, because refusing to start when a
+  perfectly good server is installed globally is worse than a version skew
+  nobody has hit yet.
+
+  On macOS `PATH` is worth having only because `lt.objs.proc/set-path-OSX`
+  sources the login shell's at startup; an application launched from Finder
+  inherits almost nothing, so a version manager's shims are invisible without
+  it."
+  [root command]
+  (let [local (str root "/node_modules/.bin/" command)]
+    (if (.existsSync bridge/files local)
+      local
+      (on-path command))))
+
+;;*********************************************************
 ;; Connections
 ;;*********************************************************
 
@@ -86,10 +124,9 @@
 (defn- ensure-connection!
   "The connection for this root and server, started if it is not running."
   [root {:keys [command args]}]
-  (let [key [root command]
-        full (str root "/" command)]
+  (let [key [root command]]
     (or (get @connections key)
-        (when (.existsSync bridge/files full)
+        (when-let [full (server-command root command)]
           (let [conn (lsp/connect! {:command full
                                     :args args
                                     :root-path root
@@ -315,6 +352,56 @@
                       (doseq [[_ conn] @connections]
                         (lsp/disconnect! conn))
                       (reset! connections {})))
+
+;;*********************************************************
+;; Saying what happened
+;;*********************************************************
+
+(defn status
+  "The language server situation for `ed`, as data.
+
+  Silence is this feature's hard part. A project with no server installed is
+  deliberately not an error — nothing starts, nothing is said — and that is
+  indistinguishable from a bug you have just introduced. This is the answer to
+  \"why are there no diagnostics\", and it names every place that was looked."
+  [ed]
+  (let [path (-> @ed :info :path)
+        server (server-for (:tags @ed))
+        root (when (and path server) (project-root path (:root server)))
+        conn (::conn @ed)]
+    {:path path
+     :language-id (:language-id server)
+     :command (:command server)
+     :markers (:root server)
+     :root root
+     :found (when root (server-command root (:command server)))
+     :connected? (boolean conn)
+     :ready? (boolean (and conn (lsp/ready? conn)))
+     :diagnostics (count (::widgets @ed))}))
+
+(defn status-line
+  "One sentence saying which of the ways this can be quiet is the one in play."
+  [{:keys [path language-id command markers root found connected? ready? diagnostics]}]
+  (cond
+    (nil? path) "This editor is not backed by a file."
+    (nil? language-id) "No language server is configured for this file type."
+    (nil? root) (str "No project root above " path " — looked for "
+                     (string/join ", " markers))
+    (nil? found) (str "No " command " in " root "/node_modules/.bin, or on PATH. "
+                      "Install it in the project, or globally.")
+    (not connected?) (str "Found " found ", but this editor is not connected to it.")
+    (not ready?) (str "Starting " found " …")
+    :else (str "Connected to " found " — " diagnostics
+               (if (= 1 diagnostics) " diagnostic" " diagnostics") " on screen")))
+
+(cmd/command {:command :lsp.status
+              :desc "Language server: Status for this editor"
+              :exec (fn []
+                      (when-let [ed (pool/last-active)]
+                        (let [s (status ed)]
+                          (notifos/set-msg! (status-line s))
+                          (js/lt.objs.console.log
+                           (str "language server status: " (pr-str s))))))})
 
 ;; Attached in deploy/settings/default/default.behaviors rather than here.
 ;; `object/tag-behaviors` works, and then does not: the settings loader builds
