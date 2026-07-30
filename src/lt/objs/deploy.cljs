@@ -8,6 +8,7 @@
             [lt.objs.cache :as cache]
             [lt.objs.notifos :as notifos]
             [lt.objs.platform :as platform]
+            [lt.objs.repo :as repo]
             [lt.util.bridge :as bridge]
             [lt.objs.sidebar.command :as cmd]
             [lt.objs.console :as console]
@@ -21,8 +22,8 @@
 
 (defn tar-path [v]
   (if (cache/fetch :edge)
-    (str "https://api.github.com/repos/LightTable/LightTable/tarball/master")
-    (str "https://api.github.com/repos/LightTable/LightTable/tarball/" v)))
+    (str repo/api "/tarball/master")
+    (str repo/api "/tarball/" v)))
 
 (def version-regex #"^\d+\.\d+\.\d+(-.*)?$")
 
@@ -115,7 +116,7 @@
                                                          restart to get the latest and greatest.")
                                               :buttons [{:label "ok"}]}))))))
 
-(def tags-url "https://api.github.com/repos/LightTable/LightTable/tags")
+(def tags-url (str repo/api "/tags"))
 
 (defn should-update-popup [data]
   (popup/popup! {:header "There's a newer version of Light Table!"
@@ -142,7 +143,13 @@
   (js-util/fetch-text tags-url
              (fn [data]
                (let [latest-version (->latest-version data)]
-                 (when (re-find version-regex latest-version)
+                 ;; nil when the repository has no version tags at all, which
+                 ;; is what a fork looks like before its first release. re-find
+                 ;; throws on nil, so this used to make "check for updates"
+                 ;; report an error rather than "nothing to update to".
+                 (if-not (and latest-version (re-find version-regex latest-version))
+                   (when notify?
+                     (notifos/set-msg! (str "No releases published at " repo/repo)))
                    (if (and (not= latest-version "")
                             (not= latest-version (:version version))
                             (is-newer? (:version version) latest-version)
@@ -152,7 +159,7 @@
                        (set! js/localStorage.fetchedVersion latest-version)
                        (should-update-popup latest-version))
                      (when notify?
-                       (notifos/set-msg! (str "At latest version: " (:version version))))))))
+                       (notifos/set-msg! (str "At latest version: " (:version version)))))))) 
              (fn [e]
                ;; This also runs on a timer regardless of whether the machine is
                ;; online, so only surface a failure the user actually asked for.
@@ -175,10 +182,12 @@
 (defn alert-binary-update []
   (popup/popup! {:header "There's been a binary update!"
                  :body "There's a new version of the Light Table binary. Clicking below will open the
-                                 Light Table website so you can download the updated version."
+                                 releases page so you can download the updated version."
                  :buttons [{:label "Download latest"
                             :action (fn []
-                                      (platform/open-url "http://www.lighttable.com")
+                                      ;; Not lighttable.com: that publishes
+                                      ;; upstream's builds, and this is not one.
+                                      (platform/open-url (repo/at "releases"))
                                       (popup/remain-open))}]}))
 
 ;;*********************************************************

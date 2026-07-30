@@ -389,9 +389,24 @@ function readArgs(): void {
     }
 }
 
+// How the browser tab evaluates: lt.objs.clients.devtools opens a WebSocket to
+// this port and speaks the DevTools protocol to the guest page.
+//
+// At module scope rather than inside start(), and the pair has to stay
+// together. Switches must be appended before the app is ready, and not every
+// entry point calls start() — script/smoke-test.js requires this file and
+// drives it itself, so a switch set only in start() is one the harness never
+// gets, which is how the second of these came to be missing there.
+app.commandLine.appendSwitch('remote-debugging-port', '8315');
+// Without this, Chromium refuses that WebSocket with a 403 and the browser tab
+// cannot evaluate anything. Chromium 111 began checking the Origin header on
+// debugger connections, and Light Table's window is a file:// url — so the
+// origin is `file://`, which is exactly what has to be allowed. Not `*`: that
+// would let any page able to reach localhost:8315 drive this application's
+// debugger.
+app.commandLine.appendSwitch('remote-allow-origins', 'file://');
+
 function start(): void {
-    app.commandLine.appendSwitch('remote-debugging-port', '8315');
-    app.commandLine.appendSwitch('js-flags', '--harmony');
 
     // This method will be called when electron has done everything
     // initialization and ready for creating browser windows.

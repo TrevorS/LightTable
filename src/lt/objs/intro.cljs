@@ -2,7 +2,7 @@
   "Provide intro panel for introducing LT to new users"
   (:require [lt.object :as object]
             [lt.objs.style :as style]
-            [lt.objs.deploy :as deploy]
+            [lt.objs.repo :as repo]
             [lt.objs.cli :as cli]
             [lt.objs.command :as cmd]
             [lt.objs.app :as app]
@@ -27,7 +27,7 @@
 (defui reports []
   [:button "GitHub"]
   :click (fn []
-           (cmd/exec! :add-browser-tab "https://github.com/LightTable/LightTable/issues?state=open")))
+           (cmd/exec! :add-browser-tab (repo/at "issues"))))
 
 
 (defui changelog []
@@ -43,9 +43,17 @@
                         [:div#intro
                          [:h1
                           [:img {:height 40 :src (bound style/styles ->lt-image)}]]
-                         [:p "Welcome to the latest version of Light Table. To see the full list of what's been added/changed, checkout the " (changelog) ".
-                          Some of the highlights include deeper Javascript support, inline browsers, and Python eval! If you're new, you might want to take a look at " (docs) " to get started."]
-                         [:p "If you run into any problems, report the issue on " (reports) "!"]
+                         ;; What this said until now was the release notes for
+                         ;; 0.8, announcing Python eval as a new feature. It had
+                         ;; been the first thing every user saw for a decade.
+                         [:p "Light Table connects you to your creation with instant feedback: evaluate
+                          code as you write it, see the results beside it, and reshape the editor from
+                          inside itself."]
+                         [:p "This build is a modernized Light Table — a current runtime, an isolated
+                          window, and a named list of capabilities where ambient system access used to
+                          be. What changed and why is in the " (changelog) "."]
+                         [:p "New here? " (docs) " is the place to start. Something broken? It probably
+                          is — say so on " (reports) "."]
                          ]))
 
 (behavior ::show-intro

@@ -4,6 +4,7 @@
             [lt.objs.command :as cmd]
             [lt.objs.keyboard :as keyboard]
             [lt.objs.platform :as platform]
+            [lt.objs.repo :as repo]
             [lt.objs.app :as app]
             [lt.util.dom :as dom]
             [lt.util.bridge :as bridge]
@@ -198,7 +199,7 @@
 
                 {:label "&Help" :submenu [(cmd-item "Documentation" :show-docs)
                                           {:label "Report an Issue" :click #(do
-                                                                              (cmd/exec! :add-browser-tab "https://github.com/LightTable/LightTable/issues?state=open"))}
+                                                                              (cmd/exec! :add-browser-tab (repo/at "issues")))}
                                           (when-not (platform/mac?)
                                             (cmd-item "About Light Table" :version))]}]))
 

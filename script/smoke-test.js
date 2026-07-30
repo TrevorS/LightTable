@@ -52,7 +52,8 @@ function finish(code) { try { fsx.writeFileSync(REPORT, JSON.stringify(report, n
 
 global.browserOpenFiles = [];
 global.browserParsedArgs = { _: [] };
-app.commandLine.appendSwitch('remote-debugging-port', '8315');
+// The debugging port and its origin allowance come from main.js at module
+// scope, so this harness gets them without repeating them.
 
 setTimeout(function () { report.failure = 'timed out before the window reported back'; finish(1); }, 90000);
 process.on('uncaughtException', function (e) { report.failure = 'main process threw: ' + e.message; finish(1); });
@@ -402,7 +403,22 @@ app.on('ready', function () {
                         browserLanded: v && typeof v.getURL === 'function' ? v.getURL() : 'no webview api',
                         browserPageText: v && typeof v.executeJavaScript === 'function'
                             ? await v.executeJavaScript('document.body.innerText.trim()')
-                            : 'no webview api'
+                            : 'no webview api',
+                        // The devtools client is how the browser tab evaluates.
+                        // Chromium 111 began checking the Origin header on
+                        // debugger WebSockets, so this failed with a 403 and
+                        // three red lines in the console — visible to anyone
+                        // who opened devtools, invisible to every check.
+                        browserDevtools: (function () {
+                            // By tag, not by context: the harness window is
+                            // hidden, so nothing ever becomes the active
+                            // browser and :global.browser stays unset.
+                            var bs = lt.object.by_tag.call(null, cljs.core.keyword.call(null, 'browser'));
+                            var b = cljs.core.first.call(null, bs);
+                            if (!b) return 'no browser object';
+                            var dt = cljs.core.get.call(null, cljs.core.deref(b), cljs.core.keyword.call(null, 'devtools-client'));
+                            return dt ? String(cljs.core.get.call(null, cljs.core.deref(dt), cljs.core.keyword.call(null, 'connected'))) : 'no devtools client';
+                        })()
                     });
                 })()\`)));
                 report.ok = true;
@@ -424,7 +440,30 @@ function fail(message, detail) {
     process.exit(1);
 }
 
+/**
+ * Whether something already holds the debugging port.
+ *
+ * A second Electron cannot bind it, so the app boots without a debugging
+ * endpoint and the browser tab's devtools client never connects — which
+ * surfaces as one baffling check failure rather than as the port conflict it
+ * is. script/lt-repl.sh keeps an editor running on the same port, so this is
+ * the normal way to hit it.
+ */
+function portInUse(port) {
+    return new Promise(function (resolve) {
+        const socket = require('net').connect({ port: port, host: '127.0.0.1' });
+        socket.on('connect', function () { socket.destroy(); resolve(true); });
+        socket.on('error', function () { resolve(false); });
+        setTimeout(function () { socket.destroy(); resolve(false); }, 1000);
+    });
+}
+
 async function main() {
+    if (await portInUse(8315)) {
+        fail('something is already listening on port 8315',
+             'That is the debugging port this test needs. If you have an editor open from ' +
+             'script/lt-repl.sh, run `script/lt-repl.sh stop` first.');
+    }
     for (const [what, where] of [['Electron', ELECTRON],
                                  ['the compiled bundle', path.join(CORE, 'lighttable', 'bootstrap.js')],
                                  ['the compiled main process', path.join(CORE, 'main.js')],
@@ -540,6 +579,8 @@ async function main() {
         ['the application menu was built over the bridge', r.appMenu === true],
         ['the browser tab has a real webview', r.webviewUpgraded === true],
         ['the browser injection reached the guest page', r.guestInjection === 'object'],
+        ['the browser tab can evaluate through the devtools protocol',
+         r.browserDevtools === 'true'],
         ['the browser tab navigates where it was told',
          typeof r.browserLanded === 'string' && r.browserLanded.startsWith('file://') &&
          r.browserPageText === 'lt-browser-probe-loaded'],
@@ -558,6 +599,7 @@ async function main() {
     // own code no longer touches any of it, so this is what changes on the day
     // contextIsolation is turned on.
     console.log('\nwindow globals (require, process, __dirname, module): ' + r.noNodeInTheWindow);
+    console.log('browser devtools client: ' + r.browserDevtools);
     console.log('capability reports: ' + JSON.stringify(r.capabilities));
     console.log('behaviors registered: ' + r.behaviors);
     console.log('CodeMirror modes registered: ' + r.codeMirrorModes);
