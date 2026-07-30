@@ -162,7 +162,21 @@
  [:editor :lt.objs.document/close-document-on-editor-close]
  [:editor :lt.objs.editor/active-on-focus]
  ;; The language-server client object, which is one per window and receives
- ;; every server's notifications.
+ ;; every server's notifications. These five are surfaces — where a server's
+ ;; answers are drawn — and are the same question for every language.
+ ;;
+ ;; Which server answers for which language is not here. It is
+ ;; :lt.objs.editor.lsp/language-servers, and it is declared by whoever owns
+ ;; the language: an in-tree plugin declares it in its own .behaviors file, and
+ ;; a language with no plugin — or one this repository does not control —
+ ;; declares it here. Nothing language-specific is in this section today
+ ;; because both servers Light Table ships with have a plugin: TypeScript's is
+ ;; in plugins/TypeScript/typescript.behaviors and clojure-lsp's is in
+ ;; plugins/Clojure/clojure.behaviors. The next language that has no plugin
+ ;; goes below this comment.
+ ;;
+ ;; A user overrides any of it from user.behaviors, which loads last and
+ ;; therefore wins — see lt.objs.editor.lsp.registry.
  [:lsp.client :lt.objs.editor.lsp/on-notification]
  [:lsp.client :lt.objs.editor.lsp/on-stderr]
  [:lsp.client :lt.objs.editor.lsp/on-exit]

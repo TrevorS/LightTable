@@ -123,17 +123,28 @@ fs.chmodSync(path.join(LSP_DIR, 'node_modules', '.bin', 'fake-language-server'),
 // harness template literal, because ClojureScript's munged arity names are
 // full of `$` and a `${` inside a template literal is an interpolation. That
 // has already cost this file twice.
+// Declaring a server the way a user.behaviors entry does, rather than writing
+// into a table: language servers are :lt.objs.editor.lsp/language-servers now,
+// a non-exclusive :user behavior that accumulates. Running the real reaction
+// appends this entry after the TypeScript plugin's, so the check below that
+// this one is the server that started is also the check that a later
+// declaration beats an earlier one — which is the whole precedence rule, in
+// the assembled application.
 const LSP_START = `(function () {
     var kw = function (n) { return cljs.core.keyword.call(null, n); };
     var assoc = cljs.core.assoc.cljs$core$IFn$_invoke$arity$3;
-    var tag = kw('editor.typescript');
-    var table = cljs.core.deref(lt.objs.editor.lsp.servers);
-    var entry = cljs.core.get.call(null, table, tag);
+    var vec = function () { return cljs.core.vec.call(null, cljs.core.PersistentVector.fromArray(Array.prototype.slice.call(arguments), true)); };
+    var entry = cljs.core.PersistentArrayMap.EMPTY;
+    entry = assoc(entry, kw('tags'), vec(kw('editor.typescript')));
+    entry = assoc(entry, kw('language-id'), 'typescript');
+    entry = assoc(entry, kw('root'), vec('tsconfig.json'));
     // The bare name. lt.objs.editor.lsp looks for it under the project's
     // node_modules/.bin first, then on PATH.
     entry = assoc(entry, kw('command'), 'fake-language-server');
     entry = assoc(entry, kw('args'), cljs.core.PersistentVector.EMPTY);
-    cljs.core.reset_BANG_(lt.objs.editor.lsp.servers, assoc(table, tag, entry));
+    lt.object.call_behavior_reaction.call(
+        null, kw('lt.objs.editor.lsp/language-servers'),
+        lt.objs.editor.lsp.lsp_client, vec(entry));
     lt.objs.command.exec_BANG_(kw('open-path'), ${JSON.stringify(LSP_PROBE)});
 })()`;
 
@@ -152,6 +163,13 @@ const LSP_REPORT = `JSON.stringify((function () {
         var doc = cljs.core.get.call(null, st, kw('lt.objs.editor.lsp/doc'));
         var widgets = cljs.core.get.call(null, st, kw('lt.objs.editor.lsp/widgets'));
         out.connected = !!cljs.core.get.call(null, st, kw('lt.objs.editor.lsp/conn'));
+        // Which entry in the table this editor resolved to. The TypeScript
+        // plugin declares typescript-language-server for :editor.typescript
+        // and the harness declared fake-language-server after it, so the
+        // command here says which declaration won.
+        var status = lt.objs.editor.lsp.status(ed);
+        out.command = String(cljs.core.get.call(null, status, kw('command')));
+        out.declared = cljs.core.count(lt.objs.editor.lsp.servers());
         out.version = doc ? cljs.core.get.call(null, doc, kw('version')) : null;
         out.uri = doc ? String(cljs.core.get.call(null, doc, kw('uri'))) : null;
         // One widget per line with a diagnostic, not one per diagnostic.
@@ -1075,6 +1093,14 @@ async function main() {
         // after one keystroke.
         ['a language server starts for a project that provides one',
          !!lsp.before && lsp.before.connected === true],
+        // The TypeScript plugin declares typescript-language-server for this
+        // tag in plugins/TypeScript/typescript.behaviors; the harness declared
+        // fake-language-server after it, the way user.behaviors would. Later
+        // wins, which is the rule lt.objs.editor.lsp.registry states and the
+        // reason a server can be pointed somewhere else without editing source.
+        ['a later declaration beats the plugin that came before it',
+         !!lsp.before && lsp.before.command === 'fake-language-server' &&
+         lsp.before.declared >= 3],
         ['its file is addressed as a uri', !!lsp.before &&
          String(lsp.before.uri || '').startsWith('file:///')],
         ['diagnostics are drawn inline, grouped by line',

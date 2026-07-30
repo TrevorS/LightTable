@@ -8,9 +8,9 @@ what building it corrected about this page.
 ## The one-line version
 
 ```
-plugin.edn declares a server  →  lt.objs.clients.lsp spawns and speaks JSON-RPC
-                              →  notifications become Light Table events
-                              →  existing behaviors render them
+a .behaviors file declares a server  →  lt.objs.clients.lsp spawns and speaks JSON-RPC
+                                     →  notifications become Light Table events
+                                     →  existing behaviors render them
 ```
 
 No new UI. Every LSP response has somewhere it already belongs.
@@ -108,25 +108,84 @@ One behavior per row, each independently switchable. A user who wants
 diagnostics but not completion turns one off, which is what the behavior system
 is *for* and what makes this feel like Light Table rather than like a port.
 
-## What a plugin declares
+## What a declaration looks like
+
+A language server is a `.behaviors` entry, the same shape as a file type:
 
 ```clojure
-{:name "TypeScript"
- :capabilities #{:processes :files}
- :language-servers
- [{:tags    #{:editor.typescript :editor.tsx}
-   :root    ["tsconfig.json" "jsconfig.json" "package.json"]
-   :command ["node_modules/.bin/typescript-language-server" "--stdio"]}]}
+[:lsp.client :lt.objs.editor.lsp/language-servers
+ [{:tags [:editor.clj :editor.cljs]
+   :language-id "clojure"
+   :root ["deps.edn" "project.clj" "shadow-cljs.edn" "bb.edn"]
+   :command "clojure-lsp"
+   :args []}]]
 ```
 
-`:root` is the marker list `LT.projectRoot` already takes. `:command` resolves
-relative to the project root, the same rule the TypeScript plugin's type-check
-uses and for the same reason: checking against a different compiler than the
-project builds with reports differences that are not the code's.
+`::language-servers` is non-exclusive and `:type :user`, and entries from every
+`.behaviors` file accumulate into one table — exactly as
+`:lt.objs.files/file-types` does, where `default.behaviors` contributes dozens
+of languages and the Clojure plugin contributes three.
+
+`:tags` is inside the entry rather than being the key. One server usually
+answers for several editor tags: clojure-lsp covers `.clj`, `.cljc`, `.edn` and
+`.cljs` and there is one entry for all four. TypeScript and TSX stay separate
+because their `:language-id` differs — `"typescript"` versus
+`"typescriptreact"` — which costs nothing, since connections are keyed by
+`[root command]` and the two share one server.
+
+`:root` is the marker list that decides where the project starts, nearest first
+from the file. `:command` is the bare executable name; the project's own
+`node_modules/.bin` is looked in before `PATH`, the same rule the TypeScript
+plugin's type-check uses and for the same reason: checking against a different
+compiler than the project builds with reports differences that are not the
+code's.
+
+### Precedence
+
+**Later declarations win**, and behaviors are loaded `default.behaviors`, then
+every plugin's, then `user.behaviors` — so the rule reads as *user beats plugin
+beats core* without needing a ranking of its own. Pointing at a particular
+binary, adding arguments, or turning a server off is then configuration rather
+than a source edit, which is how every other knob in this editor works.
+
+More precisely, an entry's place in the table is its **last** declaration
+rather than its first. That distinction is not academic: `deploy/core/User` is
+both the user directory and an installed plugin, so `user.behaviors` is read
+twice — once at the plugin stage and once at the user stage — and keeping the
+first arrival parked a user's entry *ahead* of the plugin it was written to
+override. `lt.objs.editor.lsp.registry` is the table and the rule, separated
+from the rest so that precedence has a test rather than a comment.
+
+### Where a declaration lives
+
+Whoever owns the language declares the server:
+
+| case | goes in |
+|---|---|
+| an in-tree plugin owns the language | that plugin's `.behaviors` file |
+| no plugin, or a plugin we do not control | `deploy/settings/default/default.behaviors` |
+
+Both servers Light Table ships with have a plugin, so nothing language-specific
+is left in core: TypeScript's is in `plugins/TypeScript/typescript.behaviors`
+and clojure-lsp's is in `plugins/Clojure/clojure.behaviors`. The `:lsp.client`
+behaviors that remain in `default.behaviors` — `on-notification`, `on-exit`,
+`on-stderr`, `on-error`, `on-ready` — are surfaces, and a surface is the same
+question for every language.
 
 **Capabilities fall out of it.** A language server is a spawned process reading
-the project, so `:processes` and `:files` — which the manifest already
-expresses and `lt.objs.plugins.capabilities` already infers.
+the project, so the plugin that declares one declares `:processes` and
+`:files` — which the manifest already expresses and
+`lt.objs.plugins.capabilities` already infers. That is the point of putting the
+declaration in the plugin: a server spawned from core is a process accounted to
+nobody.
+
+### Not a `plugin.edn` key
+
+An earlier draft of this page sketched a `:language-servers` key in
+`plugin.edn`. It is not built and will not be. It would be a second mechanism
+for something behaviors already express, and a manifest is a *fact* about a
+plugin rather than a setting — so a user could not override it, which is the
+whole reason this is data. One mechanism.
 
 ## Failure, which is the normal case
 
@@ -157,16 +216,23 @@ What ships:
 | `lt.objs.clients.lsp` | one process, its lifecycle, request correlation |
 | `lt.objs.clients.lsp.sync` | URIs, positions, changes, versions, 20 tests |
 | `lt.objs.editor.lsp` | which server goes with which editor, and where its answers are drawn |
+| `lt.objs.editor.lsp.registry` | the server table and its precedence rule, 6 tests |
 
-Server table in `lt.objs.editor.lsp/servers`, an atom keyed by editor tag, so a
-language plugin can add one without waiting for an editor release. One
-connection per project root and server, shared by every editor under it.
-Configured out of the box:
+One connection per project root and server, shared by every editor under it.
+Declared out of the box, each by the plugin that owns the language:
 
-| tags | server | install |
-|---|---|---|
-| `:editor.typescript`, `:editor.tsx` | `typescript-language-server` | `npm i -D typescript-language-server` |
-| `:editor.clj`, `:editor.cljs` | `clojure-lsp` | `brew install clojure-lsp/brew/clojure-lsp-native` |
+| tags | server | declared in | install |
+|---|---|---|---|
+| `:editor.typescript` | `typescript-language-server` | `plugins/TypeScript/typescript.behaviors` | `npm i -D typescript-language-server` |
+| `:editor.tsx` | `typescript-language-server` | `plugins/TypeScript/typescript.behaviors` | as above |
+| `:editor.clj`, `:editor.cljs` | `clojure-lsp` | `plugins/Clojure/clojure.behaviors` | `brew install clojure-lsp/brew/clojure-lsp-native` |
+
+Install `typescript` alongside the language server and pin it to 5.x.
+`typescript-language-server` drives `tsserver.js`, and TypeScript 7 — the
+native rewrite — does not ship one, so a plain `npm i -D typescript` now gets a
+compiler it refuses to start against. It says so on stderr, and Light Table
+puts that on the console, which is the only reason this took minutes rather
+than an afternoon.
 
 clojure-lsp is worth its own note. Its diagnostics come from **clj-kondo**,
 which is what `make check` already runs on this repository — so what it says in
@@ -211,10 +277,7 @@ project root above the file, nothing installed under either name, or connected
 and working.
 
 Deliberately *not* in it: multi-root workspaces, workspace edits, server-side
-file watching, and any surface other than diagnostics. Nor is the plugin-side
-`:language-servers` declaration below — the server table is the same shape and
-reading it from a manifest is a small addition once there is a second plugin
-that wants one.
+file watching, and any surface other than diagnostics.
 
 ## What building it settled
 
@@ -250,3 +313,26 @@ single element. Handing CodeMirror a document fragment is the obvious way to
 give a line several diagnostics and it throws inside `addLineWidget` —
 *after* the nodes are in the measuring container, so they are on screen while
 the widget that should own them does not exist.
+
+## What making the table data settled
+
+The server table began as an atom in `lt.objs.editor.lsp`, written to from the
+source. Three things it could not do — a user could not override it, precedence
+between two matching entries was undefined, and a process spawned from core was
+accounted to no plugin — are what moved it to a behavior. What that turned up:
+
+- **"Later wins" is not "the last file wins".** Reactions arrive in reverse of
+  the order behaviors are stored, and `deploy/core/User` is read twice, because
+  it is both the user directory and an installed plugin. Written to keep an
+  entry's *first* arrival, a `user.behaviors` override of clojure-lsp was
+  parked ahead of the plugin it was written to beat, and lost. Position by
+  *last* arrival fixes it and is stable under reload, since a reload replays
+  the same sequence.
+- **Declaring it in the plugin made the manifest true.** Widening the smoke
+  test's capability probe from two plugins to all seven immediately reported
+  four manifests that did not match what inference read out of the plugin's own
+  JavaScript. Declared and used now agree exactly for all seven, which is the
+  first time that has been checkable.
+- **Nothing needed a new surface.** The declaration is a `.behaviors` entry
+  shaped like a file type, and file types have looked like that since before
+  any of this.

@@ -5,6 +5,25 @@
  ;; one — see script/gen-codemirror-requires.js for why the blacklist that used
  ;; to justify it is gone.
  [:app :lt.objs.plugins/load-js "clojure_compiled.js"]
+
+ ;; clojure-lsp. Declared here rather than in Light Table's own behaviors
+ ;; because this plugin owns the language: the file types below are its, and a
+ ;; language server is what comes after colouring.
+ ;;
+ ;; One entry, two tags, four extensions. .clj, .cljc and .edn all carry
+ ;; :editor.clj and .cljs carries :editor.cljs; the protocol has a single
+ ;; language id for all of them. Its diagnostics come from clj-kondo, which is
+ ;; what `make check` already runs on this repository — so what it says in the
+ ;; editor is what CI will say.
+ ;;
+ ;; It is a native binary rather than an npm package, so PATH is the only place
+ ;; it can be found: `brew install clojure-lsp/brew/clojure-lsp-native`.
+ [:lsp.client :lt.objs.editor.lsp/language-servers
+  [{:tags [:editor.clj :editor.cljs]
+    :language-id "clojure"
+    :root ["deps.edn" "project.clj" "shadow-cljs.edn" "bb.edn" ".lsp/config.edn"]
+    :command "clojure-lsp"
+    :args []}]]
  [:app :lt.plugins.clojure/set-default-cljs-client :auto]
  [:app :lt.plugins.clojure/set-cljs-browser-paths ["index.html" "resources/public/index.html" "public/index.html" "dev-resources/public/index.html"]]
 

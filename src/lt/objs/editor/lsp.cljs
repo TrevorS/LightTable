@@ -16,6 +16,12 @@
   because that is what a language server is for: it indexes a project once and
   answers about all of it.
 
+  **Which server goes with which language is data**, not code here: the
+  `::language-servers` behavior, shaped like `:lt.objs.files/file-types` and
+  contributed to by the same three places — Light Table's own behaviors, a
+  plugin's, and the user's, in that order. [[lt.objs.editor.lsp.registry]] is
+  the table and the precedence rule.
+
   See doc/lsp-architecture.md for the layering and what is deliberately not
   here yet — completion, hover and navigation are additive on top of this."
   (:require [clojure.string :as string]
@@ -24,48 +30,23 @@
             [lt.objs.clients.lsp.sync :as sync]
             [lt.objs.command :as cmd]
             [lt.objs.editor :as editor]
+            [lt.objs.editor.lsp.registry :as registry]
             [lt.objs.editor.pool :as pool]
             [lt.objs.notifos :as notifos]
             [lt.util.bridge :as bridge])
   (:require-macros [lt.macros :refer [behavior defui]]))
 
-(def servers
-  "Editor tag to language server.
+(declare lsp-client)
 
-  An atom for the same reason the tree-sitter grammar table is one: a language
-  plugin should be able to bring its own server without waiting for an editor
-  release.
+(defn servers
+  "Every language server that has been declared, in declaration order."
+  []
+  (::servers @lsp-client []))
 
-  `:root` is the marker list that decides a project's root. `:command` is the
-  bare executable name; see [[server-command]] for where it is looked for."
-  (atom
-   {:editor.typescript {:language-id "typescript"
-                        :root ["tsconfig.json" "jsconfig.json" "package.json"]
-                        :command "typescript-language-server"
-                        :args ["--stdio"]}
-    :editor.tsx {:language-id "typescriptreact"
-                 :root ["tsconfig.json" "jsconfig.json" "package.json"]
-                 :command "typescript-language-server"
-                 :args ["--stdio"]}
-    ;; clojure-lsp handles .clj, .cljc and .edn under one tag and .cljs under
-    ;; the other; the protocol has one language id for all of them. Its
-    ;; diagnostics come from clj-kondo, which is what `make check` already runs
-    ;; here — so what it says in the editor is what CI will say.
-    ;;
-    ;; It is a native binary rather than an npm package, so `PATH` is the only
-    ;; place it can be found. Wiring it up was not possible before that was
-    ;; looked at.
-    :editor.clj {:language-id "clojure"
-                 :root ["deps.edn" "project.clj" "shadow-cljs.edn" "bb.edn" ".lsp/config.edn"]
-                 :command "clojure-lsp"
-                 :args []}
-    :editor.cljs {:language-id "clojure"
-                  :root ["deps.edn" "project.clj" "shadow-cljs.edn" "bb.edn" ".lsp/config.edn"]
-                  :command "clojure-lsp"
-                  :args []}}))
-
-(defn server-for [tags]
-  (some #(get @servers %) tags))
+(defn server-for
+  "The server for an editor carrying `tags`, or nil."
+  [tags]
+  (registry/for-tags (servers) tags))
 
 ;;*********************************************************
 ;; Finding a project
@@ -134,8 +115,6 @@
 (defonce ^:private connections
   ;; Keyed by [root command], so every editor in a project shares one server.
   (atom {}))
-
-(declare lsp-client)
 
 (defn- ensure-connection!
   "The connection for this root and server, started if it is not running."
@@ -308,6 +287,32 @@
 
 (def lsp-client (object/create ::lsp-client))
 
+(behavior ::language-servers
+          :triggers #{:object.instant}
+          :type :user
+          :desc "Language server: Associate language servers"
+          :doc "Which language server answers for which editor, declared the
+                same way file types are — see `:lt.objs.files/file-types`.
+                Entries from every `.behaviors` file accumulate, and a later
+                declaration beats an earlier one, so `user.behaviors` beats a
+                plugin's and a plugin's beats Light Table's own.
+
+                `:tags` are the editor tags this server answers for. `:root`
+                is the marker list that decides where the project starts,
+                nearest first from the file. `:command` is the bare executable
+                name; the project's own `node_modules/.bin` is looked in
+                before `PATH`, because a language server is a compiler and
+                checking against a different one than the project builds with
+                reports differences that are not the code's.
+
+                A server that is not installed is not an error — nothing
+                starts. **Language server: Status for this editor** says which
+                of the ways this can be quiet is the one in play."
+          :params [{:label "servers"
+                    :example "[{:tags [:editor.clj :editor.cljs],\n  :language-id \"clojure\",\n  :root [\"deps.edn\" \"project.clj\"],\n  :command \"clojure-lsp\",\n  :args []}]"}]
+          :reaction (fn [this servers]
+                      (object/update! this [::servers] registry/add servers)))
+
 (behavior ::on-notification
           :triggers #{:lsp.notification}
           :desc "Language server: Handle a notification"
@@ -419,9 +424,17 @@
                           (js/lt.objs.console.log
                            (str "language server status: " (pr-str s))))))})
 
-;; Attached in deploy/settings/default/default.behaviors rather than here.
-;; `object/tag-behaviors` works, and then does not: the settings loader builds
-;; the tag map from that file after this namespace has loaded, so anything
-;; added programmatically at load time is replaced by the time an object is
-;; created. Behaviors being data is the whole idea, and this is what enforces
-;; it.
+;; These behaviors are attached in deploy/settings/default/default.behaviors
+;; rather than here. `object/tag-behaviors` works, and then does not: the
+;; settings loader builds the tag map from that file after this namespace has
+;; loaded, so anything added programmatically at load time is replaced by the
+;; time an object is created. Behaviors being data is the whole idea, and this
+;; is what enforces it.
+;;
+;; The same argument is why the server table is `::language-servers` and not an
+;; atom. An atom cannot be overridden from user.behaviors, has no defined
+;; precedence when two entries match, and hides a spawned process from the
+;; capability manifest — which is a fact about the plugin that spawns it. Which
+;; server answers for which language is declared by whoever owns the language:
+;; plugins/TypeScript/typescript.behaviors and plugins/Clojure/clojure.behaviors
+;; today, and default.behaviors for a language with no plugin.

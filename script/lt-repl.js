@@ -285,7 +285,11 @@ async function bootLog(seconds) {
 
 /** Starts the application detached, and records its pid for stop(). */
 function spawnApp() {
-    const useXvfb = !process.env.DISPLAY;
+    // macOS has no DISPLAY and does not want one: Electron talks to the window
+    // server directly, so asking for xvfb there fails on a machine that works
+    // perfectly. script/smoke-test.sh already draws this line; this did not,
+    // and `lt-repl.sh start` on a Mac spawned xvfb-run and reported ENOENT.
+    const useXvfb = !process.env.DISPLAY && process.platform !== 'darwin';
     const cmd = useXvfb ? 'xvfb-run' : ELECTRON;
     const args = useXvfb ? ['-a', '--server-args=-screen 0 1280x820x24', ELECTRON, CORE, '--no-sandbox']
                          : [CORE, '--no-sandbox'];

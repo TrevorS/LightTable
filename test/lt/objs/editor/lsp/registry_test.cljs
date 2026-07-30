@@ -1,0 +1,78 @@
+(ns lt.objs.editor.lsp.registry-test
+  (:require [cljs.test :refer-macros [deftest is testing]]
+            [lt.objs.editor.lsp.registry :as registry]))
+
+(def core
+  {:tags [:editor.typescript]
+   :language-id "typescript"
+   :root ["tsconfig.json"]
+   :command "typescript-language-server"
+   :args ["--stdio"]})
+
+(def plugin
+  (assoc core :command "/opt/plugin/typescript-language-server"))
+
+(def user
+  (assoc core :command "/Users/me/.bun/bin/typescript-language-server"))
+
+(defn- declare-all
+  "A table built by raising the behavior once per declaration, in the order
+  `lt.objs.settings` loads the files it came from."
+  [& declarations]
+  (reduce registry/add [] declarations))
+
+(deftest finds-a-server-by-tag
+  (is (= core (registry/for-tags [core] #{:editor.typescript})))
+  (is (nil? (registry/for-tags [core] #{:editor.python})))
+  (is (nil? (registry/for-tags [] #{:editor.typescript}))))
+
+(deftest one-entry-answers-for-several-tags
+  (let [clojure-lsp {:tags [:editor.clj :editor.cljs]
+                     :language-id "clojure"
+                     :command "clojure-lsp"}]
+    (is (= clojure-lsp (registry/for-tags [clojure-lsp] #{:editor.clj})))
+    (is (= clojure-lsp (registry/for-tags [clojure-lsp] #{:editor.cljs})))
+    ;; The tags an editor carries are a set, and an editor carries several.
+    (is (= clojure-lsp (registry/for-tags [clojure-lsp]
+                                          #{:editor :editor.cljs :editor.clojurescript})))))
+
+(deftest later-declarations-win
+  (testing "a plugin beats Light Table's own"
+    (is (= plugin (registry/for-tags (declare-all [core] [plugin])
+                                     #{:editor.typescript}))))
+  (testing "a user beats a plugin"
+    (is (= user (registry/for-tags (declare-all [core] [plugin] [user])
+                                   #{:editor.typescript}))))
+  (testing "and beats it whatever else was declared in between"
+    (let [other {:tags [:editor.python] :command "pylsp"}]
+      (is (= user (registry/for-tags (declare-all [core] [plugin] [user] [other])
+                                     #{:editor.typescript}))))))
+
+(deftest a-declaration-arriving-twice-counts-as-the-later-one
+  ;; deploy/core/User is both the user directory and an installed plugin, so
+  ;; user.behaviors is read twice — once at the plugin stage and once at the
+  ;; user stage. Keeping the first arrival parked the user's entry ahead of the
+  ;; plugin it was written to override, and clojure-lsp won against a
+  ;; user.behaviors that said otherwise.
+  (is (= user (registry/for-tags (declare-all [user] [core] [plugin] [user])
+                                 #{:editor.typescript})))
+  (testing "a plugin re-declaring does overtake an earlier user entry"
+    ;; Which is the same rule, and why it is stated as position-by-last-arrival
+    ;; rather than as a ranking of who declared it.
+    (is (= plugin (registry/for-tags (declare-all [core] [user] [plugin])
+                                     #{:editor.typescript})))))
+
+(deftest reloading-lands-where-it-already-was
+  ;; lt.objs.settings re-raises :object.instant on every behavior reload, so
+  ;; every declaration arrives again in the same order.
+  (let [order [[user] [core] [plugin] [user]]
+        loaded (reduce registry/add [] order)
+        reloaded (reduce registry/add loaded order)]
+    (is (= loaded reloaded))
+    (is (= user (registry/for-tags reloaded #{:editor.typescript})))))
+
+(deftest a-declaration-may-carry-several-entries
+  (let [ts (assoc core :tags [:editor.typescript])
+        tsx (assoc core :tags [:editor.tsx] :language-id "typescriptreact")]
+    (is (= [ts tsx] (registry/add [] [ts tsx])))
+    (is (= tsx (registry/for-tags [ts tsx] #{:editor.tsx})))))
