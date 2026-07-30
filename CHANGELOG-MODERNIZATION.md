@@ -428,6 +428,47 @@ through it, zoom resolves, the clipboard round-trips in both directions, and the
 menubar — built by a behavior in the window — actually arrives in the main
 process.
 
+## The browser tab, which had not worked in years
+
+Checking whether `<webview>` still worked turned up that it did not, and had not
+for a long time. Four faults, stacked, each hiding the next:
+
+1. **`webviewTag` defaults to false since Electron 5** and
+   `deploy/core/package.json` never set it. The `<webview>` element was parsed
+   as a plain `HTMLElement` with no Electron API on it — inert, and silent about
+   it. Light Table was on Electron 13 before this branch, so this predates the
+   upgrade rather than being caused by it.
+2. **`browserInjection.js` called `ipcMain.on`**, in a renderer. `ipcMain` is
+   undefined there, so the guest preload threw on its third line and none of the
+   browser tab's messaging existed.
+3. **Its listeners were missing Electron's event argument**, so they would have
+   read the event as their payload had they ever run.
+4. **A guest's `contextIsolation` defaults to true**, which puts a preload in an
+   isolated world. `window.lttools` and `eval.call(window, ...)` would not have
+   reached the page even once the preload loaded — and reaching the page is the
+   entire feature.
+
+Fixed, and the injection is now `src-electron/browserInjection.ts` — it is a
+preload, so it belongs with the other privileged code. Two smoke checks cover
+it: the element is a real `WebViewElement`, and the injection is visible from
+inside the guest page.
+
+While there: `getUrl` became `getURL` at some point, and the exception path
+called `cljs.core.pr_str` unconditionally, which throws its own error on any
+page that is not a ClojureScript app.
+
+The guest's preferences are settled in `secureWebContents()` rather than by the
+`<webview>` attributes, which the window used to set. A guest is an arbitrary
+website; what runs inside it is not the window's decision. It gets no Node
+integration and Light Table's own injection, and the `:preload` attribute is
+gone from `lt.objs.browser` entirely.
+
+That function is also where `window.open` is now handled. Nothing in Light
+Table calls it, but with no handler set Electron's default creates a
+`BrowserWindow` inheriting this application's preferences — node integration
+included — pointed at whatever url it was given. It is denied; an `http(s)`
+url goes to the desktop's browser instead.
+
 ## Content isolation (not yet)
 
 `nodeIntegration: true` and `contextIsolation: false` are still set. The bridge
@@ -558,19 +599,25 @@ in the same commit that flips it.
 
 ## Hand-written JavaScript to TypeScript
 
-The privileged half is done: `src-electron/main.ts` (392 lines) and
-`src-electron/preload.ts` (196), compiled to `deploy/core` by a `tsc` step,
-strict, with `noUncheckedIndexedAccess` and `exactOptionalPropertyTypes`. That
-was the part worth doing first because it is where the privilege is — the type
-checker found two live bugs during the port, and every capability added to the
-bridge lands there.
+The privileged half is done — `src-electron/`, compiled to `deploy/core` by a
+`tsc` step, strict, with `noUncheckedIndexedAccess` and
+`exactOptionalPropertyTypes`:
 
-What is left is 1,761 lines, and it does not all deserve the same answer.
+| | lines |
+|---|---|
+| `main.ts` | 421 |
+| `preload.ts` | 196 |
+| `browserInjection.ts` | 145 |
+
+That was the part worth doing first because it is where the privilege is. Every
+capability added to the bridge lands there, and it is where the bugs were.
+
+What is left is 1,832 lines, and it does not all deserve the same answer.
 
 | | lines | notes |
 |---|---|---|
-| `script/smoke-test.js` | 220 | Test harness. Types would have caught the probe mistakes made while writing it, twice. |
-| `ws.js`, `browserInjection.js`, `dragdrop.js`, `fuzzy.js`, `throttle.js`, `behaviorsParser.js`, `walkdir2.js` | ~660 | Light Table's own runtime scripts. Worth porting; none are large. |
+| `script/smoke-test.js` | 243 | Test harness. Types would have caught the probe mistakes made while writing it, twice. |
+| `ws.js`, `dragdrop.js`, `fuzzy.js`, `throttle.js`, `behaviorsParser.js`, `walkdir2.js` | 589 | Light Table's own runtime scripts. Worth porting; none are large. |
 | `util/keyevents.js` | 1,086 | A vendored keyboard library. Should be replaced rather than ported. |
 | forked CodeMirror addons | 281 | Vendored forks; typing them means diverging further from upstream. Leave them. |
 

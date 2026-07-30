@@ -13,6 +13,7 @@
       "webgl": true,
       "webaudio": true,
       "plugins": true,
+      "webviewTag": true,
       "nodeIntegration": true,
       "contextIsolation": false,
       "preload": "preload.js"

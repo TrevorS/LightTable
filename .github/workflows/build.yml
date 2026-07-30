@@ -55,7 +55,7 @@ jobs:
       - name: Compile
         run: |
           set -o pipefail
-          npx shadow-cljs release app worker 2>&1 | tee build.log
+          npm run build:cljs 2>&1 | tee build.log
           count=$(grep -ac 'WARNING #' build.log || true)
           if [ "$count" -ne 0 ]; then
             echo "::error::$count ClojureScript warning(s)"

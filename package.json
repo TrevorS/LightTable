@@ -11,6 +11,8 @@
   },
   "scripts": {
     "build:main": "tsc -p tsconfig.json",
-    "watch:main": "tsc -p tsconfig.json --watch"
+    "watch:main": "tsc -p tsconfig.json --watch",
+    "build:cljs": "shadow-cljs release app worker && npm run --silent place:user-plugin",
+    "place:user-plugin": "node -e \"require('fs').copyFileSync('deploy/core/lighttable/user.js','deploy/core/User/user_compiled.js')\""
   }
 }

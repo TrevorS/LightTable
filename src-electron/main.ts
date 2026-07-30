@@ -191,6 +191,12 @@ function buildMenu(sender: electron.WebContents, items: (MenuDescription | null)
     return menu;
 }
 
+/**
+ * Everything the main process has to set up before a window can work. This is
+ * the seam script/smoke-test.js drives, so anything a real window depends on
+ * belongs in here rather than in onReady() — otherwise the test boots an
+ * application that differs from the one that ships.
+ */
 function registerRendererApi(): void {
     // Read once during renderer startup, so it has to be synchronous.
     ipcMain.on("lt:app-info", function(event) {
@@ -251,6 +257,7 @@ function registerRendererApi(): void {
     });
 
     registerBridge();
+    secureWebContents();
 }
 
 /**
@@ -291,6 +298,40 @@ function registerBridge(): void {
 
     ipcMain.on("lt:clipboard-write", function(event, text: string) {
         clipboard.writeText(text);
+    });
+}
+
+/**
+ * Policy for every page this application creates, applied where it cannot be
+ * forgotten for one of them.
+ *
+ * Light Table's browser tab is a <webview>, and a guest in it is an arbitrary
+ * website. Electron lets the page hosting a webview choose the guest's
+ * preferences through attributes, so those are settled here instead.
+ */
+function secureWebContents(): void {
+    app.on('web-contents-created', function(_event, contents) {
+        // Nothing in Light Table calls window.open, but the default handler
+        // would create a BrowserWindow inheriting this app's preferences —
+        // node integration included — and point it at whatever url it was
+        // given. A link that wants a new window gets the desktop's browser.
+        contents.setWindowOpenHandler(function({ url }) {
+            if (url.startsWith('https:') || url.startsWith('http:')) {
+                shell.openExternal(url);
+            }
+            return { action: 'deny' };
+        });
+
+        contents.on('will-attach-webview', function(_e, webPreferences) {
+            webPreferences.nodeIntegration = false;
+            webPreferences.nodeIntegrationInSubFrames = false;
+            webPreferences.preload = __dirname + '/browserInjection.js';
+            // Off for guests on purpose, and it has to be set rather than left
+            // alone: it defaults to true, which puts the injection in an
+            // isolated world where `lttools` and `eval` cannot see the page.
+            // Evaluating against the page is what the browser tab is for.
+            webPreferences.contextIsolation = false;
+        });
     });
 }
 

@@ -31,10 +31,11 @@ npm install
 # The main process, compiled from TypeScript.
 npm run build:main
 
-# The window bundle and the worker thread that backs lt.objs.thread. The worker
-# is a separate target because it runs under node rather than in the window.
+# The window bundle, the default user plugin, and the worker thread that backs
+# lt.objs.thread. The worker is a separate target because it runs under node
+# rather than in the window.
 rm -f deploy/core/lighttable/bootstrap.js
-npx shadow-cljs release app worker
+npm run build:cljs
 
 # Fetch plugins
 PLUGINS=("Clojure,0.3.3" "CSS,0.0.6" "HTML,0.1.0" "Javascript,0.2.0"

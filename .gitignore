@@ -13,6 +13,8 @@
 /lsp
 /deploy/core/lighttable/bootstrap.js
 /deploy/core/lighttable/manifest.edn
+/deploy/core/lighttable/user.js
+/deploy/core/User/user_compiled.js
 /deploy/core/lighttable/bootstrap.js.map
 /deploy/core/lighttable/cljs/
 /User/
@@ -20,10 +22,13 @@
 /.shadow-cljs/
 /node_modules/
 /logs/
+/deploy/core/logs/
 /target/
 /codox/
 /deploy/core/lighttable/background/worker.js
 /deploy/core/main.js
 /deploy/core/main.js.map
 /deploy/core/preload.js
+/deploy/core/browserInjection.js
+/deploy/core/browserInjection.js.map
 /deploy/core/preload.js.map

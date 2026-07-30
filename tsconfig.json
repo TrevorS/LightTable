@@ -3,7 +3,8 @@
     // Electron 43 runs Node 24, so nothing here needs downlevelling. The main
     // process is CommonJS.
     "target": "ES2022",
-    "lib": ["ES2023"],
+    // browserInjection.ts is a preload for a web page, so it needs DOM.
+    "lib": ["ES2023", "DOM"],
     "module": "commonjs",
     "moduleResolution": "node",
 

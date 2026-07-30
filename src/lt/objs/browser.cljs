@@ -96,9 +96,11 @@
 
 
 (defui webview [this]
+  ;; No :preload attribute: the guest's preload is pinned by the main process,
+  ;; which is the only side that should decide what runs inside an arbitrary
+  ;; web page. See secureWebContents() in src-electron/main.ts.
   [:webview {:src (bound (subatom this :url))
-             :id (browser-id this)
-             :preload (files/lt-home "core/lighttable/browserInjection.js")}]
+             :id (browser-id this)}]
   :focus (fn []
            (object/raise this :active))
   :blur (fn []
@@ -242,7 +244,7 @@
                         (.addEventListener frame "contextmenu" (fn [e]
                                                                  (object/raise this :menu! e)))
                         (.addEventListener frame "did-finish-load" (fn []
-                                                                     (let [loc (.getUrl ^js frame)]
+                                                                     (let [loc (.getURL ^js frame)]
                                                                        (devtools/clear-scripts! (:devtools-client @this))
                                                                        (dom/val bar loc)
                                                                        (object/raise this :navigate loc))

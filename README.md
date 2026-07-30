@@ -35,12 +35,14 @@ script/build.sh --release  # the above, plus a release archive
 To rebuild just the ClojureScript after a source change:
 
 ```sh
-npx shadow-cljs release app worker
+npm run build:cljs
 ```
 
 `app` is the window bundle; `worker` is the background thread that runs
 searching, file walking and behavior parsing off the main thread. Both are
-defined in [shadow-cljs.edn](shadow-cljs.edn).
+defined in [shadow-cljs.edn](shadow-cljs.edn). The default user plugin is a
+module of `app`, so it compiles against the editor rather than shipping as a
+checked-in artifact; the script puts it where the plugin loader looks.
 
 The main process and the preload script are TypeScript, in `src-electron/`:
 

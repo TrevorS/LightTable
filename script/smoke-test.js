@@ -94,6 +94,14 @@ app.on('ready', function () {
                     editorText: (function () { var e = document.querySelector('.CodeMirror-code'); return e ? e.innerText.slice(0, 40) : ''; })(),
                     behaviors: cljs.core.count(cljs.core.deref(lt.object.behaviors)),
                     crateShim: typeof (window.crate && window.crate.core && window.crate.core.html) === 'function',
+                    // The default user plugin, which is compiled from source in
+                    // this repo rather than shipped as a checked-in artifact.
+                    userPlugin: (function () {
+                        var cmds = cljs.core.get.call(null, cljs.core.deref(lt.objs.command.manager),
+                                                      cljs.core.keyword.call(null, 'commands'));
+                        return !!(lt.plugins.user && lt.plugins.user.hello) &&
+                               cljs.core.contains_QMARK_(cmds, cljs.core.keyword.call(null, 'user.say-hello'));
+                    })(),
                     // The preload bridge, and that the window is actually going
                     // through it rather than still reaching Electron directly.
                     bridge: (function () {
@@ -123,6 +131,24 @@ app.on('ready', function () {
                 // The menubar is set by a behavior at startup, and it lands
                 // over here, so this is the only side it can be seen from.
                 report.appMenu = !!Menu.getApplicationMenu();
+
+                // The browser tab, last, so its devtools client cannot add to
+                // the console errors collected above. <webview> is inert unless
+                // webviewTag is set, which it was not for several years, and
+                // the guest's preload only reaches the page if the guest's
+                // contextIsolation is explicitly off.
+                await w.webContents.executeJavaScript(
+                    'lt.objs.command.exec_BANG_(cljs.core.keyword.call(null,"add-browser-tab"))');
+                await new Promise(function (r) { setTimeout(r, 6000); });
+                Object.assign(report, JSON.parse(await w.webContents.executeJavaScript(\`(async function () {
+                    var v = document.querySelector('webview');
+                    return JSON.stringify({
+                        webviewUpgraded: !!(v && typeof v.getWebContentsId === 'function' && typeof v.loadURL === 'function'),
+                        guestInjection: v && typeof v.executeJavaScript === 'function'
+                            ? await v.executeJavaScript('typeof window.lttools')
+                            : 'no webview api'
+                    });
+                })()\`)));
                 report.ok = true;
             } catch (e) {
                 report.failure = 'renderer probe failed: ' + e.message;
@@ -142,7 +168,11 @@ function fail(message, detail) {
 }
 
 async function main() {
-    for (const [what, where] of [['Electron', ELECTRON], ['the compiled bundle', path.join(CORE, 'lighttable', 'bootstrap.js')]]) {
+    for (const [what, where] of [['Electron', ELECTRON],
+                                 ['the compiled bundle', path.join(CORE, 'lighttable', 'bootstrap.js')],
+                                 ['the compiled main process', path.join(CORE, 'main.js')],
+                                 ['the compiled preload', path.join(CORE, 'preload.js')],
+                                 ['the compiled browser injection', path.join(CORE, 'browserInjection.js')]]) {
         if (!fs.existsSync(where)) fail(what + ' is missing at ' + where, 'Run script/build.sh first.');
     }
 
@@ -162,6 +192,9 @@ async function main() {
     // main.js requires yargs-free node builtins only, but the harness resolves
     // the core package.json, so give it the same module paths.
     fs.symlinkSync(path.join(CORE, 'node_modules'), path.join(appDir, 'node_modules'));
+    // main.js pins the webview guest's preload relative to its own directory,
+    // so the temporary app directory has to carry it too.
+    fs.symlinkSync(path.join(CORE, 'browserInjection.js'), path.join(appDir, 'browserInjection.js'));
 
     await new Promise(function (resolve) {
         const child = spawn(ELECTRON, [appDir, '--no-sandbox'],
@@ -191,11 +224,14 @@ async function main() {
         ['the worker thread connected', r.workerConnected === true],
         ['a background job round-tripped', r.workerFilesFound >= 5],
         ['the crate compatibility shim is published', r.crateShim === true],
+        ['the default user plugin loaded', r.userPlugin === true],
         ['the preload bridge is exposed', r.bridge === true],
         ['the window reaches the desktop through the bridge', r.bridgeInUse === true],
         ['zoom is served by the bridge', typeof r.zoomFactor === 'number' && r.zoomFactor > 0],
         ['the clipboard round-trips over the bridge', r.clipboard === 'lt-smoke-clipboard'],
         ['the application menu was built over the bridge', r.appMenu === true],
+        ['the browser tab has a real webview', r.webviewUpgraded === true],
+        ['the browser injection reached the guest page', r.guestInjection === 'object'],
         // Only meaningful when deploy/plugins is populated, which build.sh does.
         ['bundled plugins loaded', !r.pluginsPresent || r.behaviors > 500],
         ['nothing logged to the console', Array.isArray(r.errors) && r.errors.length === 0]
