@@ -1,9 +1,9 @@
 # LSP: the architecture
 
-Not built. This is the design, at the level of detail where the decisions are
-visible and the work is estimable. [language-support.md](language-support.md)
-argues *why* the protocol belongs in the editor rather than in each plugin;
-this says *how*.
+The first slice is built: TypeScript diagnostics, drawn inline.
+[language-support.md](language-support.md) argues *why* the protocol belongs in
+the editor rather than in each plugin; this says *how*, and — at the end —
+what building it corrected about this page.
 
 ## The one-line version
 
@@ -41,10 +41,10 @@ it.
 
 Bytes in, messages out. Pure, and therefore the only part with real unit tests.
 
-```
+```clojure
 (defn feed
-  "Append `bytes` to `buffer`, returning [remaining-buffer messages]."
-  [buffer bytes] ...)
+  "Append `chunk` to `buffer`, returning {:buffer :messages :errors}."
+  [buffer chunk] ...)
 
 (defn encode
   "A message as Content-Length framed bytes."
@@ -70,8 +70,9 @@ One server process, its lifecycle, and request correlation.
 - **Server-initiated requests** get answered, not ignored — at minimum
   `window/workDoneProgress/create` and `client/registerCapability`, which some
   servers block on.
-- Registers as a Light Table client so it appears in the Connect bar, dies
-  visibly, and reconnects the way every other client does.
+- Every event carries the connection it came from. One window talks to several
+  servers and they all report to the same object, so `:lsp.exit` without a
+  connection is a message that cannot be acted on.
 
 ### 3. Document synchronisation — `lt.objs.clients.lsp.sync`
 
@@ -80,9 +81,9 @@ stopped".
 
 - `textDocument/didOpen` when an editor with a matching tag opens; `didClose`
   when it closes.
-- `didChange` on edit, debounced. **Incremental** where the server advertises
-  it, full-text where it does not — its `initialize` result says which, and
-  sending the wrong kind desynchronises quietly.
+- `didChange` on edit. **Incremental** where the server advertises it,
+  full-text where it does not — its `initialize` result says which, and sending
+  the wrong kind desynchronises quietly.
 - Positions are **UTF-16 code units** in LSP, which is what CodeMirror uses
   too, so no conversion — but the server may negotiate UTF-8, and then it does.
   Worth handling once here rather than wrongly in three places.
@@ -141,31 +142,74 @@ not have installed it. So:
 - Everything else the server prints to stderr goes to the console, because that
   is where a plugin author will look.
 
-## The first slice
+## The first slice — built
 
-**TypeScript diagnostics, and nothing else.** One server, one surface, one
-plugin. It exercises the whole spine — spawn, frame, initialize, sync, a
-notification, a rendered result — and it is the smallest thing that is useful
-on its own. Completion and navigation are then additive rather than
-prerequisite.
+**TypeScript diagnostics, and nothing else.** One server, one surface. It
+exercises the whole spine — spawn, frame, initialize, sync, a notification, a
+rendered result — and it is the smallest thing that is useful on its own.
+Completion and navigation are additive on top of it rather than prerequisite.
 
-Deliberately *not* in the first slice: multi-root workspaces, workspace edits,
-server-side file watching, and any server other than one. Each is a real
-feature and none is needed to prove the design.
+What ships:
 
-## What could make this wrong
+| | |
+|---|---|
+| `lt.objs.clients.lsp.wire` | framing, 20 tests |
+| `lt.objs.clients.lsp` | one process, its lifecycle, request correlation |
+| `lt.objs.clients.lsp.sync` | URIs, positions, changes, versions, 20 tests |
+| `lt.objs.editor.lsp` | which server goes with which editor, and where its answers are drawn |
 
-Worth writing down now, so it is checked rather than discovered:
+Server table in `lt.objs.editor.lsp/servers`, an atom keyed by editor tag, so a
+language plugin can add one without waiting for an editor release. One
+connection per project root and server, shared by every editor under it.
 
-- **Debounce and document version are the whole ballgame.** If sync is wrong,
-  diagnostics land on the wrong lines and the feature reads as broken however
-  correct the protocol code is.
-- **Inline diagnostics may not survive contact with a file that has two hundred
-  errors.** Light Table renders eval results inline, so inline is the
-  consistent answer, but a gutter marker with the count may be the honest one.
-  This is a design question the first slice should answer with a real file, not
-  a preference to settle in advance.
-- **`lt.objs.clients` may not fit as neatly as it looks.** It was built for
-  connections Light Table accepts or dials, not for a child process it owns. If
-  the fit is bad, the answer is a sibling abstraction, not bending the existing
-  one — and finding that out is part of the first slice.
+To try it, install the server *in the project you are editing* — that is the
+rule, not a shortcut for the demo:
+
+```
+npm install --save-dev typescript-language-server
+```
+
+Open a `.ts` file from that project and errors appear under the lines they are
+about. A project without the server installed is not an error: nothing starts,
+and nothing else about the editor changes.
+
+Deliberately *not* in it: multi-root workspaces, workspace edits, server-side
+file watching, and any surface other than diagnostics. Nor is the plugin-side
+`:language-servers` declaration below — the server table is the same shape and
+reading it from a manifest is a small addition once there is a second plugin
+that wants one.
+
+## What building it settled
+
+The three risks this page listed, answered by the code rather than in advance:
+
+- **Sync is the whole ballgame — confirmed, and worse than stated.** Two
+  separate bugs each produced a version counter that incremented correctly
+  while `didChange` never reached the server, so the editor looked synchronised
+  and the server answered about the file on disk. Nothing about the symptom
+  said "synchronisation": diagnostics appeared, they were real, they were
+  simply about text nobody was looking at. The one that took longest was an
+  argument position — `:change` is raised with CodeMirror's two arguments, the
+  instance and *then* the change — and Light Table catches exceptions inside
+  behavior reactions, so it cost nothing visible. Verified now against a real
+  `typescript-language-server` with the traffic teed to a file: 23
+  single-character edits, 23 incremental changes, diagnostics landing on the
+  right lines throughout.
+- **Inline diagnostics against a file with two hundred errors — still open.**
+  Grouping by line helps (three errors on one line are three sentences in one
+  widget, not three boxes), and a file where every line is wrong has not been
+  tried. The honest answer may still be a gutter marker with a count.
+- **`lt.objs.clients` did not fit, and was not bent.** It is built for
+  connections Light Table dials or accepts, keyed by a client id and rendered
+  in the Connect bar. A language server is a child process this window owns,
+  addressed by project root, and there is nothing for a user to connect to. So
+  `lt.objs.clients.lsp` is a sibling: a connection is an atom, and the events a
+  user can see are raised on one `:lsp.client` object with the connection as an
+  argument. Adding a Connect bar entry later is additive; starting there would
+  have meant inventing a client id nobody names.
+
+And one thing the design did not anticipate at all: a line widget must be a
+single element. Handing CodeMirror a document fragment is the obvious way to
+give a line several diagnostics and it throws inside `addLineWidget` —
+*after* the nodes are in the measuring container, so they are on screen while
+the widget that should own them does not exist.

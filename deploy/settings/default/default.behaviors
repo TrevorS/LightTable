@@ -161,6 +161,17 @@
 
  [:editor :lt.objs.document/close-document-on-editor-close]
  [:editor :lt.objs.editor/active-on-focus]
+ ;; The language-server client object, which is one per window and receives
+ ;; every server's notifications.
+ [:lsp.client :lt.objs.editor.lsp/on-notification]
+ [:lsp.client :lt.objs.editor.lsp/on-stderr]
+ [:lsp.client :lt.objs.editor.lsp/on-exit]
+ [:lsp.client :lt.objs.editor.lsp/on-error]
+ [:lsp.client :lt.objs.editor.lsp/on-ready]
+ [:editor :lt.objs.editor.lsp/use-language-server]
+ [:editor :lt.objs.editor.lsp/sync-on-change]
+ [:editor :lt.objs.editor.lsp/close-document]
+ [:app :lt.objs.editor.lsp/shutdown-servers-on-close]
  [:editor :lt.objs.editor.treesitter/use-treesitter]
  [:editor :lt.objs.editor.treesitter/reparse-on-change]
  [:editor :lt.objs.editor.treesitter/dispose-highlighter]

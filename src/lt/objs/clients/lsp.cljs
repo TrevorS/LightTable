@@ -10,10 +10,13 @@
   See doc/lsp-architecture.md for why the protocol lives in the editor rather
   than in each language plugin, and what the remaining layers are.
 
-  **Not yet wired to any editor.** This is the connection; document
-  synchronisation and the surfaces that render results are the next slice."
+  Every event this raises carries the connection it came from, because one
+  Light Table window talks to several servers at once and they all report to
+  the same object. `:lsp.exit` without a connection is a message that cannot
+  be acted on."
   (:require [clojure.string :as string]
             [lt.object :as object]
+            [lt.objs.clients.lsp.sync :as sync]
             [lt.objs.clients.lsp.wire :as wire]
             [lt.util.bridge :as bridge]))
 
@@ -24,12 +27,6 @@
   a spinner that never stops is not, and neither is a callback that is never
   called and never released."
   30000)
-
-(defonce ^:private servers
-  ;; Every live connection, keyed by an id we mint. An atom rather than an
-  ;; object because most of what happens here is not a Light Table event —
-  ;; only the parts a user can see are.
-  (atom {}))
 
 (defn- next-id
   "Request ids are per connection and monotonic, which is all JSON-RPC asks."
@@ -44,10 +41,21 @@
   (when-let [^js handle (:handle @conn)]
     (.write handle (wire/encode-string message))))
 
+(defn- send!
+  "Write a message, or hold it until the handshake finishes.
+
+  Everything shares one queue so that order is preserved: a `didOpen` that
+  overtakes the `initialize` it was queued behind describes a document to a
+  server that does not yet know the project exists."
+  [conn msg]
+  (if (:initialized? @conn)
+    (write! conn msg)
+    (swap! conn update :queued conj msg)))
+
 (defn notify!
   "Send a notification, which expects no reply."
   [conn method params]
-  (write! conn (wire/notification method params)))
+  (send! conn (wire/notification method params)))
 
 (defn request!
   "Send a request and call `callback` with `{:result}` or `{:error}`.
@@ -73,9 +81,9 @@
                   request-timeout-ms)]
      (swap! conn update :pending assoc id
             (fn [outcome] (js/clearTimeout timeout) (callback outcome)))
-     (if (or immediate? (:initialized? @conn))
+     (if immediate?
        (write! conn msg)
-       (swap! conn update :queued conj msg))
+       (send! conn msg))
      id)))
 
 (defn- flush-queue! [conn]
@@ -95,7 +103,7 @@
         (cb (if error {:error error} {:result result})))
     ;; A response to a request that already timed out. Dropping it is correct;
     ;; saying so is how a too-short timeout gets noticed.
-    (object/raise (:object @conn) :lsp.stray-response id)))
+    (object/raise (:object @conn) :lsp.stray-response id conn)))
 
 (defn- handle-request!
   "Answer a request the *server* sent us.
@@ -116,7 +124,7 @@
     "client/registerCapability" (write! conn (wire/response id nil))
     "client/unregisterCapability" (write! conn (wire/response id nil))
     (do
-      (object/raise (:object @conn) :lsp.unhandled-request msg)
+      (object/raise (:object @conn) :lsp.unhandled-request msg conn)
       (write! conn (wire/error-response id method-not-found
                                         (str "Light Table does not implement " method))))))
 
@@ -124,13 +132,13 @@
   (case (wire/message-kind msg)
     :response (handle-response! conn msg)
     :request (handle-request! conn msg)
-    :notification (object/raise (:object @conn) :lsp.notification msg)
-    (object/raise (:object @conn) :lsp.unknown-message msg)))
+    :notification (object/raise (:object @conn) :lsp.notification msg conn)
+    (object/raise (:object @conn) :lsp.unknown-message msg conn)))
 
 (defn- handle-bytes! [conn chunk]
   (let [{:keys [buffer messages errors]} (wire/feed (:buffer @conn) chunk)]
     (swap! conn assoc :buffer buffer)
-    (doseq [e errors] (object/raise (:object @conn) :lsp.wire-error e))
+    (doseq [e errors] (object/raise (:object @conn) :lsp.wire-error e conn))
     (doseq [m messages] (handle-message! conn m))))
 
 ;;*********************************************************
@@ -139,8 +147,8 @@
 
 (defn- initialize-params [root-path]
   {:processId nil
-   :rootUri (str "file://" root-path)
-   :workspaceFolders [{:uri (str "file://" root-path)
+   :rootUri (sync/->uri root-path)
+   :workspaceFolders [{:uri (sync/->uri root-path)
                        :name (last (string/split root-path #"/"))}]
    :capabilities
    {:textDocument
@@ -173,14 +181,14 @@
     (.onStdoutBytes handle (fn [chunk] (handle-bytes! conn chunk)))
     ;; stderr is where a server explains itself when it will not start, so it
     ;; goes somewhere a plugin author will look rather than nowhere.
-    (.onStderr handle (fn [text] (object/raise object :lsp.stderr text)))
+    (.onStderr handle (fn [text] (object/raise object :lsp.stderr text conn)))
     (.onExit handle (fn [code]
                       (swap! conn assoc :initialized? false :handle nil)
                       (doseq [[_ cb] (:pending @conn)]
                         (cb {:error {:code :exited :message "the language server exited"}}))
                       (swap! conn assoc :pending {})
-                      (object/raise object :lsp.exit code)))
-    (.onError handle (fn [message] (object/raise object :lsp.error message)))
+                      (object/raise object :lsp.exit code conn)))
+    (.onError handle (fn [message] (object/raise object :lsp.error message conn)))
 
     ;; The handshake. `initialize` is a request; `initialized` is the
     ;; notification that tells the server the client is ready for real work,
@@ -188,12 +196,15 @@
     (request! conn "initialize" (initialize-params root-path)
               (fn [{:keys [result error]}]
                 (if error
-                  (object/raise object :lsp.error (str "initialize failed: " (:message error)))
+                  (object/raise object :lsp.error
+                                (str "initialize failed: " (:message error)) conn)
                   (do
                     (swap! conn assoc :initialized? true :capabilities (:capabilities result))
-                    (notify! conn "initialized" {})
+                    ;; `initialized` first, and outside the queue it just
+                    ;; opened, because it is what makes the rest legal.
+                    (write! conn (wire/notification "initialized" {}))
                     (flush-queue! conn)
-                    (object/raise object :lsp.ready result)
+                    (object/raise object :lsp.ready result conn)
                     (when on-ready (on-ready result)))))
               {:immediate? true})
     conn))
@@ -222,12 +233,7 @@
   [conn]
   (boolean (:initialized? @conn)))
 
-(defn register!
-  "Remember a connection under `id`, so a later editor can find it."
-  [id conn]
-  (swap! servers assoc id conn)
-  conn)
-
-(defn for-id [id] (get @servers id))
-
-(defn all [] @servers)
+(defn alive?
+  "Whether the server process is still running."
+  [conn]
+  (some? (:handle @conn)))

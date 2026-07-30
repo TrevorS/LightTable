@@ -17,7 +17,7 @@
             [lt.objs.connector]
             [lt.objs.dev]
             [lt.objs.editor.treesitter]
-            [lt.objs.clients.lsp]
+            [lt.objs.editor.lsp]
             [lt.objs.docs]
             [lt.objs.find]
             [lt.objs.intro]
