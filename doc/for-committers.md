@@ -118,7 +118,25 @@ What the release does **not** include:
   has the Cygwin path, and it is untested.
 - **Notarised macOS binaries.** The bundle is ad-hoc signed, which is what lets
   it run at all on Apple Silicon. It is not signed with an Apple Developer ID
-  and not notarised, so Gatekeeper will ask on first launch.
+  and not notarised, so Gatekeeper will refuse it on first launch — an archive
+  downloaded by a browser carries a quarantine flag, and for an app with no
+  Developer ID that is a refusal rather than a prompt:
+
+  ```sh
+  tar xzf LightTable-<version>-mac.tar.gz
+  xattr -dr com.apple.quarantine LightTable.app
+  open LightTable.app
+  ```
+
+  Right-click → Open reaches the same place through the UI. Neither is a
+  workaround for a broken build; it is what an unnotarised app costs.
+
+## Trying a branch before releasing it
+
+A tag is a public, permanent claim about a version, and "does this run on your
+Mac" should not need one. Actions → **build** → *Run workflow*, picking the
+branch, packages both platforms and keeps them as artifacts on the run — same
+steps as a release, no tag, nothing published. Download from the run page.
 
 ## API documentation
 
