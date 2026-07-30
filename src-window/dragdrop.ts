@@ -65,6 +65,10 @@ export function sortable(me: Element, options: SortableOptions): void {
     }
 
     function dragStart(this: Element): void {
+        // `this` is the dragged element, which is the one thing a dragstart
+        // listener is told. Not an alias for convenience: `dragging` outlives
+        // the handler, and every other function here reads it.
+        // eslint-disable-next-line @typescript-eslint/no-this-alias
         dragging = this;
         dom.add_class(me, "dragging");
         dom.css(gap, { height: dom.height(dragging) + "px",

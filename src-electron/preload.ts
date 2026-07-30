@@ -630,7 +630,7 @@ const bridge: LightTableBridge = {
             // tar's own replacement for the streaming Extract class this used
             // to be will not create the target directory.
             fs.mkdirSync(dest, { recursive: true });
-            // eslint-disable-next-line @typescript-eslint/no-require-imports
+             
             const tar = require(__dirname + '/node_modules/tar');
             return tar.x({ file: archive, cwd: dest }) as Promise<void>;
         }

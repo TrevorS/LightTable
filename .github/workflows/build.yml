@@ -50,9 +50,14 @@ jobs:
         run: npm run build:main
 
       # The window's own TypeScript, required by lt.objs.sidebar.command and
-      # lt.objs.tabs, so it has to exist before the smoke test boots.
-      - name: Type-check and build the window modules
-        run: npm run build:window
+      # lt.objs.tabs, so it has to exist before the smoke test boots. The
+      # worker's is bundled into worker.js, and the browser client is served to
+      # connecting pages; both are wanted before anything runs too.
+      - name: Type-check and build the window, worker and browser modules
+        run: |
+          npm run build:window
+          npm run build:worker
+          npm run build:browser
 
       - name: Unit tests
         run: |

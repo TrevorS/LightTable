@@ -31,9 +31,9 @@
 /target/
 /codox/
 /deploy/core/lighttable/background/worker.js
+/deploy/core/lighttable/ws.js
 /deploy/core/main.js
 /deploy/core/main.js.map
-/deploy/core/window/
 /deploy/core/preload.js
 /deploy/core/browserInjection.js
 /deploy/core/browserInjection.js.map

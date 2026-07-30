@@ -1,0 +1,31 @@
+{
+  "compilerOptions": {
+    // Runs in a page Light Table has connected to, not in Light Table. Old
+    // browsers are a real possibility here in a way they are not anywhere else
+    // in this repository, so this is the one target that downlevels.
+    "target": "ES2017",
+    "lib": ["ES2017", "DOM"],
+    "types": [],
+
+    // "none": the output is served to a page by a script tag, so it has to be
+    // a plain script. src-browser/ws.ts has no imports or exports for exactly
+    // this reason, and this setting is what makes adding one an error rather
+    // than a file that silently stops working when a browser loads it.
+    "module": "none",
+    "moduleResolution": "node",
+
+    "strict": true,
+    "noImplicitOverride": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+
+    "rootDir": "src-browser",
+    // Straight to where lt.objs.clients.ws reads it from and the bridge serves
+    // it: this file is not bundled into anything.
+    "outDir": "deploy/core/lighttable",
+    "sourceMap": false,
+    "newLine": "lf",
+    "forceConsistentCasingInFileNames": true
+  },
+  "include": ["src-browser/**/*.ts"]
+}

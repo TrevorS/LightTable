@@ -61,9 +61,9 @@ interface MenuDescription {
 }
 
 declare global {
-    // eslint-disable-next-line no-var
+     
     var browserOpenFiles: string[];
-    // eslint-disable-next-line no-var
+     
     var browserParsedArgs: ParsedArgs;
 }
 
@@ -89,14 +89,14 @@ const packageJSON = require(__dirname + '/package.json');
 
 // Returns Window object
 function createWindow(): electron.BrowserWindow {
-    let browserWindowOptions = packageJSON.browserWindowOptions;
+    const browserWindowOptions = packageJSON.browserWindowOptions;
     browserWindowOptions.icon = __dirname + '/' + browserWindowOptions.icon;
     // Electron resolves neither of these relative to the app directory.
     if (browserWindowOptions.webPreferences?.preload) {
         browserWindowOptions.webPreferences.preload =
             __dirname + '/' + browserWindowOptions.webPreferences.preload;
     }
-    let window = new BrowserWindow(browserWindowOptions);
+    const window = new BrowserWindow(browserWindowOptions);
     windows[window.id] = window;
     window.focus();
     window.webContents.on("will-navigate", function(e) {
@@ -182,7 +182,7 @@ function toMenuTemplate(sender: electron.WebContents, item: MenuDescription): el
 }
 
 function buildMenu(sender: electron.WebContents, items: (MenuDescription | null)[]): electron.Menu {
-    let menu = new Menu();
+    const menu = new Menu();
     (items || [])
         .filter((item): item is MenuDescription => Boolean(item))
         .forEach(function(item) {
@@ -213,7 +213,7 @@ function registerRendererApi(): void {
     });
 
     ipcMain.on("lt:window-state", function(event) {
-        let window = windowFor(event);
+        const window = windowFor(event);
         const state: WindowState | null = window ? {
             id: window.id,
             size: window.getSize(),
@@ -224,7 +224,7 @@ function registerRendererApi(): void {
     });
 
     ipcMain.on("lt:window-call", function(event, method: string, args: unknown[]) {
-        let window = windowFor(event);
+        const window = windowFor(event);
         if (!window) return;
         // The renderer names the method, so this used to be any function on
         // BrowserWindow — a channel that reads "call whatever you like on the

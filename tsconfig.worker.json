@@ -1,0 +1,30 @@
+{
+  "compilerOptions": {
+    // Runs on the worker thread, which is a forked node process rather than a
+    // window — so Node types, and no DOM.
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "types": ["node"],
+
+    "module": "commonjs",
+    "moduleResolution": "node",
+
+    "strict": true,
+    "noImplicitOverride": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+
+    "rootDir": "src-worker",
+    // Onto the ClojureScript source path, the same way src-window is: the
+    // worker's namespaces live at lt/background/, so shadow-cljs resolves
+    // "./walkdir.js" against that classpath directory and bundles the result
+    // into worker.js. They used to be read off the install directory at
+    // runtime, which kept them invisible to the compiler.
+    "outDir": "src-gen/lt/background",
+    "sourceMap": true,
+    "newLine": "lf",
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true
+  },
+  "include": ["src-worker/**/*.ts"]
+}

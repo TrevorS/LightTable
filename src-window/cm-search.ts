@@ -55,7 +55,6 @@ import CodeMirror = require('codemirror');
     return s.match(/^\/(.+)\/([a-z]*)$/);
   }
   function parseQuery(query: string) {
-    var ignoreCase = query == query.toLowerCase();
     var isRE = isRegex(query);
     try {
       var rx = new RegExp(isRE[1], isRE[2].indexOf("i") == -1 ? "" : "i");

@@ -50,6 +50,16 @@
   {:target    :node-script
    :main      lt.background.worker/main
    :output-to "deploy/core/lighttable/background/worker.js"
+
+   ;; :shadow rather than the node target's usual :require, for the same reason
+   ;; the app build uses it: the worker's own JavaScript is compiled from
+   ;; src-worker into src-gen/lt/background, and a runtime require would be
+   ;; resolved against the output file's directory rather than the source path.
+   ;; Node's own builtins stay external.
+   :js-options {:js-provider :shadow
+                :js-package-dirs ["deploy/core/node_modules" "node_modules"]
+                :keep-as-require #{"fs" "path"}}
+
    :compiler-options {:optimizations :simple
                       :pretty-print  true}}
 

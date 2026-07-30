@@ -497,11 +497,12 @@ rather than carried:
 | `util/keyevents.js` | 1,086 | Mousetrap 1.6.0, Apache 2.0 | **A real fork.** Diffed against upstream 1.6.0: four Light Table deviations, all comment-marked — a `handleKeyUp` hook, a `keyDownOnly` helper, a rewrite of the keydown/keypress/keyup dispatch so a keypress character can be paired with its keydown keycode, and a backported numpad fix (upstream PR #258). Not replaceable with the npm package: deviation three is inside a private function. Port. |
 | `util/throttle.js` | 9 | jQuery throttle/debounce 1.1, Ben Alman, 2010 | **Gone.** Minified, reached through a global called `Cowboy`, and twenty lines of standard behaviour. Now `lt.util.js/throttle` and `/debounce`, with tests. |
 | `util/fuzzy.js` | 110 | `string_score` (minified) plus Light Table's own `wrapMatch` | Patches `String.prototype.score`. Port; the monkey patch should not survive it. |
-| forked CodeMirror addons | 281 | CodeMirror | Vendored forks. Leave them — typing them means diverging further from upstream. |
+| forked CodeMirror addons | 281 | CodeMirror | Vendored forks. Judged not worth typing here; later reversed — see below. Typing them against real CodeMirror 5 declarations cost less than expected and found two dead locals. |
 
 **Light Table's own hand-written JavaScript**: `ws.js` (175, the socket.io shim
 served to connected browsers), `ui/dragdrop.js` (100), `background/behaviorsParser.js`
-(121), `background/walkdir2.js` (74). All portable, none large.
+(121), `background/walkdir2.js` (74). All portable, none large — and all four are
+TypeScript now.
 
 **This project's own tooling**: `script/smoke-test.js` and `script/screenshot.js`.
 
@@ -973,17 +974,59 @@ The privileged half is done — `src-electron/`, compiled to `deploy/core` by a
 That was the part worth doing first because it is where the privilege is. Every
 capability added to the bridge lands there, and it is where the bugs were.
 
-What is left is 1,832 lines, and it does not all deserve the same answer.
+**The rest is done too. Light Table ships no hand-written JavaScript.** Four
+source roots, one per place code runs, because each has a different set of
+globals and typing them together would mean typing none of them:
 
-| | lines | notes |
+| root | runs in | emitted to |
 |---|---|---|
-| `script/smoke-test.js`, `script/screenshot.js` | 376 | This project's tooling. Types would have caught the probe mistakes made while writing them. |
-| `ws.js`, `dragdrop.js`, `fuzzy.js`, `behaviorsParser.js`, `walkdir2.js` | 580 | Light Table's own runtime scripts, plus one vendored scorer inside `fuzzy.js`. Worth porting; none are large. |
-| `util/keyevents.js` | 1,097 | Mousetrap 1.6.5, forked. Deliberately **not** ported — see below. |
-| forked CodeMirror addons | 281 | Vendored forks; typing them means diverging further from upstream. Leave them. |
+| `src-electron/` | the main process and the preload | `deploy/core/` |
+| `src-window/` | the editor window — DOM, and `"types": []` | `src-gen/lt/window/`, bundled |
+| `src-worker/` | the worker thread — `"types": ["node"]`, no DOM | `src-gen/lt/background/`, bundled |
+| `src-browser/` | a page Light Table has connected to | `deploy/core/lighttable/`, served |
 
-`throttle.js` is no longer on this list: it was nine lines of minified 2010
+`src-window`'s empty `types` is the point rather than an oversight: a window
+namespace that wants something from Node goes through the bridge, so it should
+not be able to name `fs` at all. `src-browser` is the only root that downlevels,
+to ES2017, because the page loading it is someone else's; it also compiles with
+`"module": "none"`, so an `import` added to a file served to a script tag is a
+compile error rather than something a browser discovers.
+
+The last three ports were `behaviorsParser.js` and `walkdir2.js` — the worker's
+behavior parser and directory walker, now bundled into `worker.js` rather than
+read off the install directory at runtime, which is the last of what
+`lt.background.runtime`'s docstring set out to do — and `ws.js`, the client
+served to connecting browsers.
+
+Two differences worth recording, since a port is supposed to preserve
+behaviour:
+
+- **`walkdir2.js` consumed its argument.** It assigned the caller's array
+  straight to its work queue and drained it, so a second call with the same
+  array found nothing. The port copies. Nothing hit it — the only caller passes
+  a single path — but it was real, and it is what a differential test finds and
+  a reading does not.
+- **`behaviorsParser.js` labels a nested atom as a keyword.** Almost certainly a
+  slip in the original, and preserved: behavior files are read back by position
+  and value rather than by that label, so changing it would alter how they
+  render for no gain.
+
+Both were checked by running the old implementation against the new one on every
+`.behaviors` and `.keymap` file in the tree plus deliberately broken input, and
+on five directory walks. Identical throughout, once the mutation above is
+accounted for. `ws.js` was driven in a stubbed page through all four eval
+commands, the watch path, and a cyclic value.
+
+`throttle.js` is not on this list because it was nine lines of minified 2010
 jQuery plugin, and it is ClojureScript with tests now.
+
+**`npm run lint:js` now covers the TypeScript too**, which it had to once there
+was no JavaScript left for it to lint — `typescript-eslint` was a dependency
+doing nothing. Three of its recommended rules are off, each for a stated reason:
+`no-explicit-any` (every one is at a boundary with an untyped foreign API, and
+`strict` is what guards Light Table's own types), `no-require-imports` (these
+compile to CommonJS because that is what loads them), and `no-var` for the two
+CodeMirror forks alone. Everything else passes with zero findings.
 
 **Mousetrap came off it for the opposite reason.** The rule elsewhere is that
 lifted code gets ported, but this file is not edited, and typing it would
@@ -1004,11 +1047,10 @@ Before touching it, `script/smoke-test.sh` gained a check that dispatches a real
 keyboard, and the fork exists specifically to route `keydown`/`keypress`/`keyup`
 differently — if that routing broke, every other check would still have passed.
 
-The same reasoning keeps the forked CodeMirror addons as they are.
-
-The window's own scripts are loaded as global-scope `<script>` tags or through
-`load/js`, so porting them is also the remaining half of the eval question — a
-module that declares its exports can be `require`d instead of evaluated.
+The same reasoning applies to the forked CodeMirror addons — but only to their
+`var` declarations, which stay. They were ported: `src-window/cm-search.ts` and
+`cm-hint.ts`, against real CodeMirror 5 types in `src-window/codemirror.d.ts`
+rather than `any`. Typing them found two dead locals that a reading had not.
 
 ## CodeMirror
 

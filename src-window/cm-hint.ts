@@ -5,7 +5,7 @@ CodeMirror.positionHint = function(cm: CMEditor, hints: HTMLElement, from: CMPos
 
   // If we're at the edge of the screen, then we want the menu to appear on the left of the cursor.
   var pos = cm.cursorCoords(from);
-  var left = pos.left, top = pos.bottom, below = true;
+  var left = pos.left, top = pos.bottom;
   hints.style.left = left + "px";
   hints.style.bottom = "";
   hints.style.top = top + "px";
@@ -25,7 +25,6 @@ CodeMirror.positionHint = function(cm: CMEditor, hints: HTMLElement, from: CMPos
     var height = box.bottom - box.top;
     if (box.top - (pos.bottom - pos.top) - height > 0) {
       overlapY = height + (pos.bottom - pos.top);
-      below = false;
       hints.style.top = "";
       hints.style.bottom = winH - pos.top + 5 + "px";
     } else if (height > winH) {

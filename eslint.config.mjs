@@ -1,9 +1,11 @@
 import js from '@eslint/js';
+import ts from 'typescript-eslint';
 
-// Lints the JavaScript this project owns: build and test tooling, plus the
-// window scripts not yet ported to TypeScript. Everything vendored or
-// generated is ignored — findings there are not ours to act on, and Mousetrap
-// in particular is deliberately kept diffable against upstream.
+// Lints the JavaScript this project owns, which is now build and test tooling
+// and nothing else: everything Light Table ships is TypeScript or vendored.
+// Vendored and generated files are ignored — findings there are not ours to act
+// on, and Mousetrap in particular is deliberately kept diffable against
+// upstream.
 export default [
     {
         ignores: [
@@ -15,14 +17,49 @@ export default [
             'deploy/core/lighttable/paredit.js',
             'deploy/core/lighttable/background/worker.js',
             'deploy/core/main.js', 'deploy/core/preload.js',
-            'deploy/core/browserInjection.js', 'deploy/core/window/**',
+            'deploy/core/browserInjection.js',
+            'deploy/core/lighttable/ws.js',
             'plugins/**/*_compiled.js',
             // Vendored: Mousetrap, kept diffable against upstream.
             'deploy/core/lighttable/util/keyevents.js'
         ]
     },
+    // The TypeScript Light Table ships. tsc already has the types; what eslint
+    // adds is the things a type checker does not look for — an unused binding,
+    // a floating promise, a `catch` that swallows.
+    ...ts.configs.recommended.map((config) => ({
+        ...config,
+        files: ['src-electron/**/*.ts', 'src-window/**/*.ts',
+                'src-worker/**/*.ts', 'src-browser/**/*.ts']
+    })),
     {
-        files: ['script/**/*.js', 'deploy/core/lighttable/**/*.js'],
+        files: ['src-electron/**/*.ts', 'src-window/**/*.ts',
+                'src-worker/**/*.ts', 'src-browser/**/*.ts'],
+        rules: {
+            // Unused arguments are how callback signatures document themselves.
+            '@typescript-eslint/no-unused-vars': ['warn', { args: 'none', caughtErrors: 'none' }],
+            // Every `any` here is at a boundary with an API that has no types
+            // worth having — Electron's `console-message`, CodeMirror 5's
+            // untyped addon surface. `strict` is what guards Light Table's own
+            // types; banning the escape hatch at the edges buys a cast instead.
+            '@typescript-eslint/no-explicit-any': 'off',
+            // These compile to CommonJS because that is what loads them:
+            // shadow-cljs bundles the window and worker modules, and Electron
+            // loads main and preload. `import x = require(...)` is the correct
+            // form for that, not a lapse.
+            '@typescript-eslint/no-require-imports': 'off'
+        }
+    },
+    {
+        // Light Table's forks of two CodeMirror addons. They have drifted from
+        // upstream deliberately, but the bodies are still recognisably its
+        // code, and `var` throughout is part of what makes them readable next
+        // to it. Rewriting the declarations would buy style and cost that.
+        files: ['src-window/cm-*.ts'],
+        rules: { 'no-var': 'off', 'prefer-const': 'off' }
+    },
+    {
+        files: ['script/**/*.js'],
         ...js.configs.recommended,
         languageOptions: {
             ecmaVersion: 2022,
@@ -35,10 +72,7 @@ export default [
                 setInterval: 'readonly', clearInterval: 'readonly',
                 window: 'readonly', document: 'readonly', navigator: 'readonly',
                 performance: 'readonly', lt: 'readonly', CodeMirror: 'readonly',
-                define: 'readonly',
-                // ws.js is served to connecting browsers, not run here.
-                io: 'readonly', cljs: 'readonly', lttools: 'writable',
-                jQuery: 'readonly', Element: 'readonly'
+                define: 'readonly'
             }
         },
         rules: {
@@ -48,10 +82,6 @@ export default [
             // `catch (e) {}` is deliberate in several probes: the failure is
             // the answer.
             'no-empty': ['error', { allowEmptyCatch: true }],
-            // Pre-existing var redeclaration in scripts that predate this
-            // work. Worth seeing, not worth blocking on.
-            'no-redeclare': 'warn',
-            'no-useless-assignment': 'warn',
             eqeqeq: 'off'
         }
     }
