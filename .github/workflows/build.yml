@@ -1,0 +1,70 @@
+name: build
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            deploy/core/package-lock.json
+
+      - name: Cache Maven dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2
+          key: m2-${{ hashFiles('shadow-cljs.edn', 'package-lock.json') }}
+          restore-keys: m2-
+
+      - name: Install build tooling
+        run: npm ci
+
+      - name: Install core dependencies
+        working-directory: deploy/core
+        run: npm ci
+
+      - name: Unit tests
+        run: |
+          npx shadow-cljs compile test
+          node target/test.js
+
+      # shadow-cljs exits non-zero when compilation fails, but warnings alone do
+      # not fail it. Externs inference warnings are expected and harmless at
+      # :simple; anything else is worth stopping for.
+      - name: Compile
+        run: |
+          set -o pipefail
+          npx shadow-cljs release app worker 2>&1 | tee build.log
+          # -a because shadow colours its output, so the log is not plain text
+          if grep -aoE 'WARNING #[0-9]+ - :[a-z-]+' build.log | grep -qv ':infer-warning'; then
+            echo "::error::Unexpected ClojureScript warnings"
+            grep -aoE 'WARNING #[0-9]+ - :[a-z-]+' build.log | grep -v ':infer-warning'
+            exit 1
+          fi
+
+      # The failures this project actually hits are load-time and cross-process
+      # ones, which only show up in the assembled app.
+      - name: Install Electron
+        working-directory: deploy/electron
+        run: npm ci
+
+      - name: Smoke test
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y xvfb
+          script/smoke-test.sh

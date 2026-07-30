@@ -4,20 +4,13 @@
             [lt.objs.context :as ctx]
             [lt.objs.command :as cmd]
             [lt.util.dom :as dom]
-            [lt.objs.thread]
             [lt.objs.editor :as editor]
             [clojure.string :as string]
-            [lt.util.js :refer [wait]])
-  (:require-macros [lt.macros :refer [behavior background defui]]))
+            [lt.util.js :refer [wait]]
+            [lt.objs.thread :as thread])
+  (:require-macros [lt.macros :refer [behavior defui]]))
 
-(def flat-parser (background (fn [obj-id contents]
-                               (let [StringStream (-> (js/require (str js/ltpath "/core/node_modules/codemirror/addon/runmode/runmode.node.js"))
-                                                      (.-StringStream))
-                                     parser (-> (js/require (str js/ltpath "/core/lighttable/background/behaviorsParser.js"))
-                                                (.-parseFlat))
-                                     parsed (-> (StringStream. contents)
-                                                (parser))]
-                                 (js/_send obj-id :parsed parsed)))))
+(def flat-parser (thread/job :parse-behaviors))
 
 
 (defn str->ns-keyword [s]

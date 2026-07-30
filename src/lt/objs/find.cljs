@@ -11,7 +11,9 @@
             [lt.objs.editor :as editor]
             [lt.util.dom :as dom]
             [singultus.binding :refer [bound subatom]]
-            [lt.util.style :refer [->px]])
+            [lt.util.style :refer [->px]]
+            ;; Registers itself on the CodeMirror module; nothing to bind.
+            ["codemirror/addon/search/searchcursor"])
   (:require-macros [lt.macros :refer [behavior defui]]))
 
 (def find-height 30)
@@ -157,7 +159,7 @@
           :reaction (fn [this]
                       ;; TODO: use addon/search/search.js
                       (load/js "core/lighttable/codemirror_addons/search.js" :sync)
-                      (load/js "core/node_modules/codemirror/addon/search/searchcursor.js" :sync)))
+                      ))
 
 (def bar (object/create ::find-bar))
 (statusbar/add-container bar)

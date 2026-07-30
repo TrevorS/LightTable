@@ -5,7 +5,7 @@
             [lt.objs.platform :as platform]
             [lt.objs.console :as console]
             [cljs.reader :as reader])
-  (:require-macros [lt.macros :refer [behavior background]]))
+  (:require-macros [lt.macros :refer [behavior]]))
 
 (def cp (js/require "child_process"))
 
@@ -58,14 +58,13 @@
           :reaction (fn [app]
                       (object/raise worker :kill!)))
 
-;; Provides a forked thread, mainly for use with background macro. Parent thread
-;; sends messages to child thread. Child thread performs work and sends results
-;; back to parent thread.
+;; A forked node process running the compiled lt.background.worker bundle. The
+;; renderer sends it the name of a job to run; results come back as messages.
 (object/object* ::worker-thread
                 :tags #{:worker-thread}
                 :queue []
                 :init (fn [this]
-                        (let [worker (.fork cp (files/lt-home "/core/lighttable/background/threadworker.js")
+                        (let [worker (.fork cp (files/lt-home "/core/lighttable/background/worker.js")
                                             (clj->js ["--harmony"])
                                             (clj->js {:execPath js/process.execPath
                                                       :silent true
@@ -97,34 +96,23 @@
 (defn send [msg]
   (object/raise worker :try-send! msg))
 
-(defn thread* [func]
-  (let [func-str (str "" func)
-        n (gensym "threadfunc")] ;;trim off the errant return and outer function
-    (send {:msg "register"
-           :name n
-           :func func-str})
-    (fn [obj & args]
-      (send {:msg "call"
-             :name n
-             :obj (object/->id obj)
-             :params (map pr-str args)}))))
+(defn job
+  "Return a fn that runs the worker job registered under `job-key` in
+  lt.background.worker, for the object it is given.
+
+  This used to take the function itself, stringify it, and send the source over
+  for the worker to eval. Naming the job instead means the worker is compiled
+  like the rest of the codebase, and the two sides can be checked against each
+  other rather than only failing at runtime."
+  [job-key]
+  (fn [obj & args]
+    (send {:msg "call"
+           :job (name job-key)
+           :obj (object/->id obj)
+           :params (map pr-str args)})))
 
 ;;NOTE: Because functions are defined at load time, we need to pre-add the worker behaviors so that
 ;;      the defined functions are sent correctly
 (object/tag-behaviors :worker-thread [::kill! ::connect ::send! ::queue! ::try-send ::message])
 
 (def worker (object/create ::worker-thread))
-
-(comment
-
-(object/raise test :kill!)
-(object/destroy! test)
-
-(def t (background (fn [m]
-          (.log js/console "this is a message! " m)
-          )))
-
-(t test "blah")
-
-
-  )

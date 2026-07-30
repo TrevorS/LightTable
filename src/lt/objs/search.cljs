@@ -18,27 +18,9 @@
             [clojure.string :as string]
             [lt.objs.editor :as editor]
             [lt.objs.editor.pool :as pool])
-  (:require-macros [lt.macros :refer [behavior defui extract foreach background]]))
+  (:require-macros [lt.macros :refer [behavior defui extract foreach]]))
 
-(def search! (background (fn [obj-id opts]
-                           (let [replacer (js/require (str js/ltpath "/core/node_modules/replace"))
-                                 search (if-let [pattern (re-seq #"^/(.+)/$" (:search opts))]
-                                          (js/RegExp. (-> pattern first second))
-                                          (:search opts))
-                                 final (replacer (clj->js {:regex search
-                                                           :exclude (when (:exclude opts)
-                                                                      (js/RegExp. (:exclude opts)))
-                                                           :recursive true
-                                                           :ignoreCase (-> (re-seq #"[A-Z]" (:search opts))
-                                                                           (boolean)
-                                                                           (not))
-                                                           :replacement (:replacement opts)
-                                                           :paths (:paths opts)
-                                                           :result (fn [r]
-                                                                     (js/_send obj-id :result r))}))]
-                             (raise obj-id :done-searching {:total (.-totalFiles final)
-                                                            :time (.-time final)
-                                                            :replace? (boolean (:replacement opts))})))))
+(def search! (thread/job :search))
 
 (def result-threshold 500)
 

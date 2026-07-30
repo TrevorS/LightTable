@@ -10,32 +10,17 @@
             [lt.objs.opener :as opener]
             [lt.objs.sidebar :as sidebar]
             [lt.util.dom :as dom]
-            [lt.objs.thread]
             [lt.util.load :as load]
             [singultus.core :as crate]
-            [singultus.binding :refer [bound subatom]])
-  (:require-macros [lt.macros :refer [behavior defui background]]))
+            [singultus.binding :refer [bound subatom]]
+            [lt.objs.thread :as thread])
+  (:require-macros [lt.macros :refer [behavior defui]]))
 
 
 (defn file-filters [f]
   (re-seq files/ignore-pattern f))
 
-(def populate-bg (background (fn [obj-id {:keys [lim pattern ws]}]
-                               (let [fs (js/require "fs")
-                                     fpath (js/require "path")
-                                     walkdir (js/require (str js/ltpath "/core/lighttable/background/walkdir2.js"))
-                                     grab-files (fn [all-files folder]
-                                                  (let [root-length (inc (count (.dirname fpath folder)))
-                                                        walked (walkdir folder (js-obj "filter" (js/RegExp. pattern)
-                                                                                        "limit" lim))]
-                                                    (.concat all-files (.map (.-paths walked)
-                                                                             #(js-obj "full" %
-                                                                                      "rel" (subs % root-length))))))
-                                     all-files (.reduce (to-array (:folders ws)) grab-files (array))
-                                     other-files (.map (to-array (:files ws)) #(js-obj "full" % "rel" (.basename fpath %)))
-                                     final (.concat all-files other-files)]
-                                 (js/_send obj-id :workspace-files final)
-                                 ))))
+(def populate-bg (thread/job :workspace-files))
 
 (declare sidebar-navigate)
 

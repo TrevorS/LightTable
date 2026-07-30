@@ -7,7 +7,7 @@
             [lt.objs.langs.behaviors :as beh]
             [lt.objs.editor :as editor]
             [clojure.string :as string])
-  (:require-macros [lt.macros :refer [behavior background defui]]))
+  (:require-macros [lt.macros :refer [behavior defui]]))
 
 
 (def completions {:tag (:tag beh/completions)

@@ -92,20 +92,6 @@
   `(let [~start (.getTime (js/Date.))]
      ~@body)))
 
-(defmacro background
-  "Register given func to run on background thread"
-  [func]
-  `(lt.objs.thread/thread*
-    (fn ~(gensym "tfun") []
-      (let [orig# (js/argsArray (cljs.core/js-arguments))
-            msg# (.shift orig#)
-            ;; Array.prototype.map hands the callback (element, index, array), so
-            ;; read-string has to be wrapped rather than passed directly.
-            args# (.map orig# (fn [arg#] (cljs.reader/read-string arg#)))
-            ~'raise (fn [obj# k# v#]
-                      (js/_send obj# k# (pr-str v#) "clj"))]
-        (.apply ~func nil (cljs.core/to-array (cons (.-obj msg#) args#)))))))
-
 (defmacro ^:private aloop [[var arr] & body]
   `(let [arr# ~arr]
      (loop [~var 0]

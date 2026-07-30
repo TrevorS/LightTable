@@ -1,19 +1,12 @@
 # Light Table
-[![Build Status](https://travis-ci.org/LightTable/LightTable.svg?branch=master)](https://travis-ci.org/LightTable/LightTable)
-[![Build Status](https://semaphoreci.com/api/v1/lighttable/lighttable/branches/master/badge.svg)](https://semaphoreci.com/lighttable/lighttable)
-[![Build status](https://ci.appveyor.com/api/projects/status/kwnbeg947lueg2dl?svg=true)](https://ci.appveyor.com/project/prertik/lighttable-1rj5p)
-[![CircleCI](https://circleci.com/gh/LightTable/LightTable.svg?style=svg)](https://circleci.com/gh/LightTable/LightTable)
-[![codecov](https://codecov.io/gh/LightTable/LightTable/branch/master/graph/badge.svg)](https://codecov.io/gh/LightTable/LightTable)
 
-![](https://img.shields.io/github/downloads/LightTable/LightTable/latest/total.svg?style=for-the-badge)
 [![Packaging status](https://repology.org/badge/tiny-repos/lighttable.svg)](https://repology.org/metapackage/lighttable/versions)
-
-[![Join the chat at https://gitter.im/LightTable/LightTable](https://badges.gitter.im/Join%20Chat.svg)](https://gitter.im/LightTable/LightTable?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
-[![Code Shelter](https://www.codeshelter.co/static/badges/badge-flat.svg)](https://www.codeshelter.co/)
 
 Light Table is a next generation code editor that connects you to your creation with instant feedback. Light Table is very customizable and can display anything a [Chromium browser](http://www.chromium.org/) can.
 
-### This is a development branch and is not clean like `master` and can have many breakages.
+> **This is a development branch.** It is not as stable as `master` and can
+> break. Ongoing modernization work is tracked in
+> [CHANGELOG-MODERNIZATION.md](CHANGELOG-MODERNIZATION.md).
 
 ## Downloads
 
@@ -41,11 +34,14 @@ Light Table has a powerful plugin system that allows almost any aspect of the ed
 
 ## Community
 
-Want to ask a question or just say hi? Please do :). Our mailing list is the [Light Table Google group](https://groups.google.com/forum/#!forum/light-table-discussion). We also hang out in `#lighttable` on Freenode IRC.
+Want to ask a question or just say hi? Please do :). Our mailing list is the [Light Table Google group](https://groups.google.com/forum/#!forum/light-table-discussion).
 
 ## For Developers
 
 LightTable is primarily written in [ClojureScript](http://clojure.org/clojurescript). If you aren't familiar with it, check out [David Nolen's tutorial](https://github.com/swannodette/lt-cljs-tutorial).
+
+Building needs a JDK, [Leiningen](https://leiningen.org) and Node. The build is
+verified on JDK 25 and Node 24; see [.github/workflows/build.yml](.github/workflows/build.yml).
 
 In order to develop for Light Table, you will need to [install a developer version of Light Table](doc/developer-install.md). For more information, read [CONTRIBUTING.md](https://github.com/LightTable/LightTable/blob/master/CONTRIBUTING.md#code-contributions) and [For Developers](https://github.com/LightTable/LightTable/wiki/For-Developers).
 

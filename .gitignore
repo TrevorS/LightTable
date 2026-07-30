@@ -15,3 +15,10 @@
 /deploy/core/lighttable/bootstrap.js.map
 /deploy/core/lighttable/cljs/
 /User/
+/deploy/core/lighttable/shadow/
+/.shadow-cljs/
+/node_modules/
+/logs/
+/target/
+/codox/
+/deploy/core/lighttable/background/worker.js

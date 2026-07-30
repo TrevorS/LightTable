@@ -1,0 +1,9 @@
+{
+  "name": "lighttable-build",
+  "version": "0.9.0",
+  "private": true,
+  "description": "Build tooling for Light Table's ClojureScript sources.",
+  "devDependencies": {
+    "shadow-cljs": "^3.4.4"
+  }
+}

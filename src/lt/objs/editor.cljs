@@ -26,7 +26,21 @@
             [lt.util.events :as ev]
             [lt.util.dom :as dom]
             [lt.util.load :as load]
-            [lt.objs.platform :as platform])
+            [lt.objs.platform :as platform]
+            ;; CodeMirror and the addons Light Table always wants. These used to
+            ;; be read off disk and eval'd; requiring them lets the compiler and
+            ;; the module system see them like anything else. Addons have no
+            ;; exports — they register themselves on the CodeMirror they require,
+            ;; which is the same instance bound here.
+            ["codemirror" :as CodeMirror]
+            ["codemirror/addon/edit/matchbrackets"]
+            ["codemirror/addon/edit/closebrackets"]
+            ["codemirror/addon/comment/comment"]
+            ["codemirror/addon/selection/active-line"]
+            ["codemirror/addon/scroll/scrollpastend"]
+            ["codemirror/addon/mode/simple"]
+            ["codemirror/addon/display/rulers"]
+            ["codemirror/keymap/sublime"])
   (:use [lt.util.dom :only [remove-class add-class]]
         [lt.object :only [object* behavior*]])
   (:require-macros [lt.macros :refer [behavior]]))
@@ -743,7 +757,9 @@
 ;; Object
 ;;*********************************************************
 
-(load/js "core/node_modules/codemirror/lib/codemirror.js" :sync)
+;; Light Table's plugin API assumes a global CodeMirror, and so does much of
+;; this codebase. Requiring the module no longer creates one, so publish it.
+(set! (.-CodeMirror js/window) CodeMirror)
 
 (object* ::editor
          :tags #{:editor :editor.inline-result :editor.keys.normal}
@@ -996,28 +1012,22 @@
 (behavior ::init-codemirror
           :triggers #{:init}
           :reaction (fn [this]
-                      (load/js "core/node_modules/codemirror/addon/edit/matchbrackets.js" :sync)
-                      (load/js "core/node_modules/codemirror/addon/edit/closebrackets.js" :sync)
-                      (load/js "core/node_modules/codemirror/addon/comment/comment.js" :sync)
-                      (load/js "core/node_modules/codemirror/addon/selection/active-line.js" :sync)
                       ;; TODO: use addon/mode/overlay.js
                       (load/js "core/lighttable/codemirror_addons/overlay.js" :sync)
-                      (load/js "core/node_modules/codemirror/addon/scroll/scrollpastend.js" :sync)
                       (doseq [file (files/ls (files/lt-home "core/node_modules/codemirror/addon/fold"))
                               :when (= (files/ext file) "js")]
-                        (load/js (str "core/node_modules/codemirror/addon/fold/" file) :sync))
+                        (js/require (files/lt-home (str "core/node_modules/codemirror/addon/fold/" file))))
                       (load/css "node_modules/codemirror/addon/fold/foldgutter.css")
-                      (load/js "core/node_modules/codemirror/keymap/sublime.js" :sync)
-
-                      ;; Provides defineSimpleMode for some modes
-                      (load/js "core/node_modules/codemirror/addon/mode/simple.js" :sync)
+                      ;; Every mode the editor might need, minus those a bundled
+                      ;; plugin provides. Discovered rather than listed because
+                      ;; the set is whatever the installed CodeMirror ships.
                       (doseq [path (files/filter-walk #(and (= (files/ext %) "js")
                                                             (not (some (fn [m] (> (.indexOf % (str "core/node_modules/codemirror/mode/" m "/")) -1))
                                                                        mode-blacklist))
                                                             ;; Remove test files
                                                             (not (.endsWith % "test.js")))
                                                       (files/lt-home "core/node_modules/codemirror/mode"))]
-                        (load/js path :sync))
+                        (js/require path))
                       (aset js/CodeMirror.keyMap.basic "Tab" expand-tab)))
 
 (behavior ::load-addon
@@ -1045,7 +1055,7 @@
                     :example "[{:color \"#cfc\" :column 100 :lineStyle \"dashed\"}]"}]
           :reaction (fn [this rulers]
                       (when-not (.getOption (->cm-ed this) "rulers")
-                        (load/js "core/node_modules/codemirror/addon/display/rulers.js" :sync))
+                        )
                       (let [rulers (or rulers [{:lineStyle "dashed" :color "#aff" :column 80}])]
                         (set-options this {:rulers (clj->js rulers)}))))
 

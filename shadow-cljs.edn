@@ -1,0 +1,43 @@
+;; Build config for shadow-cljs, which builds everything Light Table ships.
+;; project.clj remains only for the codox API docs and builds nothing.
+{:source-paths ["src" "test"]
+
+ :dependencies []
+
+ :builds
+ {:app
+  {:target     :browser
+   :output-dir "deploy/core/lighttable"
+   :asset-path "."
+
+   :modules {:bootstrap {:entries [lt.core]}}
+
+   ;; Node builtins and npm packages stay runtime requires, as they are today.
+   ;; Bundling them is only possible once the renderer stops reaching for node
+   ;; directly, which is a later step.
+   :js-options {:js-provider :require}
+
+   :compiler-options {:optimizations  :simple
+                      :pretty-print   true
+                      :process-shim   false
+                      ;; Light Table's plugin API is the global lt.* namespaces,
+                      ;; and LightTable.html calls lt.objs.app.init() directly,
+                      ;; so the bundle cannot be wrapped in a closure.
+                      :output-wrapper false}}
+
+  ;; The worker thread. Compiled rather than assembled from strings at runtime,
+  ;; so its contents are visible to the compiler like everything else.
+  :worker
+  {:target    :node-script
+   :main      lt.background.worker/main
+   :output-to "deploy/core/lighttable/background/worker.js"
+   :compiler-options {:optimizations :simple
+                      :pretty-print  true}}
+
+  ;; Runs under node, so only namespaces that load without a DOM or an Electron
+  ;; runtime can be exercised here. Anything needing the real app is covered by
+  ;; script/smoke-test.js instead.
+  :test
+  {:target    :node-test
+   :output-to "target/test.js"
+   :ns-regexp "-test$"}}}

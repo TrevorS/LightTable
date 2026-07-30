@@ -11,8 +11,10 @@
             [lt.objs.context :as ctx]
             [clojure.string :as string]
             [lt.util.js :refer [wait]]
-            [lt.util.dom :as dom])
-  (:require-macros [lt.macros :refer [behavior defui background]]))
+            [lt.util.dom :as dom]
+            ;; Registers itself on the CodeMirror module; nothing to bind.
+            ["codemirror/addon/runmode/runmode"])
+  (:require-macros [lt.macros :refer [behavior defui]]))
 
 (defn stream [str]
   (js/CodeMirror.StringStream. str))
@@ -90,45 +92,7 @@
       "paste" true
       false)))
 
-(def w (background (fn [obj-id m]
-                     (.log js/console "M:" (pr-str obj-id) (pr-str m))
-                     (let [StringStream (-> (js/require (str js/ltpath "/core/node_modules/codemirror/addon/runmode/runmode.node.js"))
-                                            (.-StringStream))
-                           stream (fn [s]
-                                    (StringStream. s))
-                           advance (fn [s]
-                                     (set! (.-start s) (.-pos s)))
-                           next* (fn [s]
-                                   (.next s))
-                           peek* (fn [s]
-                                   (.peek s))
-                           current (fn [s]
-                                     (.current s))
-                           skip-space (fn [s]
-                                        (when (and (peek* s) (re-seq #"\s" (peek* s)))
-                                          (.eatSpace s)
-                                          (advance s)))
-                           eat-while (fn [s r]
-                                       (.eatWhile s r))
-                           string->tokens (fn [str pattern]
-                                            (.log js/console "PATTERN" (pr-str pattern))
-                                            (let [s (stream str)
-                                                  pattern (re-pattern pattern)
-                                                  res (js-obj)]
-                                              (.log js/console "REPATTERN" (pr-str pattern))
-                                              (skip-space s)
-                                              (while (peek* s)
-                                                (eat-while s pattern)
-                                                (if-not (empty? (current s))
-                                                  (do
-                                                    (aset res (current s) true)
-                                                    (advance s))
-                                                  (do
-                                                    (next* s)
-                                                    (advance s)))
-                                                (skip-space s))
-                                              (into-array (map #(do #js {:completion %}) (js/Object.keys res)))))]
-                       (js/_send obj-id :hint-tokens (string->tokens (:string m) (:pattern m)))))))
+(def w (thread/job :hint-tokens))
 
 (defn async-hints [this]
   (when @this
