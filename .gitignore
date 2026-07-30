@@ -1,6 +1,8 @@
 /deploy/core/node_modules/*
 /deploy/core/node_modules/clojurescript/cljsDeps/
 /target/
+/.clj-kondo/.cache/
+/src-gen/
 /deploy/plugins/
 /plugins/*/*_compiled.js
 /deploy/core/lighttable/paredit.js

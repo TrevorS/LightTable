@@ -11,7 +11,6 @@
             [clojure.string :as string]
             [singultus.core :as crate]
             [lt.util.dom :refer [$ append remove]])
-  (:use [lt.util.js :only [wait ->clj]])
   (:require-macros [lt.macros :refer [behavior]]))
 
 (def client-name "LightTable-UI")

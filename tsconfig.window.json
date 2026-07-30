@@ -17,7 +17,10 @@
     "exactOptionalPropertyTypes": true,
 
     "rootDir": "src-window",
-    "outDir": "deploy/core/window",
+    // Emitted onto the ClojureScript source path so shadow-cljs can bundle
+    // them: a cljs namespace at lt/window/modules.cljs can require "./fuzzy.js"
+    // and shadow resolves it against the same classpath directory.
+    "outDir": "src-gen/lt/window",
     "sourceMap": true,
     "newLine": "lf",
     "forceConsistentCasingInFileNames": true

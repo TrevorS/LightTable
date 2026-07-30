@@ -13,6 +13,7 @@
 //   script/lt-repl.sh eval '1 + 1'           evaluate in the window
 //   script/lt-repl.sh eval -f probe.js       evaluate a file
 //   script/lt-repl.sh cljs 'files.cwd'       evaluate against lt.objs, munged
+//   script/lt-repl.sh boot-log [secs]        boot fresh, print what it logged
 //   script/lt-repl.sh stop
 //
 // It attaches over the Chrome DevTools Protocol, which main.js already opens a
@@ -140,12 +141,56 @@ function munge(name) {
                .replace(/\*$/, '_STAR_').replace(/^\*/, '_STAR_');
 }
 
-async function start() {
-    if (!fs.existsSync(ELECTRON)) fail('Electron is missing. Run script/build.sh first.');
-    if (!fs.existsSync(path.join(CORE, 'lighttable', 'bootstrap.js'))) fail('No bundle. Run npm run build:cljs.');
+/**
+ * Boot a fresh instance and print everything the renderer logs on the way up.
+ *
+ * A bundle that throws while loading leaves a half-built object graph and no
+ * way to ask it what happened — the console it would have logged to is one of
+ * the things that never got built. This attaches before the page settles and
+ * prints what the renderer actually said.
+ */
+async function bootLog(seconds) {
+    stop();
+    await new Promise((r) => setTimeout(r, 500));
+    const child = spawnApp();
+    const page = await window_(60000);
+    const ws = new WebSocket(page.webSocketDebuggerUrl);
+    const lines = [];
+    let id = 10;
 
-    try { await window_(0); console.log('already running'); return; } catch (e) { /* not up */ }
+    await new Promise((resolve) => {
+        ws.addEventListener('open', () => {
+            ws.send(JSON.stringify({ id: id++, method: 'Runtime.enable' }));
+            ws.send(JSON.stringify({ id: id++, method: 'Log.enable' }));
+            resolve();
+        });
+        ws.addEventListener('error', resolve);
+    });
 
+    ws.addEventListener('message', (ev) => {
+        const msg = JSON.parse(ev.data);
+        if (msg.method === 'Runtime.consoleAPICalled') {
+            const text = (msg.params.args || [])
+                .map((a) => a.value !== undefined ? a.value : (a.description || a.type)).join(' ');
+            lines.push(`[${msg.params.type}] ${text}`);
+        } else if (msg.method === 'Log.entryAdded') {
+            lines.push(`[${msg.params.entry.level}] ${msg.params.entry.text}`);
+        } else if (msg.method === 'Runtime.exceptionThrown') {
+            const d = msg.params.exceptionDetails;
+            const ex = d.exception || {};
+            lines.push(`[uncaught] ${ex.description || d.text}`);
+        }
+    });
+
+    await new Promise((r) => setTimeout(r, seconds * 1000));
+    ws.close();
+    console.log(lines.length ? lines.join('\n') : '(the renderer logged nothing)');
+    if (child) { try { process.kill(-child.pid, 'SIGTERM'); } catch (e) {} }
+    fs.rmSync(STATE, { force: true });
+}
+
+/** Starts the application detached, and records its pid for stop(). */
+function spawnApp() {
     const useXvfb = !process.env.DISPLAY;
     const cmd = useXvfb ? 'xvfb-run' : ELECTRON;
     const args = useXvfb ? ['-a', '--server-args=-screen 0 1280x820x24', ELECTRON, CORE, '--no-sandbox']
@@ -153,7 +198,16 @@ async function start() {
     const child = spawn(cmd, args, { detached: true, stdio: 'ignore' });
     child.unref();
     fs.writeFileSync(STATE, JSON.stringify({ pid: child.pid }));
+    return child;
+}
 
+async function start() {
+    if (!fs.existsSync(ELECTRON)) fail('Electron is missing. Run script/build.sh first.');
+    if (!fs.existsSync(path.join(CORE, 'lighttable', 'bootstrap.js'))) fail('No bundle. Run npm run build:cljs.');
+
+    try { await window_(0); console.log('already running'); return; } catch (e) { /* not up */ }
+
+    spawnApp();
     await window_(60000);
     // The window answers before Light Table has finished starting; wait for the
     // object graph rather than for the page.
@@ -179,9 +233,11 @@ async function main() {
     const [command, ...rest] = process.argv.slice(2);
     if (command === 'start') return await start();
     if (command === 'stop') return stop();
+    if (command === 'boot-log') return await bootLog(Number(rest[0]) || 20);
 
     if (command !== 'eval' && command !== 'cljs') {
-        fail('usage: script/lt-repl.sh start | eval <js> | eval -f <file> | cljs <expr> | stop');
+        fail('usage: script/lt-repl.sh start | eval <js> | eval -f <file> | cljs <expr>\n' +
+             '                          | boot-log [seconds] | stop');
     }
     let expression = rest[0] === '-f' ? fs.readFileSync(rest[1], 'utf8') : rest.join(' ');
     if (command === 'cljs') expression = cljs(expression);

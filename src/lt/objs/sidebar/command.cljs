@@ -7,17 +7,15 @@
             [lt.objs.app :as app]
             [lt.objs.keyboard :as keyboard]
             [lt.util.load :as load]
+            [lt.window.modules :as window]
             [lt.util.dom :as dom]
-            [lt.util.cljs :refer [->dottedkw]]
+            [lt.util.cljs]
             [clojure.string :as string]
             [singultus.core :as crate]
-            [singultus.binding :refer [subatom bound map-bound computed]])
+            [singultus.binding :refer [subatom bound computed]])
   (:require-macros [lt.macros :refer [behavior defui]]))
 
-;; Required rather than evaluated. It used to be loaded with load/js, which
-;; evals into global scope, and among other things patched String.prototype
-;; with a `score` method that the call sites below used without saying so.
-(def ^js fuzzy (js/require (str load/dir "/core/window/fuzzy.js")))
+
 
 ;**********************************************************
 ;; options input
@@ -119,7 +117,7 @@
             :when res]
       (dom/html li (transform (aget res 1) (aget res 4) (if-not (empty? search)
 
-                                                          (.wrapMatch fuzzy (aget res 1) (aget res 4))
+                                                          (.wrapMatch window/fuzzy (aget res 1) (aget res 4))
                                                           (aget res 1))
                               (aget res 0)))
       (dom/css li {:display "block"})
@@ -252,12 +250,12 @@
         ^js b (aget x 4)]
     (- (.-score a) (.-score b))))
 
-(defn indexed-results [{:keys [search size items key size]}]
+(defn indexed-results [{:keys [search size items key]}]
   (let [items (apply array (->items items))
-        map-func3 #(array % (key %) (.fastScore fuzzy (key %) search) nil nil)
-        map-func (fn [item] (aset item 3 (.stringScore fuzzy (aget item 1) search))
+        map-func3 #(array % (key %) (.fastScore window/fuzzy (key %) search) nil nil)
+        map-func (fn [item] (aset item 3 (.stringScore window/fuzzy (aget item 1) search))
                       item)
-        map-func2 #(do (aset % 4 (.score fuzzy (aget % 1) search)) %)
+        map-func2 #(do (aset % 4 (.score window/fuzzy (aget % 1) search)) %)
         has-score (fn [item] (let [^js scored (aget item 4)] (> (.-score scored) 0)))]
     (if-not (empty? search)
       (let [score0 (.. items (map map-func3) (filter #(aget % 2)))

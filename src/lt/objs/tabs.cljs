@@ -1,6 +1,6 @@
 (ns lt.objs.tabs
   "Manage tabsets and tabs"
-  (:require [lt.object :refer [object* behavior*] :as object]
+  (:require [lt.object :refer [object*] :as object]
             [lt.objs.editor :as editor]
             [lt.objs.canvas :as canvas]
             [lt.objs.command :as cmd]
@@ -8,16 +8,15 @@
             [lt.objs.context :as ctx]
             [lt.objs.menu :as menu]
             [lt.util.load :as load]
-            [lt.util.dom :refer [$ append] :as dom]
+            [lt.window.modules :as window]
+            [lt.util.dom :refer [append] :as dom]
             [lt.util.style :refer [->px]]
-            [lt.util.js :refer [now]]
+            [lt.util.js]
             [singultus.core :as crate]
             [singultus.binding :refer [bound map-bound subatom]])
   (:require-macros [lt.macros :refer [behavior defui]]))
 
-;; Required rather than evaluated, and it no longer publishes a global for
-;; this namespace to find.
-(def ^js dragdrop (js/require (str load/dir "/core/window/dragdrop.js")))
+
 
 (def multi-def (object* ::multi-editor2
                         :tags #{:tabs}
@@ -141,7 +140,7 @@
     ;;Remove old tabs
     (doseq [tab prev-tabs]
       (object/destroy! tab))
-    (.sortable dragdrop item (js-obj "axis" "x" "distance" 10 "scroll" false "opacity" 0.9 "connectWith" ".list"))
+    (.sortable window/dragdrop item (js-obj "axis" "x" "distance" 10 "scroll" false "opacity" 0.9 "connectWith" ".list"))
     (dom/on item "contextmenu" (fn [e]
                                  (object/raise multi :menu! e)))
     (dom/on item "moved" (fn [^js e] (move-tab multi (.-opts e)) ))
@@ -452,7 +451,7 @@
                            (= next-width 0) (rem-tabset ts :prev)
                            :else
                            (when-not (= cx 0)
-                             (if (or (< new-perc 0) )
+                             (if (< new-perc 0)
                                (object/merge! this {:width 100})
                                (when (and (not= cx 0)
                                           ts
@@ -483,7 +482,7 @@
                                           1
                                           (+ (:width @ts) (- prev-width new-perc))))]
                         (when-not (= cx 0)
-                          (if (or (< new-perc 0) )
+                          (if (< new-perc 0)
                             (temp-width this 100)
                             (when (and (not= cx 0)
                                        ts

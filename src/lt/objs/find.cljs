@@ -10,8 +10,8 @@
             [lt.objs.keyboard :as keyboard]
             [lt.objs.editor :as editor]
             [lt.util.dom :as dom]
-            [singultus.binding :refer [bound subatom]]
-            [lt.util.style :refer [->px]]
+            [singultus.binding]
+            [lt.util.style]
             ;; Registers itself on the CodeMirror module; nothing to bind.
             ["codemirror/addon/search/searchcursor"])
   (:require-macros [lt.macros :refer [behavior defui]]))
@@ -158,9 +158,8 @@
           :triggers #{:init}
           :reaction (fn [this]
                       ;; TODO: use addon/search/search.js
-                      ;; Required, not evaluated: this fork exports nothing and only extends
-                      ;; the global CodeMirror, so requiring it does what evaluating it did.
-                      (js/require (str load/dir "/core/lighttable/codemirror_addons/search.js"))
+                      ;; The search commands arrive with the bundle — see
+                      ;; lt.window.modules, which lt.core requires.
                       ))
 
 (def bar (object/create ::find-bar))

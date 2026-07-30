@@ -12,8 +12,8 @@
             [lt.objs.document :as document]
             [lt.objs.menu :as menu]
             [lt.util.dom :as dom]
-            [lt.util.cljs :refer [->dottedkw]]
-            [singultus.binding :refer [bound subatom]]
+            [lt.util.cljs]
+            [singultus.binding :refer [bound]]
             [clojure.string :as string])
   (:require-macros [lt.macros :refer [behavior defui]]))
 

@@ -7,7 +7,7 @@
             [clojure.string :as string]
             [lt.objs.platform :as platform]
             [lt.util.bridge :as bridge]
-            [lt.util.js :refer [now]])
+            [lt.util.js])
   (:require-macros [lt.macros :refer [behavior]]))
 
 
@@ -337,8 +337,9 @@
     (str f separator)
     (str f)))
 
-(defn- bomless-read [path]
+(defn- bomless-read
   "Reads file at `path`, removes occurrences of `\uFEFF`, then returns modified result."
+  [path]
   (let [content (.readFileSync bridge/files path "utf-8")]
     (string/replace content "\uFEFF" "")))
 
@@ -535,20 +536,6 @@
   "Returns a relative path, if there is one, from `a` to `b`."
   [a b]
   (.relative bridge/path a b))
-
-(defn- ->name|path [f & [rel]]
-  (let [path (if rel
-               (relative rel f)
-               f)]
-    [(.basename bridge/path f) path]))
-
-(defn- path-segs [path]
-  (let [segs (.split path separator)
-        segs (if (or (.extname bridge/path (last segs))
-                     (empty? (last segs)))
-               (butlast segs)
-               segs)]
-    (vec (map #(str % separator) segs))))
 
 (defn filter-walk
   "Returns files and directories under `path` where `func` returns true.

@@ -3,7 +3,7 @@
   (:require [lt.object :as object]
             [lt.util.dom :as dom]
             [lt.util.bridge :as bridge])
-  (:require-macros [lt.macros :refer [behavior defui]]))
+  (:require-macros [lt.macros]))
 
 ;; The dialog module lives in the browser process. It used to be reached through
 ;; `remote`, which Electron removed in v14, so these go across the bridge

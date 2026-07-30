@@ -4,9 +4,9 @@
             [lt.objs.tabs :as tabs]
             [lt.objs.animations :as anim]
             [lt.objs.canvas :as canvas]
-            [lt.util.cljs :refer [->dottedkw]]
+            [lt.util.cljs]
             [lt.util.style :refer [->px]]
-            [singultus.binding :refer [map-bound bound subatom]])
+            [singultus.binding :refer [bound subatom]])
   (:require-macros [lt.macros :refer [behavior defui]]))
 
 
@@ -91,7 +91,7 @@
 (behavior ::show-item
           :triggers #{:show!}
           :reaction (fn [this item]
-                      (when (or (not= item (:active @this)))
+                      (when (not= item (:active @this))
                         (object/merge! this {:active item
                                              :height (:max-height @this)})
                         (object/raise tabs/multi :bottom! (:max-height @this)))))

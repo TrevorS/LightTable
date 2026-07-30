@@ -5,7 +5,7 @@
   that a slow machine does not fail them. Each case checks a property that
   distinguishes the two: a debounced function never runs while calls keep
   arriving, and a throttled one leads on the first call."
-  (:require [cljs.test :refer [deftest is testing async]]
+  (:require [cljs.test :refer [deftest is async]]
             [lt.util.js :as js-util]))
 
 (deftest debounce-runs-once-after-the-calls-stop

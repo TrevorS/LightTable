@@ -97,7 +97,6 @@ Node's. That inconsistency broke the migration silently and cost a debugging
 round. They all match now.
 
 ### Two things not in that table
-### Two things not in that table
 
 **Local JavaScript requires.** `lt.objs.editor` loads CodeMirror's fold addons
 by path, and several namespaces require files under `deploy/core`. Those use the

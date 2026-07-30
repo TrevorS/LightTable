@@ -135,8 +135,8 @@ app.on('ready', function () {
                     // String.prototype patch, so a wrong port would rank
                     // results wrongly rather than throw.
                     windowModules: (function () {
-                        var f = lt.objs.sidebar.command.fuzzy;
-                        var d = lt.objs.tabs.dragdrop;
+                        var f = lt.window.modules.fuzzy;
+                        var d = lt.window.modules.dragdrop;
                         if (!f || !d || typeof d.sortable !== 'function') return 'missing';
                         if (String.prototype.score) return 'String.prototype still patched';
                         var exact = f.stringScore('platform.cljs', 'platform.cljs');

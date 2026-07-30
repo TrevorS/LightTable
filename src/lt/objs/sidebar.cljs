@@ -6,8 +6,8 @@
             [lt.objs.animations :as anim]
             [lt.objs.canvas :as canvas]
             [lt.util.dom :as dom]
-            [lt.util.cljs :refer [->dottedkw]]
-            [singultus.binding :refer [map-bound bound subatom]])
+            [lt.util.cljs]
+            [singultus.binding :refer [bound subatom]])
   (:require-macros [lt.macros :refer [behavior defui]]))
 
 (def default-width 200)

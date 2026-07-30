@@ -40,6 +40,12 @@ jobs:
         run: npm ci
 
       # Compiled first: the smoke test boots the real main process.
+      # Everything that needs neither a display nor a build, first: a lint or
+      # type error should not cost a ClojureScript compile to discover. Both
+      # linters run in about two seconds.
+      - name: Lint and type-check
+        run: npm run check
+
       - name: Type-check and build the main process
         run: npm run build:main
 

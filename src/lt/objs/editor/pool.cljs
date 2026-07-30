@@ -10,10 +10,10 @@
             [lt.objs.popup :as popup]
             [lt.objs.notifos :as notifos]
             [lt.objs.editor :as editor]
-            [lt.util.cljs :refer [->dottedkw]]
+            [lt.util.cljs]
             [clojure.string :as string]
             [lt.util.dom :as dom])
-  (:require-macros [lt.macros :refer [behavior defui]]))
+  (:require-macros [lt.macros :refer [behavior]]))
 
 (defn- get-all []
   (object/by-tag :editor))
@@ -59,12 +59,6 @@
   [path]
   (let [path (string/lower-case path)]
     (filter #(> (.indexOf (-> @% :info :path (or "") string/lower-case) path) -1) (object/by-tag :editor))))
-
-(defui ^:private button [label & [cb]]
-  [:div.button.right label]
-  :click (fn []
-           (when cb
-             (cb))))
 
 (defn- unsaved-prompt [on-yes]
   (popup/popup! {:header "You will lose changes."

@@ -10,7 +10,7 @@
             [lt.objs.clients :as clients]
             [singultus.core :as crate]
             [lt.util.dom :as dom]
-            [lt.util.js :as js-util :refer [every wait ->clj]]
+            [lt.util.js :as js-util :refer [every wait]]
             [lt.util.bridge :as bridge]
             [singultus.binding :refer [bound subatom]]
             [clojure.string :as string])
@@ -177,7 +177,9 @@
       (script-exists? obj id
                       (fn [exists?]
                         (if-not exists?
-                          (do (remove-script! obj path id) (changelive! obj path code cb))
+                          ;; `else` was dropped here, so the retry threw Invalid arity: 4
+                          ;; rather than reloading. Found by clj-kondo.
+                          (do (remove-script! obj path id) (changelive! obj path code cb else))
                           (do
                             (object/merge! obj {:script-id id})
                             ;;TODO: handle multiples

@@ -16,7 +16,7 @@
             [lt.util.dom :as dom]
             [lt.util.cljs :refer [str-contains?]]
             [cljs.reader :as reader])
-  (:require-macros [lt.macros :refer [behavior defui]]))
+  (:require-macros [lt.macros :refer [behavior]]))
 
 (defn safe-read [s file]
   (when s

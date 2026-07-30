@@ -6,7 +6,6 @@
             [lt.objs.files :as files]
             [lt.objs.command :as cmd]
             [lt.objs.notifos :as notifos])
-  (:use [lt.object :only [object* behavior*]])
   (:require-macros [lt.macros :refer [behavior]]))
 
 (defn jump-to [file pos]

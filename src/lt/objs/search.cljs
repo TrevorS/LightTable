@@ -12,13 +12,13 @@
             [lt.util.dom :as dom]
             [lt.objs.workspace :as workspace2]
             [singultus.core :as crate]
-            [singultus.binding :refer [computed bound]]
-            [lt.util.js :refer [wait now]]
+            [singultus.binding :refer [bound]]
+            [lt.util.js]
             [lt.util.load :as load]
             [clojure.string :as string]
             [lt.objs.editor :as editor]
             [lt.objs.editor.pool :as pool])
-  (:require-macros [lt.macros :refer [behavior defui extract foreach]]))
+  (:require-macros [lt.macros :refer [behavior defui extract]]))
 
 (def search! (thread/job :search))
 
@@ -181,7 +181,10 @@
           :triggers #{:result}
           :reaction (fn [this result]
                       (let [total (count (.-results result))
-                            result (if (> (+ total (:result-count @this)))
+                            ;; Was `(> (+ total ...))`, a single-operand >, which is
+                            ;; always true — so results were truncated whether or not the
+                            ;; threshold had been reached.
+                            result (if (> (+ total (:result-count @this)) result-threshold)
                                      (js-obj "file" (.-file result)
                                              "results" (.slice (.-results result) 0 (- result-threshold (:result-count @this))))
                                      result)]

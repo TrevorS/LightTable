@@ -1,0 +1,59 @@
+;; clj-kondo, tuned to this codebase rather than to a style guide.
+;;
+;; The aim is a gate that stays at zero and means something when it fires, so
+;; anything that reports mostly noise here is off with a reason. Turning one
+;; back on is a deliberate change, not a surprise.
+;; Light Table's own macros, described in terms clj-kondo already knows.
+{:lint-as {lt.macros/defui clojure.core/defn
+           lt.macros/background clojure.core/defn
+           lt.util.cljs/js->clj+ clojure.core/identity}
+
+ :linters
+ {;; Macro definitions build forms out of symbols that exist only after
+  ;; expansion, so a linter cannot resolve them. Light Table's BOT macros are
+  ;; all in one file, which keeps this narrow.
+  ;; Light Table's macros are private and referred across namespaces, which is
+  ;; legal for macros in ClojureScript and is how this codebase is written.
+  :private-call {:level :off}
+
+  ;; `this` is the first parameter of every behavior reaction and most are not
+  ;; interested in it. 125 of these say nothing.
+  :unused-binding {:level :off}
+
+  ;; `(when x ...)` used as a statement is idiomatic here, and the codebase is
+  ;; full of it.
+  :missing-else-branch {:level :off}
+
+  ;; Namespaces required for their side effects — registering behaviors as they
+  ;; load — look unused to a linter. That is the whole architecture.
+  :unused-namespace {:level :off}
+
+  ;; Worth having, and currently clean.
+  :unused-private-var {:level :warning}
+
+  ;; lt.objs.opener uses the older :use-macros form, which is valid
+  ;; ClojureScript and which clj-kondo does not model.
+  :unknown-ns-option {:level :off}
+  :redundant-do {:level :warning}
+  :redefined-var {:level :error}
+  :duplicate-require {:level :error} }
+
+ ;; Symbols bound by Light Table's own macros — `aloop` binds i, `extract` its
+ ;; destructured names, `defui` its element — plus lt.objs.opener, which uses
+ ;; the older :use-macros form clj-kondo does not model. Scoped per namespace
+ ;; rather than switched off, so an unresolved symbol anywhere else still fails.
+ :config-in-ns
+ {;; Private macros referred across namespaces — legal for macros, and how this
+  ;; codebase is written, so they look unused from inside their own file.
+  lt.macros          {:linters {:unresolved-symbol {:level :off}
+                                :unused-private-var {:level :off}}}
+  lt.object          {:linters {:unresolved-symbol {:level :off}}}
+  lt.objs.console    {:linters {:unresolved-symbol {:level :off}}}
+  lt.objs.context    {:linters {:unresolved-symbol {:level :off}}}
+  lt.objs.document   {:linters {:unresolved-symbol {:level :off}}}
+  lt.objs.opener     {:linters {:unresolved-symbol {:level :off}}}
+  lt.objs.search     {:linters {:unresolved-symbol {:level :off}}}}
+
+ ;; Vendored under its own licence and deliberately kept close to upstream, so
+ ;; linting it would only generate findings nobody should act on.
+ :output {:exclude-files ["src/singultus/.*"]}}

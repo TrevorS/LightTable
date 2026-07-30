@@ -12,9 +12,9 @@
             [lt.util.dom :as dom]
             [lt.util.load :as load]
             [singultus.core :as crate]
-            [singultus.binding :refer [bound subatom]]
+            [singultus.binding :refer [subatom]]
             [lt.objs.thread :as thread])
-  (:require-macros [lt.macros :refer [behavior defui]]))
+  (:require-macros [lt.macros :refer [behavior]]))
 
 
 (defn file-filters [f]

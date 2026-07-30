@@ -11,7 +11,7 @@
             [cljs.reader :as reader]
             [lt.util.load :as load]
             [lt.util.js :refer [now]]
-            [lt.util.cljs :refer [->dottedkw]])
+            [lt.util.cljs])
   (:require-macros [lt.macros :refer [behavior]]))
 
 ;;*********************************************************

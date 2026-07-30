@@ -7,7 +7,7 @@
             [lt.objs.command :as cmd]
             [lt.objs.platform :as platform]
             [lt.objs.context :as ctx]
-            [lt.util.js :refer [every wait]]
+            [lt.util.js :refer [wait]]
             [lt.util.events :as utev])
   (:require-macros [lt.macros :refer [behavior]]))
 

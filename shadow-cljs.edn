@@ -6,7 +6,7 @@
 ;; was still calling crate.core/html years after that rename. Compiling it here
 ;; makes a rename in the host a build error rather than something a user
 ;; discovers at startup.
-{:source-paths ["src" "test" "deploy/core/User/src" "plugins/Paredit/src"]
+{:source-paths ["src" "src-gen" "test" "deploy/core/User/src" "plugins/Paredit/src"]
 
  :dependencies []
 
@@ -24,10 +24,13 @@
              :user      {:entries [lt.plugins.user] :depends-on #{:bootstrap}}
              :paredit   {:entries [lt.plugins.paredit] :depends-on #{:bootstrap}}}
 
-   ;; Node builtins and npm packages stay runtime requires, as they are today.
-   ;; Bundling them is only possible once the renderer stops reaching for node
-   ;; directly, which is a later step.
-   :js-options {:js-provider :require}
+   ;; npm packages are bundled rather than required at runtime. The window is
+   ;; losing `require` when contextIsolation goes on, so anything it needs has
+   ;; to be in the bundle by then; :shadow is shadow-cljs's normal mode.
+   ;; Runtime dependencies live in deploy/core/node_modules, next to what ships;
+   ;; the root tree is build tooling. Shadow looks in the root by default.
+   :js-options {:js-provider :shadow
+                :js-package-dirs ["deploy/core/node_modules" "node_modules"]}
 
    :compiler-options {:optimizations  :simple
                       :pretty-print   true

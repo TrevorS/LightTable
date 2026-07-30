@@ -8,7 +8,7 @@
             [lt.objs.app :as app]
             [lt.objs.tabs :as tabs]
             [lt.util.dom :as dom]
-            [singultus.core :refer [raw]]
+            [singultus.core]
             [singultus.binding :refer [bound]])
   (:require-macros [lt.macros :refer [behavior defui]]))
 

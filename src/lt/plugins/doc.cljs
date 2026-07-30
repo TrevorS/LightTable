@@ -1,6 +1,7 @@
 (ns lt.plugins.doc
   "Provide documentation sidebar for searching docs. Used by language plugins"
-  (:require [lt.object :as object]
+  (:require [clojure.string]
+            [lt.object :as object]
             [lt.objs.context :as ctx]
             [lt.objs.clients :as clients]
             [lt.objs.notifos :as notifos]

@@ -1,7 +1,7 @@
 (ns lt.objs.dev
   "Provide commands for LT developer"
   (:require [lt.object :as object]
-            [lt.util.js :refer [wait ]]
+            [lt.util.js]
             [lt.objs.cache :as cache]
             [lt.objs.notifos :as notifos]
             [lt.objs.command :as cmd]

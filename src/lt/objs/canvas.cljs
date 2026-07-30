@@ -4,7 +4,7 @@
   (:refer-clojure :exclude [rem])
   (:require [lt.object :as object]
             [lt.objs.context :as ctx]
-            [lt.util.dom :refer [$ parent toggle-class append remove prevent stop-propagation css] :as dom])
+            [lt.util.dom :refer [$ append] :as dom])
   (:require-macros [lt.macros :refer [behavior defui]]))
 
 (defui canvas-elem [obj]

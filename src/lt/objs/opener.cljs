@@ -15,8 +15,7 @@
             [lt.objs.notifos :as notifos]
             [lt.objs.files :as files]
             [lt.util.dom :as dom]
-            [lt.util.cljs :refer [->dottedkw]])
-  (:use [singultus.binding :only [bound map-bound]])
+            [lt.util.cljs])
   (:use-macros [singultus.def-macros :only [defpartial]]
                [lt.macros :only [behavior defui]]))
 

@@ -8,7 +8,7 @@
             [lt.objs.files :as files]
             [lt.objs.editor.pool :as pool]
             [lt.objs.clients :as clients]
-            [lt.util.cljs :refer [->dottedkw]]
+            [lt.util.cljs]
             [lt.objs.sidebar.command :as cmd]
             [lt.objs.notifos :as notifos]
             [lt.objs.popup :as popup]

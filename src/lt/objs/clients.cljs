@@ -3,7 +3,7 @@
   or Clojure and their connections"
   (:refer-clojure :exclude [send])
   (:require [lt.object :as object]
-            [lt.util.js :refer [wait]]
+            [lt.util.js]
             [lt.objs.notifos :as notifos]
             [clojure.string :as string])
   (:require-macros [lt.macros :refer [behavior]]))

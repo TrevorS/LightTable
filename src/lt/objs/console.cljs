@@ -9,7 +9,7 @@
             [lt.objs.statusbar :as statusbar]
             [lt.objs.tabs :as tabs]
             [clojure.string :as string]
-            [lt.util.dom :refer [$ append empty parents] :as dom]
+            [lt.util.dom :refer [append] :as dom]
             [lt.objs.platform :as platform]
             [lt.util.bridge :as bridge])
   (:require-macros [singultus.def-macros :refer [defpartial]]

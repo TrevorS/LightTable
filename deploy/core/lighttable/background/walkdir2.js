@@ -24,7 +24,7 @@ var walk = function(path,options){
   var limited = false;
   var basename = null;
 
-  while(cur = queue.shift()) {
+  while((cur = queue.shift())) {
 
     try {
       children = fs.readdirSync(cur);

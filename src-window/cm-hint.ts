@@ -1,4 +1,6 @@
-CodeMirror.positionHint = function(cm, hints, from) {
+import CodeMirror = require('codemirror');
+
+CodeMirror.positionHint = function(cm: CMEditor, hints: HTMLElement, from: CMPosition) {
   hints.classList.add("CodeMirror-hints");
 
   // If we're at the edge of the screen, then we want the menu to appear on the left of the cursor.
@@ -35,7 +37,7 @@ CodeMirror.positionHint = function(cm, hints, from) {
   document.body.appendChild(hints);
 };
 
-CodeMirror.ensureHintVisible = function(cm, hints, node) {
+CodeMirror.ensureHintVisible = function(cm: CMEditor, hints: HTMLElement, node: HTMLElement) {
   if (node.offsetTop < hints.scrollTop)
     hints.scrollTop = node.offsetTop - 3;
   else if (node.offsetTop + node.offsetHeight > hints.scrollTop + hints.clientHeight)

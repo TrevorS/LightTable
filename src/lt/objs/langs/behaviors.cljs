@@ -6,7 +6,7 @@
             [lt.util.dom :as dom]
             [lt.objs.editor :as editor]
             [clojure.string :as string]
-            [lt.util.js :refer [wait]]
+            [lt.util.js]
             [lt.objs.thread :as thread])
   (:require-macros [lt.macros :refer [behavior defui]]))
 

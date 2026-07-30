@@ -14,7 +14,7 @@
             [lt.util.dom :as dom]
             ;; Registers itself on the CodeMirror module; nothing to bind.
             ["codemirror/addon/runmode/runmode"])
-  (:require-macros [lt.macros :refer [behavior defui]]))
+  (:require-macros [lt.macros :refer [behavior]]))
 
 (defn stream [str]
   (js/CodeMirror.StringStream. str))
@@ -318,9 +318,8 @@
 (behavior ::init
           :triggers #{:init}
           :reaction (fn [this]
-                      ;; Required, not evaluated: this fork exports nothing and only extends
-                      ;; the global CodeMirror, so requiring it does what evaluating it did.
-                      (js/require (str load/dir "/core/lighttable/codemirror_addons/show-hint.js"))
+                      ;; positionHint arrives with the bundle — see
+                      ;; lt.window.modules, which lt.core requires.
                       (js/CodeMirror.extendMode "clojure" (clj->js {:hint-pattern #"[\w\-\>\:\*\$\?\<\!\+\.\/foo]"}))
                       (js/CodeMirror.extendMode "text/x-clojurescript" (clj->js {:hint-pattern #"[\w\-\>\:\*\$\?\<\!\+\.\/foo]"}))
                       (js/CodeMirror.extendMode "css" (clj->js {:hint-pattern #"[\w\.\-\#]"}))

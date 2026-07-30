@@ -6,7 +6,7 @@
             [lt.objs.command :as cmd]
             [lt.objs.context :as ctx]
             [clojure.string :as string]
-            [lt.util.js :refer [now]]
+            [lt.util.js]
             [lt.util.dom :refer [$] :as dom]
             [lt.util.bridge :as bridge])
   (:require-macros [lt.macros :refer [behavior]]))

@@ -8,6 +8,10 @@
   reach, so the namespaces nothing else pulls in are listed here explicitly."
   (:require [lt.objs.app :as app]
             [lt.compat]
+   ;; Generated: every CodeMirror mode and fold addon, so they are bundled.
+   [lt.editor.codemirror-modes]
+   ;; Light Table's own JavaScript, bundled.
+   [lt.window.modules]
             [lt.objs.browser]
             [lt.objs.clients.local]
             [lt.objs.connector]

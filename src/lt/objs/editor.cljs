@@ -19,6 +19,7 @@
   (:refer-clojure :exclude [val replace range])
   (:require [singultus.core :as crate]
             [lt.objs.context :as ctx-obj]
+            [clojure.string]
             [lt.object :as object]
             [lt.objs.files :as files]
             [lt.objs.command :as cmd]
@@ -42,8 +43,6 @@
             ["codemirror/addon/mode/simple"]
             ["codemirror/addon/display/rulers"]
             ["codemirror/keymap/sublime"])
-  (:use [lt.util.dom :only [remove-class add-class]]
-        [lt.object :only [object* behavior*]])
   (:require-macros [lt.macros :refer [behavior]]))
 
 (defn ^js ->cm-ed
@@ -189,25 +188,6 @@
   See [getTokenTypeAt](http://codemirror.net/doc/manual.html#getTokenTypeAt)."
   [e pos]
   (.getTokenTypeAt (->cm-ed e) (clj->js pos)))
-
-(defn- ->coords
-  "Returns cursor's coordinates of the form `{:left :top: bottom}` for editor `e`.
-
-  See [cursorCoords](http://codemirror.net/doc/manual.html#cursorCoords)."
-  [e]
-  (js->clj (.cursorCoords (->cm-ed e)) :keywordize-keys true :force-obj true))
-
-(defn- +class
-  "Add class `klass` to editor `e`. Returns `e`."
-  [e klass]
-  (add-class (->elem e) (name klass))
-  e)
-
-(defn- -class
-  "Remove class `klass` from editor `e`. Returns `e`."
-  [e klass]
-  (remove-class (->elem e) (name klass))
-  e)
 
 (defn cursor
   "Return cursor position of editor `e`'s as js object. Returns JSON not edn...
@@ -765,7 +745,7 @@
 ;; this codebase. Requiring the module no longer creates one, so publish it.
 (set! (.-CodeMirror js/window) CodeMirror)
 
-(object* ::editor
+(object/object* ::editor
          :tags #{:editor :editor.inline-result :editor.keys.normal}
          :init (fn [obj info]
                  (let [ed (make info)]
@@ -1010,26 +990,17 @@
                              :click (fn []
                                       (select-all this))})))
 
-(def mode-blacklist "Modes to not load on startup"
-  #{"clojure" "css" "htmlembedded" "htmlmixed" "javascript" "python"})
-
 (behavior ::init-codemirror
           :triggers #{:init}
           :reaction (fn [this]
-                      (doseq [file (files/ls (files/lt-home "core/node_modules/codemirror/addon/fold"))
-                              :when (= (files/ext file) "js")]
-                        (js/require (files/lt-home (str "core/node_modules/codemirror/addon/fold/" file))))
+                      ;; Modes and fold addons arrive with the bundle — see
+                      ;; lt.editor.codemirror-modes, which lt.core requires.
+                      ;; They used to be walked out of node_modules and
+                      ;; require'd here, which stopped working once CodeMirror
+                      ;; itself was bundled: a mode loaded that way registers
+                      ;; against the copy it finds in node_modules rather than
+                      ;; the one the editor is using.
                       (load/css "node_modules/codemirror/addon/fold/foldgutter.css")
-                      ;; Every mode the editor might need, minus those a bundled
-                      ;; plugin provides. Discovered rather than listed because
-                      ;; the set is whatever the installed CodeMirror ships.
-                      (doseq [path (files/filter-walk #(and (= (files/ext %) "js")
-                                                            (not (some (fn [m] (> (.indexOf % (str "core/node_modules/codemirror/mode/" m "/")) -1))
-                                                                       mode-blacklist))
-                                                            ;; Remove test files
-                                                            (not (.endsWith % "test.js")))
-                                                      (files/lt-home "core/node_modules/codemirror/mode"))]
-                        (js/require path))
                       (aset js/CodeMirror.keyMap.basic "Tab" expand-tab)))
 
 (behavior ::load-addon
@@ -1056,8 +1027,6 @@
           :params [{:label "Vector of rulers"
                     :example "[{:color \"#cfc\" :column 100 :lineStyle \"dashed\"}]"}]
           :reaction (fn [this rulers]
-                      (when-not (.getOption (->cm-ed this) "rulers")
-                        )
                       (let [rulers (or rulers [{:lineStyle "dashed" :color "#aff" :column 80}])]
                         (set-options this {:rulers (clj->js rulers)}))))
 

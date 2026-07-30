@@ -5,7 +5,7 @@
   (:require [singultus.core :as crate]
             [clojure.set :as set]
             [clojure.string :as string]
-            [singultus.binding :refer [sub-swap! subatom sub-reset! deref?]]
+            [singultus.binding :refer [deref?]]
             [lt.util.cljs :as cljs]
             [lt.util.dom :refer [replace-with] :as dom]
             [lt.util.js :refer [throttle debounce]])
@@ -373,11 +373,6 @@
   (update! obj [:behaviors] #(remove #{behavior} %))
   (reset! obj (update-listeners obj)))
 
-(defn- ->def [def|name]
-  (if (map? def|name)
-    def|name
-    (@object-defs def|name)))
-
 (defn by-id
   "Find object by its unique numerical id"
   [id]
@@ -391,9 +386,6 @@
            (filter #(when-let [ts (:tags (deref %))]
                       (ts tag))
                    (vals @instances))))
-
-(defn- in-tag? [tag behavior]
-  (first (filter #{behavior} (@tags tag))))
 
 (defn has-tag?
   "Return truthy if object has tag"
@@ -434,12 +426,6 @@
   (doseq [cur (by-tag tag)]
     (refresh! cur))
   (@tags tag))
-
-(defn- remove-tag-behaviors [tag behs]
-  (swap! tags update-in [tag] #(remove (set behs) (or % '())))
-  (doseq [cur (by-tag tag)
-          b behs]
-    (rem-behavior! cur b)))
 
 (behavior ::add-tag
           :desc "App: Add tag to object"

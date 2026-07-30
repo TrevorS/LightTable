@@ -8,7 +8,6 @@
             [lt.util.bridge :as bridge]
             [lt.util.load :as load]
             [clojure.string :as string])
-  (:use [lt.util.js :only [wait ->clj]])
   (:require-macros [lt.macros :refer [behavior]]))
 
 (def sockets (atom {}))

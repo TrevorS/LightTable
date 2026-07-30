@@ -12,10 +12,10 @@
             [lt.objs.deploy :as deploy]
             [lt.util.dom :as dom]
             [lt.util.load :as load]
-            [singultus.binding :refer [bound -value subatom]]
+            [singultus.binding :refer [bound subatom]]
             [singultus.compiler :refer [dom-attr]]
             [clojure.string :as string])
-  (:require-macros [lt.macros :refer [behavior defui]]))
+  (:require-macros [lt.macros :refer [behavior]]))
 
 (defn css-expr [k v]
   (str (name k) ":" v " !important; "))
