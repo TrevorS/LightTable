@@ -20,7 +20,7 @@
             [lt.util.dom :as dom]
             [lt.util.js :as util]
             [lt.util.load :as load]
-            [lt.util.cljs :refer [->dottedkw str-contains?]]
+            [lt.util.cljs :refer [->dottedkw]]
             [clojure.string :as string]
             [cljs.reader :as reader]
             [lt.objs.command :as cmd]
@@ -29,8 +29,20 @@
 
 (def ^js shell (load/node-module "shelljs"))
 (def cur-path (.pwd shell))
-(def local-project-clj (files/join plugins/*plugin-dir* "runner/resources/project.clj"))
-(def jar-path (files/join plugins/*plugin-dir* "runner/target/lein-light-standalone.jar"))
+
+;; The project a REPL runs in when there is no project around the file being
+;; evaluated. It is the plugin's own, and exists only to give Leiningen
+;; something to read.
+(def local-project-clj (files/join plugins/*plugin-dir* "local-project/project.clj"))
+
+;; The nREPL middleware, as source. Leiningen is pointed at this directory and
+;; puts it on the REPL's source path — see [[lein-args]].
+;;
+;; This used to be `runner/target/lein-light-standalone.jar`, a 15MB uberjar
+;; that was Leiningen 2.5.2 packaged, downloaded at build time, and which
+;; contained none of the code below: it pulled the middleware off Clojars when
+;; a REPL started. plugins/Clojure/VENDORED.md has the whole story.
+(def middleware-src (files/join plugins/*plugin-dir* "lein-light-nrepl/src"))
 
 ;; Forward references. This namespace is written in call order rather than
 ;; definition order throughout, which the ClojureScript compiler reports as an
@@ -454,14 +466,18 @@
           :reaction (fn [this res len]
                       len))
 
-(behavior ::java-exe
+(behavior ::lein-exe
           :triggers #{:object.instant}
-          :desc "Clojure: set the path to the Java executable for clients"
+          :desc "Clojure: set the path to the Leiningen executable for clients"
+          :doc "Was `::java-exe`, which named the JVM Light Table started its
+                own nREPL server with. It no longer starts one: the REPL is
+                your Leiningen, and which JVM that uses is Leiningen's business
+                — `JAVA_CMD` if you want to say."
           :type :user
           :params [{:label "path"}]
           :exclusive true
           :reaction (fn [this path]
-                      (object/merge! clj-lang {:java-exe path})))
+                      (object/merge! clj-lang {:lein-exe path})))
 
 ;;****************************************************
 ;; Connectors
@@ -739,7 +755,7 @@
           :triggers #{:proc.out}
           :reaction (fn [this data]
                       (let [out (.toString data)]
-                        (.write console/core-log (str (:name @this) "[stdout]: " data))
+                        (console/write-to-log (str (:name @this) "[stdout]: " data))
                         (object/update! this [:buffer] str out)
                         (if (> (.indexOf out "nREPL server started") -1)
                           (do
@@ -758,7 +774,7 @@
           :triggers #{:proc.error}
           :reaction (fn [this data]
                       (let [out (.toString data)]
-                        (.write console/core-log (str (:name @this) "[stderr]: " data))
+                        (console/write-to-log (str (:name @this) "[stderr]: " data))
                         (when-not (> (.indexOf (:buffer @this) "nREPL server started") -1)
                           (object/update! this [:buffer] str data)
                           ))
@@ -789,34 +805,72 @@
                         (object/merge! this {:notifier notifier :buffer "" :cid cid})
                         nil))
 
-(defn wrap-quotes [s]
-  (str "\"" s "\""))
+;; wrap-quotes and windows-escape were here, to quote the jar's path for a
+;; command line assembled as a string. Nothing assembles one now — proc/exec
+;; takes an argument vector and no shell sees it.
 
-(defn windows-escape [s]
-  (if (and (str-contains? s " ") (platform/win?))
-    (wrap-quotes s)
-    s))
+(def middleware-dependencies
+  "What `lighttable.nrepl` needs on the REPL's classpath.
 
-(defn jar-command [path name client]
-  ;(println (.which shell "java"))
-  (str (or (:java-exe @clj-lang) "java") " -jar " (windows-escape jar-path) " " name))
+  Kept in step with lein-light-nrepl/project.clj. nREPL itself is not here:
+  the REPL Leiningen is starting already has one, and two on a classpath is
+  the kind of problem that presents as a session that will not clone."
+  ["[org.clojure/data.json \"2.5.1\"]"
+   "[org.clojure/tools.reader \"1.5.2\"]"
+   "[clj-stacktrace \"0.2.8\"]"
+   "[commons-io/commons-io \"2.20.0\"]"
+   "[clojure-complete \"0.2.5\"]"
+   ;; lighttable.nrepl.cljs drives the ClojureScript compiler directly and the
+   ;; handler requires that namespace, so without this nothing loads at all —
+   ;; not even Clojure evaluation. A project with its own ClojureScript wins on
+   ;; Leiningen's normal resolution.
+   "[org.clojure/clojurescript \"1.12.42\"]"])
 
-(defn run-jar [{:keys [path project-path name client]}]
+(defn lein-args
+  "The `lein` command line that starts a headless nREPL Light Table can talk to.
+
+  Leiningen's `update-in` task edits the project map before the next task
+  runs, and `--` separates one from the next. So this adds the middleware's
+  sources and dependencies to the project, names the middleware, and then
+  starts the REPL — without the project having to know anything about Light
+  Table.
+
+  Each value is read by the Clojure reader, which is why a path arrives as a
+  quoted string rather than bare. Nothing here goes through a shell, so the
+  quotes have to be in the argument itself."
+  [middleware-src]
+  (concat ["update-in" ":source-paths" "conj" (pr-str middleware-src) "--"]
+          (mapcat (fn [dep] ["update-in" ":dependencies" "conj" dep "--"])
+                  middleware-dependencies)
+          ["update-in" ":repl-options:nrepl-middleware" "conj"
+           (pr-str "lighttable.nrepl.handler/lighttable-ops") "--"
+           "repl" ":headless"]))
+
+(defn run-lein
+  "Start the REPL for this project, through the user's own Leiningen.
+
+  This replaced a 15MB uberjar that was Leiningen 2.5.2 packaged, fetched at
+  build time, and dead on every JDK this editor supports — see
+  plugins/Clojure/VENDORED.md. Using the Leiningen the user already has means
+  it tracks their JDK and their project rather than a 2015 snapshot of both,
+  and it is what every other editor's Clojure integration does."
+  [{:keys [project-path name client]}]
   ;; `n` upstream, which is not bound anywhere: the notifier argument has
   ;; always arrived undefined, and nothing reads `:notifier` back out. nil says
   ;; so rather than relying on an undefined property lookup.
   (let [obj (object/create ::connecting-notifier nil (clients/->id client))
-        args ["-Xmx1g" "-jar" (windows-escape jar-path)]]
+        args (vec (lein-args middleware-src))]
     (notifos/working "Connecting..")
-    (.write console/core-log (str "STARTING CLIENT: " (jar-command project-path name client)))
-    (proc/exec {:command (or (:java-exe @clj-lang) "java")
-                :args (if name
-                        (conj args name)
-                        args)
+    ;; console/core-log is a path in this fork, not a write stream — see
+    ;; lt.objs.console. Calling .write on it threw, and two of the three call
+    ;; sites were in the behaviors that read the REPL process's output, so the
+    ;; connecting notifier died on the first line the server printed.
+    (console/write-to-log (str "STARTING CLIENT: lein " (string/join " " args) "\n"))
+    (proc/exec {:command (or (:lein-exe @clj-lang) "lein")
+                :args args
                 :cwd project-path
                 :obj obj})
-
-    (object/merge! client {:dir project-path})
+    (object/merge! client {:dir project-path :name name})
     (object/raise client :try-connect!)))
 
 (defn run-local-server [client]
@@ -824,14 +878,12 @@
               :client client
               :name local-name}))
 
-(defn check-java [obj]
-  ;(println (.sync which "java"))
-  (assoc obj :java (or (:java-exe @clj-lang)
-                       (aget js/process.env "JAVA_HOME")
-                       (.which shell "java"))))
+(defn check-lein [obj]
+  (assoc obj :lein (or (:lein-exe @clj-lang)
+                       (.which shell "lein"))))
 
-(defn check-ltjar [obj]
-  (assoc obj :ltjar (files/exists? jar-path)))
+(defn check-middleware [obj]
+  (assoc obj :middleware (files/exists? middleware-src)))
 
 (defn find-project [obj]
   (if-let [path (files/walk-up-find (:path obj) "project.clj")]
@@ -839,29 +891,30 @@
     (assoc obj :project-path nil)))
 
 (defn notify [obj]
-  (let [{:keys [java project-path path ltjar]} obj]
+  (let [{:keys [lein project-path path middleware]} obj]
     (cond
-     (or (not java) (empty? java)) (popup/popup! {:header "We couldn't find java."
-                                                  :body "Clojure evaluation requires the JDK to be installed."
-                                                  :buttons [{:label "Download the JDK"
-                                                             :action (fn []
-                                                                       (platform/open "http://www.oracle.com/technetwork/java/javase/downloads/jdk8-downloads-2133151.html"))}
-                                                            {:label "ok"}]})
-     ;; Upstream called (deploy/deploy) here, which re-downloaded Light Table
-     ;; itself in the hope of getting the jar with it. That function is gone,
-     ;; and the jar is now a build-time fetch — see plugins/Clojure/VENDORED.md
-     ;; — so a missing one is a broken build rather than a stale install, and
-     ;; saying which is more use than starting java against nothing.
-     (not ltjar) (console/error (str "The Light Table nREPL server is missing at " jar-path
-                                     ". Run `node script/fetch-clojure-jar.js`."))
-     (not project-path) (console/error (str "Couldn't find a project.clj in any parent of " path))
-     :else (run-jar obj))
+     (or (not lein) (empty? lein))
+     (popup/popup! {:header "We couldn't find Leiningen."
+                    :body "Clojure evaluation starts a REPL in your project, and Leiningen is what reads project.clj and works out its classpath. Light Table used to ship its own copy; that copy was from 2015 and does not run on a current JDK."
+                    :buttons [{:label "Install Leiningen"
+                               :action (fn []
+                                         (platform/open "https://leiningen.org/#install"))}
+                              {:label "ok"}]})
+
+     (not middleware)
+     (console/error (str "The Light Table nREPL middleware is missing at " middleware-src
+                         ". This plugin is built from source; reinstall or rebuild it."))
+
+     (not project-path)
+     (console/error (str "Couldn't find a project.clj in any parent of " path))
+
+     :else (run-lein obj))
     obj))
 
 (defn check-all [obj]
   (-> obj
-      (check-java)
-      (check-ltjar)
+      (check-lein)
+      (check-middleware)
       (find-project)
       (notify))
   (:client obj))

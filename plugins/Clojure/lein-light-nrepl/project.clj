@@ -20,6 +20,6 @@
                  [clojure-complete "0.2.5"]
                  [org.clojure/clojurescript "1.12.42"]]
 
-  :profiles {:provided {:dependencies [[nrepl/nrepl "1.3.1"]]}}
+  :profiles {:provided {:dependencies [[nrepl/nrepl "1.7.0"]]}}
 
   :jvm-opts ["-Xmx1g"])

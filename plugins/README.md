@@ -50,12 +50,15 @@ requires is one the module would not contain — plus a line in `CLJS_PLUGINS` i
 | its own source | committed, and compiled here |
 | a third-party npm package | a dependency in the plugin's `package.json`, installed at build time by `script/install-plugin-deps.js` into a gitignored `node_modules`. The lockfile is committed |
 | compiled output | never. `.gitignore` covers `/plugins/*/*_compiled.js` and its map |
-| a binary | fetched at build time, pinned and checksummed. There is exactly one: the Clojure plugin's 15MB nREPL uberjar, by `script/fetch-clojure-jar.js` |
+| a binary | **none.** There is no binary in `plugins/`, and nothing is downloaded at build time but npm packages |
 
-The binary is the escape hatch and is meant to stay a small one.
-`plugins/Clojure/VENDORED.md` records what it would take to build that jar here
-instead — both halves' Clojure sources are vendored beside it — and why that is
-future work rather than done.
+The one binary there used to be was the Clojure plugin's nREPL server, a 15MB
+uberjar fetched from a pinned tag. It is gone, and the reason is worth reading:
+it did not run. `plugins/Clojure/VENDORED.md` has the whole account — the jar
+was Leiningen 2.5.2 packaged, it died on any JDK newer than 8, and it did not
+contain the Light Table middleware at all, fetching that from Clojars when a
+REPL started. The plugin uses the user's own Leiningen now and the middleware
+source is vendored.
 
 ### Bringing a published plugin in
 

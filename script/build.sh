@@ -45,9 +45,8 @@ rm -f deploy/core/lighttable/bootstrap.js
 npm run build:cljs
 
 # Plugins. Every one of them lives in this repository now and is built from
-# source against the editor it extends; nothing is cloned. This also installs
-# each plugin's own npm dependencies and fetches the Clojure plugin's nREPL
-# jar, which is the one binary in plugins/ and is pinned and checksummed.
+# source against the editor it extends; nothing is cloned and nothing is
+# downloaded but each plugin's own npm dependencies.
 npm run build:plugins
 
 script/build-app.sh $@

@@ -3,9 +3,11 @@
 ## Unreleased
 
 Every plugin Light Table ships with now lives in this repository and is built
-from source against the editor it extends. Nothing is cloned at build time.
-Compiling five plugins that had shipped as decade-old artifacts turned up
-eleven bugs in them, several of which had made the plugin silently useless.
+from source against the editor it extends. Nothing is cloned at build time and
+there is no binary left in the tree. Compiling five plugins that had shipped as
+decade-old artifacts turned up thirteen bugs in them, several of which had made
+the plugin silently useless — including one that had stopped Clojure evaluation
+working at all.
 
 * CHANGED: The Clojure, CSS, HTML, Javascript and Python plugins are vendored under `plugins/`, beside TypeScript and Paredit, and built as modules of the editor's own ClojureScript build. `script/build.sh` no longer clones anything, and CI no longer fetches anything. Each plugin's `VENDORED.md` records where it came from, what was left behind, and every change to its source
 * CHANGED: Every one of them declares `:capabilities` now, so the capability report has something to check. Widening the smoke test's probe from two plugins to all seven immediately found four manifests that disagreed with what inference reads out of the plugin's own JavaScript; declared and used agree exactly for all seven
@@ -16,6 +18,10 @@ eleven bugs in them, several of which had made the plugin silently useless.
 * REMOVED: The CodeMirror modes five plugins shipped. Light Table bundles all 131 of CodeMirror's own, so each of those was an old mode overwriting a current one at load
 * FIXED: The Clojure plugin's nREPL message pump called `setImmediate` on `global`, neither of which exists in the window — it threw on the second message from inside a socket callback, where nothing reported it. `recur` inside a `try` no longer compiles; `console/util-inspect` and `lt.objs.deploy/deploy` no longer exist; `string/lower_case` is not a function, so building a ClojureScript plugin from the editor threw; and a notifier argument was never bound
 * FIXED: The Javascript plugin printed a script tag naming port `undefined` for connecting a browser, told the node client to call back on port `undefined`, and passed two of three arguments when editing a live script. The Python plugin told its client to call back on port `undefined` too — all four are the same rename, `tcp/port` to `(tcp/->port)`, that an unrebuilt artifact could not have noticed
+* FIXED: **Clojure evaluation, which had never worked in this fork.** The plugin started a 15MB uberjar downloaded from a pinned tag; that jar is Leiningen 2.5.2 packaged, and dynapath underneath it reads `sun.misc.Launcher$ExtClassLoader` at class-init — gone since JDK 9, and Light Table requires 21. It died before printing anything, in a child process whose output nothing read. It also contained none of the Light Table middleware: starting a REPL fetched that from Clojars at runtime
+* CHANGED: There is no nREPL jar, and nothing in `plugins/` is a binary. A REPL is started through **your own Leiningen**, pointed at the middleware sources vendored here — which is what CIDER, Calva and Conjure do, and means it tracks your JDK and your project rather than a 2015 snapshot of both. `leiningen` has to be on `PATH`; the plugin says so, with a link, rather than failing silently
+* CHANGED: The middleware itself moved a decade forward — tools.nrepl 0.2.10 to nrepl 1.x, Clojure 1.7 to 1.12, ClojureScript 0.0-3308 to 1.12.42. The only part that was more than a namespace rename reached into two private nREPL vars to queue Light Table's operations alongside `eval`; a session publishes `:exec` in its metadata now, which is public and does more
+* FIXED: The Clojure plugin called `.write` on `lt.objs.console/core-log`, which is a path in this fork rather than a write stream. Two of the three calls are in the behaviors that read the REPL process's output, so the notifier threw on the first line the server printed and nothing could ever have connected
 * FIXED: `script/lt-repl.sh start` could not start Light Table on macOS. It asked for `xvfb` whenever `DISPLAY` was unset, which on a Mac is always
 
 ## 0.10.0

@@ -89,9 +89,13 @@ make build-plugins
 
 **Every plugin Light Table ships with lives in this repository**, in
 [`plugins/`](plugins/README.md), and is built from source against the editor it
-extends. Nothing is cloned at build time. That command also installs each
-plugin's own npm dependencies and fetches the one binary in the tree — the
-Clojure plugin's nREPL server, pinned to a tag and checksummed.
+extends. Nothing is cloned at build time, there is no binary in the tree, and
+the only thing downloaded is each plugin's own npm dependencies.
+
+Clojure evaluation needs [Leiningen](https://leiningen.org/#install) on your
+`PATH`. Light Table used to carry its own copy; that copy was from 2015 and
+does not start on a current JDK — see
+[plugins/Clojure/VENDORED.md](plugins/Clojure/VENDORED.md).
 
 `plugins/TypeScript` is the worked example, and does something real: it finds
 the tsconfig governing the open file, runs that project's own compiler, and

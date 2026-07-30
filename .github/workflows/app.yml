@@ -104,20 +104,11 @@ jobs:
           npx shadow-cljs compile test
           node target/test.js
 
-      # The plugins themselves are in this repository, so nothing is fetched
-      # for them and nothing is cached: they are built from source by the
-      # Compile and Build in-tree plugins steps below, like the editor.
-      #
-      # The one exception is the Clojure plugin's nREPL server, a 15MB uberjar
-      # that is a runtime binary rather than build output. It is pinned to the
-      # 0.3.3 tag and checksummed by script/fetch-clojure-jar.js, so the cache
-      # key can be the tag: different bytes under the same key would fail the
-      # checksum rather than be used.
-      - name: Cache the Clojure nREPL jar
-        uses: actions/cache@v4
-        with:
-          path: plugins/Clojure/runner/target
-          key: clojure-nrepl-jar-0.3.3
+      # The plugins are in this repository, so nothing is fetched for them and
+      # nothing is cached: they are built from source by the Compile and Build
+      # in-tree plugins steps below, like the editor. There is no binary left
+      # in plugins/ to cache — the Clojure plugin's nREPL server is the user's
+      # own Leiningen now, not a downloaded uberjar.
 
       # shadow-cljs exits non-zero when compilation fails, but warnings alone do
       # not fail it, so the job has to read the output. The build is warning
