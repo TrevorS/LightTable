@@ -69,7 +69,14 @@
                                             (clj->js ["--harmony"])
                                             (clj->js {:execPath js/process.execPath
                                                       :silent true
-                                                      :env {"ATOM_SHELL_INTERNAL_RUN_AS_NODE" 1}
+                                                      ;; ATOM_SHELL_INTERNAL_RUN_AS_NODE became
+                                                      ;; ELECTRON_RUN_AS_NODE in Electron 1.x. Without it the
+                                                      ;; child boots as a full app and never gets an IPC
+                                                      ;; channel, so process.send is undefined in the worker.
+                                                      ;; Extend the current env rather than replacing it,
+                                                      ;; otherwise the worker loses PATH and friends.
+                                                      :env (js/Object.assign #js {} js/process.env
+                                                                             #js {"ELECTRON_RUN_AS_NODE" "1"})
                                                       :cwd files/cwd}))]
                           (.on (.-stdout worker) "data" (fn [data]
                                                           (console/loc-log {:file "thread"

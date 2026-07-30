@@ -7,7 +7,7 @@ goog.require('lt.objs.tabs');
 goog.require('lt.objs.tabs');
 goog.require('lt.object');
 goog.require('lt.object');
-lt.plugins.user.hello_panel = (function hello_panel(this$){var e__7755__auto__ = crate.core.html.call(null,new cljs.core.PersistentVector(null, 2, 5, cljs.core.PersistentVector.EMPTY_NODE, [new cljs.core.Keyword(null,"h1","h1",1013907515),"Hello World!"], null));var seq__8077_8083 = cljs.core.seq.call(null,cljs.core.partition.call(null,2,cljs.core.PersistentVector.EMPTY));var chunk__8078_8084 = null;var count__8079_8085 = 0;var i__8080_8086 = 0;while(true){
+lt.plugins.user.hello_panel = (function hello_panel(this$){var e__7755__auto__ = singultus.core.html.call(null,new cljs.core.PersistentVector(null, 2, 5, cljs.core.PersistentVector.EMPTY_NODE, [new cljs.core.Keyword(null,"h1","h1",1013907515),"Hello World!"], null));var seq__8077_8083 = cljs.core.seq.call(null,cljs.core.partition.call(null,2,cljs.core.PersistentVector.EMPTY));var chunk__8078_8084 = null;var count__8079_8085 = 0;var i__8080_8086 = 0;while(true){
 if((i__8080_8086 < count__8079_8085))
 {var vec__8081_8087 = cljs.core._nth.call(null,chunk__8078_8084,i__8080_8086);var ev__7756__auto___8088 = cljs.core.nth.call(null,vec__8081_8087,0,null);var func__7757__auto___8089 = cljs.core.nth.call(null,vec__8081_8087,1,null);lt.util.dom.on.call(null,e__7755__auto__,ev__7756__auto___8088,func__7757__auto___8089);
 {

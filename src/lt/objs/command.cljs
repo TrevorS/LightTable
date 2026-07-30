@@ -21,12 +21,16 @@
     (object/add-tags (:options cmd) [:command.options]))
   (object/raise manager :added cmd))
 
-(defn- by-id [k]
+(defn by-id
+  "Return the command registered under key `k`."
+  [k]
   (-> @manager :commands (get (if (map? k)
                                 (:command k)
                                 k))))
 
-(defn- completions [token]
+(defn completions
+  "Return command completions for `token`, for use in the command bar."
+  [token]
   (if (and token
            (= (subs token 0 1) ":"))
     (map #(do #js {:completion (str (:command %)) :text (str (:command %))}) (vals (:commands @manager)))
@@ -53,4 +57,4 @@
                 :tags #{:command.manager}
                 :commands {})
 
-(def ^:private manager (object/create ::command.manager))
+(def manager (object/create ::command.manager))

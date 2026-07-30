@@ -38,10 +38,11 @@ fi
 rm -f deploy/core/lighttable/bootstrap.js
 lein cljsbuild once app
 
-#if [ -d "deploy/core/node_modules/clojurescript" ]; then
-#    rm -i -rf deploy/core/node_modules/clojurescript
-#fi
-#lein cljsbuild once cljsdeps
+# cljsDeps.js backs the background worker thread (lt.objs.thread). Without it
+# every worker start fails with ENOENT. Note the -f: the original used `rm -i`,
+# which prompts and hangs a non-interactive build.
+rm -rf deploy/core/node_modules/clojurescript
+lein cljsbuild once cljsdeps
 
 # Fetch plugins
 PLUGINS=("Clojure,0.3.3" "CSS,0.0.6" "HTML,0.1.0" "Javascript,0.2.0"

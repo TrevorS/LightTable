@@ -12,6 +12,10 @@
   :cljsbuild {:builds [{:id "app"
                         :source-paths ["src"]
                         :compiler {:optimizations :simple
+                                   ;; The shim emits `var process = {env:{}}` into the bundle, which
+                                   ;; clobbers Electron's real `process` in the renderer and leaves
+                                   ;; js/process.platform undefined. See lt.objs.platform/platform.
+                                   :process-shim false
                                    :externs ["externs/jquery.js" "externs/throttle.js" "externs/codemirror.js"]
                                    :source-map "deploy/core/lighttable/bootstrap.js.map"
                                    :output-to "deploy/core/lighttable/bootstrap.js"
@@ -20,6 +24,10 @@
                        {:id "cljsdeps"
                         :source-paths ["src-cljsdeps"]
                         :compiler {:optimizations :simple
+                                   ;; This bundle is global.eval'd into the worker thread, so the
+                                   ;; shim would clobber the worker's process and with it
+                                   ;; process.send, which is how it talks back to the app.
+                                   :process-shim false
                                    :output-to "deploy/core/node_modules/clojurescript/cljsDeps.js"
                                    :output-dir "deploy/core/node_modules/clojurescript/cljsDeps/"
                                    :pretty-print true}}]}

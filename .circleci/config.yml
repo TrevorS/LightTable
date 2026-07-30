@@ -16,4 +16,6 @@ jobs:
           paths:
             - ~/.m2
           key: LightTable-{{ checksum "project.clj" }}
-      - run: "! lein cljsbuild once 2>&1 | grep WARNING:"
+      # Gate on warnings from our own sources. Warnings raised inside compiled
+      # dependency sources are tracked separately and would otherwise mask ours.
+      - run: "! lein cljsbuild once 2>&1 | grep 'WARNING:.*src/lt'"

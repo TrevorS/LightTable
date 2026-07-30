@@ -28,7 +28,11 @@
   Otherwise, open it as an external protocol e.g. a url."
   [path]
   (if (.existsSync fs path)
-    (.openItem electron-shell path)
+    ;; shell.openItem was removed in Electron 9; openPath replaces it and
+    ;; resolves to an error string rather than throwing.
+    (-> (.openPath electron-shell path)
+        (.then #(when (seq %)
+                  (js/lt.objs.console.error (str "Could not open " path ": " %)))))
     (open-url path)))
 
 (defn show-item [path]

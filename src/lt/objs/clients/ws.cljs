@@ -13,7 +13,9 @@
 (def port 0)
 (def sockets (atom {}))
 (def io (load/node-module "socket.io"))
+(def Server (.-Server io))
 (def net (js/require "net"))
+(def http (js/require "http"))
 
 (defn send-to [sock data]
   (if sock
@@ -52,20 +54,30 @@
           :reaction (fn [this msg]
                       (send-to (:socket @this) (array (:cb msg) (:command msg) (-> msg :data clj->js)))))
 
+(defn- serve-client-shim
+  "Serve core/lighttable/ws.js to connecting clients. socket.io dropped its
+  static-file API in 2.0, so the shim is served off the http server directly."
+  [req res]
+  (if (= (.-url req) "/lighttable/ws.js")
+    (do
+      (.writeHead res 200 #js {"Content-Type" "application/javascript"})
+      (.end res (:content (files/open-sync (files/lt-home "core/lighttable/ws.js")))))
+    (do
+      (.writeHead res 404)
+      (.end res))))
+
 (def server
   (try
-    (let [ ws (.listen io 5678)]
-      (.set ws "log level" 1)
-      (.on (.-server ws) "error" #(do
-                                    (if (= (.-code %) "EADDRINUSE")
-                                      (do
-                                        (.log js/console "Default socket.io port already used. Retrying with a random port.")
-                                        (.listen (.-server ws) 0))
-                                      (throw %))))
-      (.on (.-server ws) "listening" #(do
-                                        (set! port (.-port (.address (.-server ws))))))
-      (.add (aget ws "static") "/lighttable/ws.js" (clj->js {:file (files/lt-home "core/lighttable/ws.js")}))
-      (.on (.-sockets ws) "connection" on-connect)
+    (let [http-server (.createServer http serve-client-shim)
+          ws (Server. http-server #js {:serveClient true})]
+      (.on http-server "error" #(if (= (.-code %) "EADDRINUSE")
+                                  (do
+                                    (.log js/console "Default socket.io port already used. Retrying with a random port.")
+                                    (.listen http-server 0))
+                                  (throw %)))
+      (.on http-server "listening" #(set! port (.-port (.address http-server))))
+      (.on ws "connection" on-connect)
+      (.listen http-server 5678)
       ws)
     (catch :default e
       (.error js/console "Error starting socket.io server" e))))

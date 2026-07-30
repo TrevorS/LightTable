@@ -82,7 +82,9 @@
     (when (and l @l)
       l)))
 
-(defn- focus-last []
+(defn focus-last
+  "Focus the most recently active editor."
+  []
   (when-let [ed (last-active)]
     (when-let [ed (:ed @ed)]
       (dom/focus js/document.body)

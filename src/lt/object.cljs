@@ -16,23 +16,23 @@
   "Counter to guarantee unique object ids"
   (atom 0))
 
-(def ^:private instances
+(def instances
   "Map of object ids to objects created by object/create"
   (atom (sorted-map)))
 
-(def ^:private behaviors
+(def behaviors
   "Map of behavior names to behaviors created by macros/behavior"
   (atom {}))
 
-(def ^:private object-defs
+(def object-defs
   "Map of object template keys to template maps created by object/object*"
   (atom {}))
 
-(def ^:private tags
+(def tags
   "Map of tags to associated lists of behaviors"
   (atom {}))
 
-(def ^:private negated-tags
+(def negated-tags
   "Map of tags to dissociated lists of behaviors e.g. :-behavior"
   (atom {}))
 
@@ -68,7 +68,7 @@
       (swap! result assoc! t (conj (or (get @result t) '[]) beh)))
     (persistent! @result)))
 
-(defn- specificity-sort
+(defn specificity-sort
   ([xs] (specificity-sort xs nil))
   ([xs dir]
    (let [arr #js []]
@@ -252,7 +252,10 @@
     (assoc beh :reaction (debounce thr (:reaction beh)))
     beh))
 
-(defn- behavior* [name & r]
+(defn behavior*
+  "Create and store a behavior. Prefer the lt.macros/behavior macro, which
+  expands to this fn."
+  [name & r]
   (-> (apply make-behavior* name r)
       (wrap-throttle)
       (wrap-debounce)
@@ -351,7 +354,9 @@
     (raise inst :init)
     inst))
 
-(defn- refresh! [obj]
+(defn refresh!
+  "Re-apply an object's listeners and raise :object.refresh on it."
+  [obj]
   (reset! obj (update-listeners obj))
   (raise* obj (trigger->behaviors :object.instant (:tags @obj)) nil)
   (raise obj :object.refresh))

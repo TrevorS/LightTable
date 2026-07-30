@@ -57,7 +57,10 @@
   (dom/$ :.res (object/->content this)))
 
 (defui ->entry [r file]
-  [:p.entry (crate/raw (str "<span class='line'>" (.-line r) "</span><pre>" (.-text r) "</pre>"))]
+  ;; Built as nodes rather than a raw HTML string: crate/raw relies on
+  ;; goog.dom/htmlToDocumentFragment, which Closure deleted, and interpolating
+  ;; matched file content into markup let that content render as HTML.
+  [:p.entry [:span.line (.-line r)] [:pre (.-text r)]]
   :click (fn []
            (cmd/exec! :open-path file)
            (cmd/exec! :go-to-line (.-line r))))

@@ -1,7 +1,7 @@
 (ns lt.objs.files
   "Provide fns for doing file related operations. A number of fns
   use the node [fs library](https://nodejs.org/api/fs.html) or [path library](https://nodejs.org/api/path.html)."
-  (:refer-clojure :exclude [open exists?])
+  (:refer-clojure :exclude [open exists? resolve])
   (:require [lt.object :as object]
             [lt.util.load :as load]
             [clojure.string :as string]
@@ -26,7 +26,9 @@
     {:types (into (:types cur {}) full)
      :exts (into (:exts cur {}) ext)}))
 
-(defn- join [& segs]
+(defn join
+  "Join path segments with the platform separator."
+  [& segs]
   (apply (.-join fpath) (filter string? (map str segs))))
 
 (def ignore-pattern
@@ -60,7 +62,7 @@
                       ;; Do not log stacktrace because it would be too much noise if multiple file openings fail
                       (js/lt.objs.console.error (str "Failed to open path '" path "' with error: " e))))
 
-(def ^:private files-obj (object/create (object/object* ::files
+(def files-obj (object/create (object/object* ::files
                                                         :tags [:files]
                                                         :exts {}
                                                         :types {})))
@@ -433,7 +435,7 @@
   [path]
 	(.dirname fpath path))
 
-(defn- next-available-name
+(defn next-available-name
   "Given a `path`, if it already exists then append a digit (starts at 1 and increments after) to the end of `path` and check again."
   [path]
   (if-not (exists? path)
