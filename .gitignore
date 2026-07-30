@@ -8,7 +8,12 @@
 /src-gen/
 /deploy/plugins/
 /plugins/*/*_compiled.js
+/plugins/*/*_compiled.js.map
+# The nREPL server the Clojure plugin starts. A pinned, checksummed binary
+# fetched by script/fetch-clojure-jar.js, not source and not build output.
+/plugins/Clojure/runner/target/
 /deploy/core/lighttable/paredit.js
+/deploy/core/lighttable/clojure.js
 .DS_Store
 .lein-deps-sum
 .lein-env

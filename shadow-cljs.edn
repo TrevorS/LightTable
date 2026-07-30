@@ -7,7 +7,8 @@
 ;; was still calling crate.core/html years after that rename. Compiling it here
 ;; makes a rename in the host a build error rather than something a user
 ;; discovers at startup.
-{:source-paths ["src" "src-gen" "test" "deploy/core/User/src" "plugins/Paredit/src"]
+{:source-paths ["src" "src-gen" "test" "deploy/core/User/src"
+                "plugins/Paredit/src" "plugins/Clojure/src"]
 
  :dependencies []
 
@@ -23,7 +24,14 @@
    ;; into the plugin's own directory, which is where load-js resolves from.
    :modules {:bootstrap {:entries [lt.core]}
              :user      {:entries [lt.plugins.user] :depends-on #{:bootstrap}}
-             :paredit   {:entries [lt.plugins.paredit] :depends-on #{:bootstrap}}}
+             :paredit   {:entries [lt.plugins.paredit] :depends-on #{:bootstrap}}
+             ;; Every namespace a plugin's .behaviors file names has to be an
+             ;; entry: behaviors are resolved by name at load, so a namespace
+             ;; nothing requires is one the module would not contain.
+             :clojure   {:entries [lt.plugins.clojure
+                                   lt.plugins.clojure.nrepl
+                                   lt.plugins.clojure.collapsible-exception]
+                         :depends-on #{:bootstrap}}}
 
    ;; npm packages are bundled rather than required at runtime. The window is
    ;; losing `require` when contextIsolation goes on, so anything it needs has

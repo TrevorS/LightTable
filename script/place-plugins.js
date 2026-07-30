@@ -32,7 +32,8 @@ const DEST = path.join(ROOT, 'deploy', 'plugins');
 // The default user plugin is not here because it does not live in plugins/;
 // `npm run place:user-plugin` handles that one.
 const CLJS_PLUGINS = {
-    Paredit: { module: 'paredit.js', as: 'paredit_compiled.js' }
+    Paredit: { module: 'paredit.js', as: 'paredit_compiled.js' },
+    Clojure: { module: 'clojure.js', as: 'clojure_compiled.js' }
 };
 
 function main() {

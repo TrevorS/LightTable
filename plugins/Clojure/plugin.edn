@@ -1,0 +1,16 @@
+{:name "Clojure"
+ :version "0.3.3"
+ :author "Kodowa"
+ :source "https://github.com/LightTable/Clojure"
+ :desc "Clojure(Script) integration for Light Table"
+ :behaviors "clojure.behaviors"
+
+ ;; What this plugin needs, declared rather than discovered — see
+ ;; plugins/README.md.
+ ;;
+ ;; :processes  runs `java -jar` for the nREPL server, and clojure-lsp
+ ;; :files      finds project.clj above the open file, and the jar beside itself
+ ;; :network    speaks nREPL over a tcp socket
+ ;; :plugins    builds a ClojureScript plugin from the editor
+ ;; :desktop    opens the JDK download page when java is missing
+ :capabilities #{:processes :files :network :plugins :desktop}}
