@@ -1,5 +1,6 @@
 (ns lt.plugins.clojure.collapsible-exception
-  (:require [lt.util.dom :as dom]
+  (:require [clojure.string :as string]
+            [lt.util.dom :as dom]
             [lt.object :as object]
             [lt.objs.editor :as ed]
             [lt.objs.notifos :as notifos]
@@ -14,7 +15,7 @@
   (when-not (empty? text)
     (if (= NOT_FOUND (.indexOf text "\n"))
       (subs text 0 100); take 100 characters
-      (first (clojure.string/split-lines text)))))
+      (first (string/split-lines text)))))
 
 (defn ->collapse-class [this summary]
   (str "inline-exception result-mark"

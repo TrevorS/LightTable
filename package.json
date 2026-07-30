@@ -24,7 +24,7 @@
     "build:plugins": "tsc -p plugins/TypeScript/tsconfig.json && npm run --silent deps:plugins && npm run --silent fetch:clojure-jar && node script/place-plugins.js",
     "fetch:clojure-jar": "node script/fetch-clojure-jar.js",
     "deps:plugins": "node script/install-plugin-deps.js",
-    "lint:cljs": "clj-kondo --fail-level error --lint src test plugins/Paredit/src deploy/core/User/src",
+    "lint:cljs": "clj-kondo --fail-level error --lint src test deploy/core/User/src plugins/Clojure/src plugins/CSS/src plugins/HTML/src plugins/Javascript/src plugins/Paredit/src plugins/Python/src",
     "lint:js": "eslint script src-electron src-window src-worker src-browser",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.window.json --noEmit && tsc -p tsconfig.worker.json --noEmit && tsc -p tsconfig.browser.json --noEmit && tsc -p plugins/TypeScript/tsconfig.json --noEmit",
     "test": "shadow-cljs compile test && node target/test.js",

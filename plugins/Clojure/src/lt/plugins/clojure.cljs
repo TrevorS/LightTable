@@ -8,6 +8,7 @@
             [lt.objs.console :as console]
             [lt.objs.editor :as ed]
             [lt.objs.editor.pool :as pool]
+            [lt.objs.jump-stack :as jump-stack]
             [lt.objs.popup :as popup]
             [lt.objs.platform :as platform]
             [lt.objs.tabs :as tabs]
@@ -727,7 +728,7 @@
           :reaction (fn [editor {:keys [file line] :as res}]
                       (when (= :jump (:result-type res))
                         (if (and res file line)
-                          (object/raise lt.objs.jump-stack/jump-stack :jump-stack.push! editor file {:line (dec line) :ch 0})
+                          (object/raise jump-stack/jump-stack :jump-stack.push! editor file {:line (dec line) :ch 0})
                           (notifos/set-msg! "Definition not found" {:class "error"})))))
 
 ;;****************************************************

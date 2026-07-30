@@ -3,7 +3,9 @@
             [lt.objs.eval :as eval]
             [lt.objs.editor :as ed]
             [lt.objs.command :as cmd]
-            [lt.objs.editor :as editor]
+            ;; lt.objs.editor was required twice, once as `ed` and once as
+            ;; `editor`, and both aliases were in use. clj-kondo calls that an
+            ;; error rather than a warning.
             [lt.objs.editor.pool :as pool]
             [lt.objs.clients :as clients]
             [lt.util.dom :refer [$ append]])
@@ -56,7 +58,7 @@
 (cmd/command {:command :html.jump-to-matching-tag
               :desc "HTML: Jump to matching tag"
               :exec (fn []
-                      (let [cm (editor/->cm-ed (pool/last-active))
+                      (let [cm (ed/->cm-ed (pool/last-active))
                             _ (js/CodeMirror.commands.toMatchingTag cm)
                             cursor (.getCursor cm)]
                         ;; Decrement to keep cursor in tag and enable jumping back and forth between matching tags
