@@ -134,14 +134,19 @@ reaches `lt.objs.files.cwd` — outside string literals.
 
 ## Documentation
 
-* [docs.lighttable.com](http://docs.lighttable.com/) — user documentation and tutorials
-* [BOT architecture](doc/BOT.md) — behaviors, objects and tags, the model everything here is built on
-* [Light Table's API docs](http://lighttable.github.io/LightTable/api/index.html) — what plugin authors can reach
+**[doc/](doc/README.md)** is the index, and it says which pages are current and
+which predate this work. The ones to start with:
+
+* [Behaviors, Objects and Tags](doc/BOT.md) — the model everything here is built on
 * [Workflow](doc/workflow.md) — a typical session
-* The [community wiki](https://github.com/LightTable/LightTable/wiki), including the
-  [FAQ](https://github.com/LightTable/LightTable/wiki/FAQ) and guides for
-  [vim](https://github.com/LightTable/LightTable/wiki/For-Vim-Users) and
-  [emacs](https://github.com/LightTable/LightTable/wiki/For-Emacs-Users) users
+* [The Electron layer](doc/electron-guide.md) and
+  [the road to context isolation](doc/context-isolation.md) — how the window
+  reaches the desktop, and why it reaches it that way
+
+`docs.lighttable.com` is no longer up, and the community
+[wiki](https://github.com/LightTable/LightTable/wiki) and
+[plugin list](https://github.com/LightTable/plugin-metadata) still live on the
+upstream repository.
 
 To regenerate the API docs:
 

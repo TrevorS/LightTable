@@ -1,0 +1,58 @@
+name: docs
+
+# Publishes doc/ to GitHub Pages.
+#
+# Separate from the build workflow on purpose: documentation should not wait on
+# a ClojureScript compile and an Electron download, and a red build should not
+# stop a typo fix from being published.
+#
+# One thing has to be done by hand once, and cannot be done from here:
+# Settings → Pages → Source must be set to "GitHub Actions". Until it is, the
+# deploy step fails with a message saying exactly that.
+
+on:
+  push:
+    branches: [develop]
+    paths:
+      - 'doc/**'
+      - '.github/workflows/docs.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deploy at a time, and let a running one finish: cancelling mid-deploy can
+# leave the site half-published.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/configure-pages@v5
+
+      # doc/ is the site root rather than the repository, so the published site
+      # is the documentation and nothing else. doc/_config.yml records what
+      # that costs: a link out of doc/ has to be a full GitHub address.
+      - uses: actions/jekyll-build-pages@v1
+        with:
+          source: ./doc
+          destination: ./_site
+
+      - uses: actions/upload-pages-artifact@v3
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

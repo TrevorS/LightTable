@@ -1,0 +1,62 @@
+# Light Table documentation
+
+Everything here is version-controlled beside the code it describes, which is
+the point: `docs.lighttable.com` served this role for a decade and now returns
+503, and a document that can drift from the editor without anyone noticing is
+how that becomes a problem rather than an inconvenience.
+
+Two kinds of page live here, and it is worth knowing which you are reading.
+**Current** pages were written or revised during the 2026 modernization and
+describe the editor as it is. **Predates the modernization** means the page was
+accurate when written, is still broadly right about concepts, and may name
+build steps, versions or services that have moved. Where one is misleading
+rather than merely old, it says so at the top.
+
+## Using Light Table
+
+| | |
+|---|---|
+| [Workflow](workflow.md) | A typical session: evaluating as you write, watches, the jump stack. *Predates the modernization.* |
+| [Commands](commands.md) | What a command is and how to add one. *Predates the modernization.* |
+| [Behaviors and keymaps](behavior-and-keymap-configuration.md) | Configuring the editor by editing data rather than settings screens. *Predates the modernization.* |
+
+## Understanding the editor
+
+| | |
+|---|---|
+| [Behaviors, Objects and Tags](BOT.md) | The model the whole editor is built on. Read this one first — nothing else here makes sense without it. *Predates the modernization, and is still accurate.* |
+| [The Electron layer](electron-guide.md) | Processes, the preload, and what the window may reach. *Current.* |
+
+## Working on Light Table
+
+| | |
+|---|---|
+| [Building and running](https://github.com/TrevorS/LightTable/blob/develop/README.md#building) | In the root README, because it changes with the build. |
+| [Developer install](developer-install.md) | *Predates the modernization; the root README is the current answer.* |
+| [For committers](for-committers.md) | Dependencies, releases, plugin metadata. *Predates the modernization.* |
+| [Style guide](style-guide.md) | ClojureScript conventions. *Predates the modernization, and still applies.* |
+| [Plugins in this repository](https://github.com/TrevorS/LightTable/blob/develop/plugins/README.md) | Writing one in TypeScript or ClojureScript, and the capability manifest. *Current.* |
+
+## What changed, and why
+
+The modernization is recorded rather than summarised, because the reasoning is
+worth more than the outcome — several of these exist to stop a decision being
+re-litigated from scratch.
+
+| | |
+|---|---|
+| [Modernization changelog](https://github.com/TrevorS/LightTable/blob/develop/CHANGELOG-MODERNIZATION.md) | The whole of it, in the order it happened. |
+| [The road to context isolation](context-isolation.md) | How the window came to have no Node, what it cost, and the measurement that decided the design. |
+| [The JavaScript left](javascript-remaining.md) | There is none of Light Table's own. What the four TypeScript roots are and why they are separate. |
+| [Language support](language-support.md) | Where a language server would fit, and why it belongs in the editor rather than in each plugin. |
+
+## Archived
+
+| | |
+|---|---|
+| [README as of 2021](README-2021.md) | The project as it stood before this work. Kept because older discussions link to it. |
+
+## API documentation
+
+`lein codox` regenerates the ClojureScript API docs from source. `project.clj`
+exists only for that and builds nothing else.

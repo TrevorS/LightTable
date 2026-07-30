@@ -1,8 +1,8 @@
 # Workflow
 
-I'll assume you already know how to eval code (Cmd/Ctrl-enter), how to open the command bar (Ctrl-space) and how to open files with the navigator (Cmd/Ctrl-o). If you don't, start with the [Light Table tutorial](http://docs.lighttable.com/tutorials/full/).
+I'll assume you already know how to eval code (Cmd/Ctrl-enter), how to open the command bar (Ctrl-space) and how to open files with the navigator (Cmd/Ctrl-o). If you don't, `Ctrl-space` and typing part of a command name is the way to find everything else — the command bar lists what each one does.
 
-Add `LightTable/src` to your Light Table workspace and open `src/lt/objs/jump_stack.cljs`. Hit eval
+Add this repository's `src` to your Light Table workspace and open `src/lt/objs/jump_stack.cljs`. Hit eval
 (Cmd/Ctrl-enter) somewhere in the file to start a ClojureScript compiler. When it's finished
 starting up it will ask you where to send the emitted JavaScript code - choose Light Table UI from
 the menu. Now you should be able to eval ClojureScript code inside your current Light Table

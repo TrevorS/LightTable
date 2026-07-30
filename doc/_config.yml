@@ -1,0 +1,23 @@
+# Jekyll configuration for the documentation site.
+#
+# Only what GitHub Pages needs to render doc/ as a site. Two of its default
+# plugins are doing the real work and are worth naming, because the markdown
+# here is written to be read on GitHub first and published second:
+#
+#   jekyll-readme-index    serves README.md as the index, so doc/README.md is
+#                          the front page rather than a directory listing
+#   jekyll-relative-links  rewrites [text](BOT.md) to the rendered page, so
+#                          links between these files work in both places
+#
+# Both ship enabled with the github-pages gem that actions/jekyll-build-pages
+# uses, so there is no plugins list here to drift from what is actually run.
+#
+# Anything the index links to outside doc/ — the root README, the modernization
+# changelog, plugins/README.md — is linked by its full GitHub address rather
+# than by a relative path, because a relative path out of the site root
+# resolves on GitHub and 404s here.
+title: Light Table
+description: >-
+  Documentation for Light Table, a code editor that connects you to your
+  creation with instant feedback.
+theme: jekyll-theme-primer

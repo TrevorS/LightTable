@@ -1,3 +1,9 @@
+> **This predates the 2026 modernization and its build steps no longer apply.**
+> The current answer is [Building](https://github.com/TrevorS/LightTable/blob/develop/README.md#building) in the root README:
+> a JDK and Node, then `make deps && make build && make run`. Leiningen is
+> needed only to regenerate the API docs. What is still useful below is the
+> per-OS notes, particularly for Windows.
+
 # Initial setup
 
 ## Prerequisites

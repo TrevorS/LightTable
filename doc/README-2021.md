@@ -16,11 +16,11 @@ Light Table is a next generation code editor that connects you to your creation 
 
 > **This is a development branch.** It is not as stable as `master` and can
 > break. Ongoing modernization work is tracked in
-> [CHANGELOG-MODERNIZATION.md](CHANGELOG-MODERNIZATION.md).
+> [CHANGELOG-MODERNIZATION.md](https://github.com/TrevorS/LightTable/blob/develop/CHANGELOG-MODERNIZATION.md).
 
 ## Downloads
 
-Prebuilt binaries are available through [lighttable.com](http://lighttable.com). To build and use a developer version of Light Table [see these instructions](doc/developer-install.md).
+Prebuilt binaries are available through [lighttable.com](http://lighttable.com). To build and use a developer version of Light Table [see these instructions](developer-install.md).
 
 For OSX users, the install process involves the following steps until we officially sign our OSX App:
 
@@ -32,8 +32,8 @@ For OSX users, the install process involves the following steps until we officia
 
 * See [docs.lighttable.com](http://docs.lighttable.com/) for official user documentation and tutorials.
 * See the [community wiki](https://github.com/LightTable/LightTable/wiki) which includes a [User FAQ](https://github.com/LightTable/LightTable/wiki/FAQ) and a [For Users page](https://github.com/LightTable/LightTable/wiki/For-Users) for additional links.
-* For a typical Light Table workflow, [read this](doc/workflow.md).
-* To understand how Light Table works, read about its [BOT architecture](doc/BOT.md).
+* For a typical Light Table workflow, [read this](workflow.md).
+* To understand how Light Table works, read about its [BOT architecture](BOT.md).
 * See [Light Table's API docs](http://lighttable.github.io/LightTable/api/index.html) to see what
   plugin authors have access to.
 * If you're a user coming from vim or emacs see the [For Vim Users](https://github.com/LightTable/LightTable/wiki/For-Vim-Users) and [For Emacs Users](https://github.com/LightTable/LightTable/wiki/For-Emacs-Users) guides.
@@ -51,14 +51,14 @@ Want to ask a question or just say hi? Please do :). Our mailing list is the [Li
 LightTable is primarily written in [ClojureScript](http://clojure.org/clojurescript). If you aren't familiar with it, check out [David Nolen's tutorial](https://github.com/swannodette/lt-cljs-tutorial).
 
 Building needs a JDK, [Leiningen](https://leiningen.org) and Node. The build is
-verified on JDK 25 and Node 24; see [.github/workflows/build.yml](.github/workflows/build.yml).
+verified on JDK 25 and Node 24; see [.github/workflows/build.yml](https://github.com/TrevorS/LightTable/blob/develop/.github/workflows/build.yml).
 
-In order to develop for Light Table, you will need to [install a developer version of Light Table](doc/developer-install.md). For more information, read [CONTRIBUTING.md](https://github.com/LightTable/LightTable/blob/master/CONTRIBUTING.md#code-contributions) and [For Developers](https://github.com/LightTable/LightTable/wiki/For-Developers).
+In order to develop for Light Table, you will need to [install a developer version of Light Table](developer-install.md). For more information, read [CONTRIBUTING.md](https://github.com/LightTable/LightTable/blob/master/CONTRIBUTING.md#code-contributions) and [For Developers](https://github.com/LightTable/LightTable/wiki/For-Developers).
 
 
 ## License
 
-All files in this project are under the [LICENSE.md](LICENSE.md) license unless otherwise stated in the file or by a dependency's license file.
+All files in this project are under the [LICENSE.md](https://github.com/TrevorS/LightTable/blob/develop/LICENSE.md) license unless otherwise stated in the file or by a dependency's license file.
 
 ## Credits
 
