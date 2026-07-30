@@ -4,10 +4,10 @@
             [lt.objs.files :as files]
             [lt.objs.platform :as platform]
             [lt.objs.console :as console]
+            [lt.util.bridge :as bridge]
             [cljs.reader :as reader])
   (:require-macros [lt.macros :refer [behavior]]))
 
-(def cp (js/require "child_process"))
 
 (declare worker)
 
@@ -64,29 +64,29 @@
                 :tags #{:worker-thread}
                 :queue []
                 :init (fn [this]
-                        (let [worker (.fork cp (files/lt-home "/core/lighttable/background/worker.js")
-                                            (clj->js ["--harmony"])
-                                            (clj->js {:execPath js/process.execPath
-                                                      :silent true
-                                                      ;; ATOM_SHELL_INTERNAL_RUN_AS_NODE became
-                                                      ;; ELECTRON_RUN_AS_NODE in Electron 1.x. Without it the
-                                                      ;; child boots as a full app and never gets an IPC
-                                                      ;; channel, so process.send is undefined in the worker.
-                                                      ;; Extend the current env rather than replacing it,
-                                                      ;; otherwise the worker loses PATH and friends.
-                                                      :env (js/Object.assign #js {} js/process.env
-                                                                             #js {"ELECTRON_RUN_AS_NODE" "1"})
-                                                      :cwd files/cwd}))]
-                          (.on (.-stdout worker) "data" (fn [data]
-                                                          (console/loc-log {:file "thread"
-                                                                            :line "stdout"
-                                                                            :content (str data)})))
-                          (.on (.-stderr worker) "data" (fn [data]
-                                                          (console/loc-log {:file "thread"
-                                                                            :line "stderr"
-                                                                            :content (str data)
-                                                                            :class "error"})))
-                          (.on worker "message" (fn [m] (object/raise this :message m)))
+                        (let [^js worker (.fork bridge/processes
+                                               (files/lt-home "/core/lighttable/background/worker.js")
+                                               #js ["--harmony"]
+                                               #js {:execPath (.execPath bridge/host)
+                                                    ;; ATOM_SHELL_INTERNAL_RUN_AS_NODE became
+                                                    ;; ELECTRON_RUN_AS_NODE in Electron 1.x. Without it the
+                                                    ;; child boots as a full app and never gets an IPC
+                                                    ;; channel, so process.send is undefined in the worker.
+                                                    ;; Extend the current env rather than replacing it,
+                                                    ;; otherwise the worker loses PATH and friends.
+                                                    :env (js/Object.assign #js {} (.env bridge/host)
+                                                                           #js {"ELECTRON_RUN_AS_NODE" "1"})
+                                                    :cwd files/cwd})]
+                          (.onStdout worker (fn [data]
+                                              (console/loc-log {:file "thread"
+                                                                :line "stdout"
+                                                                :content (str data)})))
+                          (.onStderr worker (fn [data]
+                                              (console/loc-log {:file "thread"
+                                                                :line "stderr"
+                                                                :content (str data)
+                                                                :class "error"})))
+                          (.onMessage worker (fn [m] (object/raise this :message m)))
                           (.send worker (clj->js {:msg "init"
                                                   :obj (object/->id this)
                                                   :ltpath (files/lt-home)}))

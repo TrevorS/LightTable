@@ -15,7 +15,9 @@
             [singultus.binding :refer [bound map-bound subatom]])
   (:require-macros [lt.macros :refer [behavior defui]]))
 
-(load/js "core/lighttable/ui/dragdrop.js" :sync)
+;; Required rather than evaluated, and it no longer publishes a global for
+;; this namespace to find.
+(def ^js dragdrop (js/require (str load/dir "/core/window/dragdrop.js")))
 
 (def multi-def (object* ::multi-editor2
                         :tags #{:tabs}
@@ -139,7 +141,7 @@
     ;;Remove old tabs
     (doseq [tab prev-tabs]
       (object/destroy! tab))
-    (js/sortable item (js-obj "axis" "x" "distance" 10  "scroll" false "opacity" 0.9 "connectWith" ".list"))
+    (.sortable dragdrop item (js-obj "axis" "x" "distance" 10 "scroll" false "opacity" 0.9 "connectWith" ".list"))
     (dom/on item "contextmenu" (fn [e]
                                  (object/raise multi :menu! e)))
     (dom/on item "moved" (fn [^js e] (move-tab multi (.-opts e)) ))
@@ -555,11 +557,6 @@
           :reaction (fn [this v]
                       (object/update! this [:tabset-bottom] + v)))
 
-
-(behavior ::init-sortable
-          :triggers #{:init}
-          :reaction (fn [app]
-                      (js/initSortable js/window)))
 
 (behavior ::init
           :triggers #{:init}

@@ -13,7 +13,12 @@
 // Then every plugin directory is copied into deploy/plugins/, alongside the
 // published ones script/build.sh clones.
 //
-// Run via `npm run build:plugins`, after `npm run build:cljs`.
+// Run by both `npm run build:cljs` and `npm run build:plugins`. It has to be
+// part of the ClojureScript build rather than a step after it: a module
+// references the bundle's hoisted constants (cljs$cst$NNN), and those are
+// numbered per-compilation, so a plugin module left over from an earlier build
+// fails at load with an undefined constant. Placing it in the same command that
+// produced it is what stops that from being possible.
 
 const fs = require('fs');
 const path = require('path');

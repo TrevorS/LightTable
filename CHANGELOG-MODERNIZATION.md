@@ -604,6 +604,134 @@ small on purpose: what it demonstrates is the shape.
 Verified by the smoke test with and without the cloned flagship plugins, since
 `deploy/plugins` is no longer empty in CI.
 
+## Every eval of Light Table's own code is gone
+
+`fuzzy.js` and `dragdrop.js` were loaded with `load/js`, which evaluates into
+global scope. They are TypeScript modules in `src-window/` now, required rather
+than evaluated. That leaves **one** `load/js` call in the whole codebase — the
+plugin loader — and that one is inherent, since a plugin is arbitrary
+JavaScript by definition.
+
+`fuzzy.js` opened by patching `String.prototype` with a `score` method, a
+minified copy of `string_score`. Extending `String.prototype` from an editor
+that hosts plugins is a poor trade at the best of times; here it was also
+invisible, because the call site read `(.score scorer search)` on an ordinary
+string with nothing to say where that came from. De-minified with real names,
+behaviour unchanged, and the smoke test checks the scoring rather than the
+module's presence — a wrong port would rank results badly rather than throw.
+
+**The three "forked CodeMirror addons" turned out to be two.** `overlay.js` was
+a copy of CodeMirror **4.1.1**'s addon with no Light Table changes at all, and
+the packaged 5.65 version carries an upstream fix it was missing. It is
+required from `node_modules` now and the copy is deleted. `search.js` (153 lines
+against upstream's 295) and `show-hint.js` (43 against 523) really are Light
+Table's own trimmed code, and stay — required rather than evaluated.
+
+Requiring `overlay` is what exposed the difference between the two mechanisms:
+it has a UMD wrapper, so under `eval` it took the browser branch and used the
+global, while under `require` its CommonJS branch tried to resolve
+`../../lib/codemirror` and failed. That failure is what sent the diff hunting.
+
+One fragility found and closed on the way: a ClojureScript plugin module
+references the bundle's hoisted constants, which are numbered per compilation,
+so Paredit failed with an undefined `cljs$cst$900` after the bundle was rebuilt
+without re-placing it. Placement is part of `build:cljs` now rather than a step
+that can be run separately — the stale combination is impossible rather than
+merely documented. It also means these artifacts are **not** independently
+distributable: an in-tree plugin module only runs against the bundle it was
+compiled with.
+
+## What crossing costs, measured
+
+Moving Light Table's remaining Node use behind the bridge means each call
+crosses a boundary. Which boundary turns out to be the whole question. Measured
+on Electron 43, 2,000 iterations per number:
+
+| | direct | via contextBridge | via sync ipc |
+|---|---|---|---|
+| `existsSync` | 1.7µs | **2.9µs** (1.8x) | 194µs (118x) |
+| `readFileSync` | 6.4µs | **9.1µs** (1.4x) | 242µs (38x) |
+
+The first measurement taken here was the ipc one alone, and the conclusion drawn
+from it — that `lt.objs.files` could not be ported and would need redesigning
+around coarse asynchronous calls — was wrong. `contextIsolation` separates the
+window's JavaScript world from the preload's; it does not require leaving the
+process. A preload with `sandbox: false` keeps Node, so a capability can be
+served from the isolated world directly, and the window pays about a microsecond
+to cross rather than two hundred.
+
+So `lt.objs.files` can be moved rather than redesigned, and its synchronous API
+stays synchronous.
+
+The stateful cases work too, which was the other open question. A `net.Socket`
+sent across `contextBridge` arrives as a plain `Object` with its prototype gone,
+so sockets and child processes need a handle — the real object stays in the
+preload and a set of functions crosses. Verified by spawning a real child
+process, streaming its stdout into the window through a callback, and reading
+its exit code. A callback crossing costs 0.68µs, which is cheap enough for
+streaming.
+
+The full scope — 77 touch points across 9 namespaces, what each needs, the
+ordering, and where the ecosystem risk sits — is in
+[doc/context-isolation.md](doc/context-isolation.md).
+
+## The window no longer touches Node
+
+All 77 touch points are migrated. **There is no `js/require`, `js/process` or
+`js/__dirname` left in `src/`.** Every filesystem call, process, socket and
+download goes through the capability list in `src-electron/preload.ts`.
+
+The mechanical ones were mechanical: `lt.objs.files`'s 32 calls kept their
+synchronous shape and their names, because the bridge names match Node's
+exactly. The rest were more interesting.
+
+**`lt.objs.deploy` stopped being an http client.** It held url parsing, redirect
+following, a CONNECT tunnel for proxied https and a write stream, all so that a
+file could be downloaded. Naming the capability `download` took about seventy
+lines out of the window. The coarse-capability argument was made for security
+reasons; it paid in code size first, and the same call applies to both client
+servers — what the window does with a tcp server is wait for connections and
+send lines, so that is the surface, and the server itself moved across whole.
+
+**Identity does not survive the crossing**, twice. `fs.watchFile` pairs with
+`unwatchFile` keyed on the callback passed in, which cannot work through a
+proxy — so watching returns a handle and the listener never leaves the preload.
+Sockets were compared against stored ones, so connections are numbered instead,
+which the window only ever needed since it did nothing with a socket but store
+and compare it.
+
+**Names must match exactly or not resemble at all.** Three bridge file methods
+were shortened (`readSync`) while the rest were identical (`existsSync`). That
+inconsistency broke the migration silently, and the failure surfaced as a
+27-key smoke-test expression reporting only that it threw.
+
+Verified beyond the suite: a spawned process streaming stdout and reporting
+ENOENT, `exec` collecting output, a 25KB download through a real proxy
+tunnel, a 404 rejecting rather than writing a truncated file, and a real
+tcp client connecting, announcing itself, appearing with its connection id and
+being removed on disconnect.
+
+## A REPL, which should have come first
+
+Every question about the assembled application was costing a throwaway Electron
+harness: a bespoke probe, fifteen seconds of boot, one answer, no follow-up.
+`script/lt-repl.sh` boots the real application once and attaches over the
+DevTools protocol `main.js` already opens a port for.
+
+```sh
+script/lt-repl.sh start
+script/lt-repl.sh cljs "files/cwd"
+script/lt-repl.sh stop
+```
+
+It earned itself on the first use, naming the line a probe cycle had failed to
+find. Two of its own bugs are worth recording because both produced confident
+wrong answers rather than errors: `replMode` stopped `awaitPromise` taking
+effect, so every async probe returned `{}`; and the ClojureScript name munger
+rewrote `/` inside string literals, so a path argument arrived mangled and the
+call answered about nothing. The second sent a real debugging session after a
+bug in `lt.objs.files` that did not exist.
+
 ## Content isolation (not yet)
 
 `nodeIntegration: true` and `contextIsolation: false` are still set. The bridge

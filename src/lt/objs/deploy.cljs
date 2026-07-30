@@ -8,6 +8,7 @@
             [lt.objs.cache :as cache]
             [lt.objs.notifos :as notifos]
             [lt.objs.platform :as platform]
+            [lt.util.bridge :as bridge]
             [lt.objs.sidebar.command :as cmd]
             [lt.objs.console :as console]
             [lt.objs.app :as app]
@@ -16,10 +17,6 @@
             [clojure.string :as string])
   (:require-macros [lt.macros :refer [behavior defui]]))
 
-(def fs (js/require "fs"))
-(def ^:private https (js/require "https"))
-(def ^:private http (js/require "http"))
-(def ^:private url-mod (js/require "url"))
 (def tar (load/node-module "tar"))
 (def home-path (files/lt-home ""))
 (def strict-ssl? true)
@@ -59,84 +56,20 @@
   [v1 v2]
   (compare-versions (str->version v1) (str->version v2)))
 
-(def ^:private max-redirects 5)
-
-(defn- proxy-for
-  "Proxy to use for `url` per the environment, or nil when none is configured."
-  [url]
-  (let [env js/process.env]
-    (if (string/starts-with? url "https:")
-      (or (.-https_proxy env) (.-HTTPS_PROXY env))
-      (or (.-http_proxy env) (.-HTTP_PROXY env)))))
-
-(defn- get-through-proxy
-  "GET an https `url` by opening a CONNECT tunnel through `proxy`."
-  [url proxy on-response on-error]
-  (let [target (.parse url-mod url)
-        p (.parse url-mod proxy)
-        req (.request http (js-obj "host" (.-hostname p)
-                                   "port" (or (.-port p) 80)
-                                   "method" "CONNECT"
-                                   "path" (str (.-hostname target) ":" (or (.-port target) 443))))]
-    (.on req "connect"
-         (fn [res socket]
-           (if-not (= 200 (.-statusCode res))
-             (on-error (js/Error. (str "Proxy CONNECT failed with status " (.-statusCode res))))
-             (-> (.get https (js-obj "host" (.-hostname target)
-                                     "path" (.-path target)
-                                     "socket" socket
-                                     "agent" false
-                                     "rejectUnauthorized" strict-ssl?
-                                     "headers" (js-obj "User-Agent" "Light Table"))
-                       on-response)
-                 (.on "error" on-error)))))
-    (.on req "error" on-error)
-    (.end req)))
-
-(defn- get-url
-  "GET `url` and hand the response to `on-response`, following up to
-  `redirects` redirects. GitHub's download endpoints redirect, so this cannot
-  be skipped."
-  [url redirects on-response on-error]
-  (let [handle (fn [resp]
-                 (let [status (.-statusCode resp)
-                       location (.. resp -headers -location)]
-                   (if (and location (<= 300 status) (< status 400))
-                     (do
-                       (.resume resp)
-                       (if (pos? redirects)
-                         (get-url (.resolve url-mod url location) (dec redirects) on-response on-error)
-                         (on-error (js/Error. (str "Too many redirects downloading: " url)))))
-                     (on-response resp))))
-        https? (string/starts-with? url "https:")]
-    (if-let [proxy (and https? (proxy-for url))]
-      (get-through-proxy url proxy handle on-error)
-      (let [opts (.parse url-mod url)]
-        (aset opts "headers" (js-obj "User-Agent" "Light Table"))
-        (aset opts "rejectUnauthorized" strict-ssl?)
-        (-> (.get (if https? https http) opts handle)
-            (.on "error" on-error))))))
-
 (defn download-file
   "Download `from` to the path `to`, calling `cb` once the file has been fully
   written. Follows redirects and honours the http_proxy/https_proxy
-  environment variables."
+  environment variables.
+
+  Redirect following, proxy tunnelling and the write stream all live on the
+  other side of the bridge now. What the window wanted was a file downloaded,
+  not an http client, and saying so took about seventy lines out of here."
   [from to cb]
-  (let [fail (fn [e]
-               (notifos/done-working)
-               (console/error e))]
-    (get-url from max-redirects
-             (fn [^js resp]
-               (if-not (= 200 (.-statusCode resp))
-                 (do
-                   (.resume resp)
-                   (fail (js/Error. (str "Error downloading: " from
-                                         " status code: " (.-statusCode resp)))))
-                 (let [out (.createWriteStream fs to)]
-                   (.on out "error" fail)
-                   (.on out "finish" cb)
-                   (.pipe resp out))))
-             fail)))
+  (-> (.download bridge/net from to strict-ssl?)
+      (.then cb)
+      (.catch (fn [e]
+                (notifos/done-working)
+                (console/error e)))))
 
 (defn download-zip [ver cb]
   (let [n (notifos/working (str "Downloading version " ver " .."))]
@@ -234,7 +167,7 @@
   "Binary/electron version. The two versions are in sync since binaries updates
   only occur with electron updates."
   []
-  (aget js/process.versions "electron"))
+  (aget (.versions bridge/host) "electron"))
 
 (defui button [label & [cb]]
        [:div.button.right label]

@@ -44,7 +44,7 @@
        ;; file manager e.g. ["/path/to/electron" "-psn_0_12381134"]. Rather than add
        ;; a brittle check to remove that argument, check open-files first
        (or (seq open-files)
-           (seq (if js/process.env.LT_DEV_CLI (subvec argv 2) (rest argv))))))
+           (seq (if (aget (.env bridge/host) "LT_DEV_CLI") (subvec argv 2) (rest argv))))))
 
 ;;*********************************************************
 ;; Behaviors

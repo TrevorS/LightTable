@@ -1,0 +1,26 @@
+{
+  "compilerOptions": {
+    // Runs in the window, not the main process: DOM, and no Node types, since
+    // anything a window namespace needs from Node goes through the bridge.
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM"],
+    "types": [],
+
+    // CommonJS because ClojureScript reaches these with js/require, the same
+    // way it reaches everything else in deploy/core.
+    "module": "commonjs",
+    "moduleResolution": "node",
+
+    "strict": true,
+    "noImplicitOverride": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+
+    "rootDir": "src-window",
+    "outDir": "deploy/core/window",
+    "sourceMap": true,
+    "newLine": "lf",
+    "forceConsistentCasingInFileNames": true
+  },
+  "include": ["src-window/**/*.ts"]
+}

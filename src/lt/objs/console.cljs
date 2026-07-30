@@ -10,19 +10,21 @@
             [lt.objs.tabs :as tabs]
             [clojure.string :as string]
             [lt.util.dom :refer [$ append empty parents] :as dom]
-            [lt.objs.platform :as platform])
+            [lt.objs.platform :as platform]
+            [lt.util.bridge :as bridge])
   (:require-macros [singultus.def-macros :refer [defpartial]]
                    [lt.macros :refer [behavior defui]]))
 
 (def console-limit 50)
-(def util-inspect (.-inspect (js/require "util")))
 (def logs-dir (files/lt-user-dir "logs"))
 (def core-log (try
                 (when-not (files/exists? logs-dir)
                   (when-not (files/exists? (files/lt-user-dir))
                     (files/mkdir (files/lt-user-dir)))
                   (files/mkdir logs-dir))
-                (.. (js/require "fs") (createWriteStream (files/join logs-dir (str "window" (app/window-number) ".log"))))
+;; A path rather than a write stream. Log lines are rare and appending is
+                ;; one call, so a stream is a handle to keep alive for no gain.
+                (files/join logs-dir (str "window" (app/window-number) ".log"))
                 (catch :default e
                   (.error js/console (str "Failed to initialize the log writer: " e)))))
 
@@ -45,7 +47,7 @@
 
 (defn write-to-log [thing]
   (when core-log
-    (.write core-log thing)))
+    (.appendFileSync bridge/files core-log thing)))
 
 (defpartial ^js ->item [l & [class]]
   [:li {:class class} l])
@@ -109,7 +111,7 @@
                       (set! console-limit size)))
 
 (defn inspect [thing]
-  (util-inspect thing false 2))
+  (.inspect ^js (.-host bridge/bridge) thing 2))
 
 (defn verbatim
   ([thing] (verbatim thing nil))

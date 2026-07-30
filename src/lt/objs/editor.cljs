@@ -38,6 +38,7 @@
             ["codemirror/addon/comment/comment"]
             ["codemirror/addon/selection/active-line"]
             ["codemirror/addon/scroll/scrollpastend"]
+            ["codemirror/addon/mode/overlay"]
             ["codemirror/addon/mode/simple"]
             ["codemirror/addon/display/rulers"]
             ["codemirror/keymap/sublime"])
@@ -1015,8 +1016,6 @@
 (behavior ::init-codemirror
           :triggers #{:init}
           :reaction (fn [this]
-                      ;; TODO: use addon/mode/overlay.js
-                      (load/js "core/lighttable/codemirror_addons/overlay.js" :sync)
                       (doseq [file (files/ls (files/lt-home "core/node_modules/codemirror/addon/fold"))
                               :when (= (files/ext file) "js")]
                         (js/require (files/lt-home (str "core/node_modules/codemirror/addon/fold/" file))))

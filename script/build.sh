@@ -28,8 +28,9 @@ popd
 # Build tooling lives at the repo root
 npm install
 
-# The main process, compiled from TypeScript.
+# The main process and the window's own TypeScript modules.
 npm run build:main
+npm run build:window
 
 # The window bundle, the default user plugin, and the worker thread that backs
 # lt.objs.thread. The worker is a separate target because it runs under node

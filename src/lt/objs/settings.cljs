@@ -162,7 +162,8 @@
         (object/refresh! (first objs))
         (catch :default e
           (console/error e)))
-      (js/process.nextTick (fn []
+      ;; Was process.nextTick; queueMicrotask is the web equivalent.
+      (js/queueMicrotask (fn []
                              (refresh-all (next objs)))))))
 
 (defn refresh-diffed [diff]

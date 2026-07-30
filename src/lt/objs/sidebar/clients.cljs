@@ -181,6 +181,6 @@
                 :connect (fn []
                            (popup/popup! {:header "Ports"
                                           :body [:dl#ports
-                                                 [:dt "TCP: "] [:dd (str tcp/port)]
-                                                 [:dt "WebSocket: "] [:dd (str ws/port)]]
+                                                 [:dt "TCP: "] [:dd (str (tcp/->port))]
+                                                 [:dt "WebSocket: "] [:dd (str (ws/->port))]]
                                           :buttons [{:label "ok"}]}))})

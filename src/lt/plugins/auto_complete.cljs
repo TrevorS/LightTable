@@ -318,7 +318,9 @@
 (behavior ::init
           :triggers #{:init}
           :reaction (fn [this]
-                      (load/js "core/lighttable/codemirror_addons/show-hint.js" :sync)
+                      ;; Required, not evaluated: this fork exports nothing and only extends
+                      ;; the global CodeMirror, so requiring it does what evaluating it did.
+                      (js/require (str load/dir "/core/lighttable/codemirror_addons/show-hint.js"))
                       (js/CodeMirror.extendMode "clojure" (clj->js {:hint-pattern #"[\w\-\>\:\*\$\?\<\!\+\.\/foo]"}))
                       (js/CodeMirror.extendMode "text/x-clojurescript" (clj->js {:hint-pattern #"[\w\-\>\:\*\$\?\<\!\+\.\/foo]"}))
                       (js/CodeMirror.extendMode "css" (clj->js {:hint-pattern #"[\w\.\-\#]"}))

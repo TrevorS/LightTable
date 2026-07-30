@@ -61,9 +61,25 @@ app.on('ready', function () {
                                         { preload: CORE + '/' + pkg.browserWindowOptions.webPreferences.preload });
     const w = new BrowserWindow(opts);
 
+    // Anything the renderer throws before Light Table's own console exists is
+    // otherwise invisible; the probe just reports that it could not run.
+    const consoleErrors = [];
+    w.webContents.on('console-message', function (a, b, c) {
+        // The signature changed to a single event object in recent Electron.
+        const msg = (a && typeof a === 'object' && 'message' in a) ? a.message : c;
+        const lvl = (a && typeof a === 'object' && 'level' in a) ? a.level : b;
+        if (lvl === 'error' || lvl === 3 || lvl === 'warning' || lvl === 2) {
+            consoleErrors.push(String(lvl) + ': ' + String(msg).slice(0, 300));
+        }
+    });
+
     w.webContents.on('did-finish-load', function () {
         setTimeout(async function () {
+            // Which step failed, so a probe error names a cause rather than
+            // sending the reader back to the renderer console.
+            let step = 'starting';
             try {
+                step = 'opening a file';
                 await w.webContents.executeJavaScript(
                     'lt.objs.command.exec_BANG_(cljs.core.keyword.call(null,"open-path"),' + JSON.stringify(${JSON.stringify(SAMPLE)}) + ')');
                 await new Promise(function (r) { setTimeout(r, 5000); });
@@ -73,12 +89,14 @@ app.on('ready', function () {
                 // proves the whole path: fork, init, dispatch, and reply. The
                 // navigate scan is used because an object already exists to
                 // receive its result.
+                step = 'running a background job';
                 await w.webContents.executeJavaScript(
                     'lt.objs.sidebar.navigate.populate_bg.call(null,' +
                     ' lt.objs.sidebar.navigate.sidebar_navigate,' +
                     ' cljs.core.js__GT_clj.call(null, JSON.parse(' + JSON.stringify(SCAN_ARGS) + '),' +
                     ' cljs.core.keyword.call(null,"keywordize-keys"), true))');
                 await new Promise(function (r) { setTimeout(r, 4000); });
+                step = 'collecting the report';
                 report = JSON.parse(await w.webContents.executeJavaScript(\`JSON.stringify({
                     appInitialized: typeof lt.objs.app === 'object',
                     platform: String(lt.objs.platform.platform),
@@ -111,6 +129,77 @@ app.on('ready', function () {
                                cljs.core.contains_QMARK_(cmds, cljs.core.keyword.call(null, 'hello-ts.say-hello')) &&
                                cljs.core.contains_QMARK_(cmds, cljs.core.keyword.call(null, 'hello-ts.copy-greeting'));
                     })(),
+                    // The window-side TypeScript modules, required rather than
+                    // evaluated. Exercised, not just present: the command bar
+                    // scoring is what fuzzy.ts is for, and it replaced a
+                    // String.prototype patch, so a wrong port would rank
+                    // results wrongly rather than throw.
+                    windowModules: (function () {
+                        var f = lt.objs.sidebar.command.fuzzy;
+                        var d = lt.objs.tabs.dragdrop;
+                        if (!f || !d || typeof d.sortable !== 'function') return 'missing';
+                        if (String.prototype.score) return 'String.prototype still patched';
+                        var exact = f.stringScore('platform.cljs', 'platform.cljs');
+                        var partial = f.stringScore('platform.cljs', 'plat');
+                        var absent = f.stringScore('platform.cljs', 'zzz');
+                        var m = f.score('lt/objs/platform.cljs', 'platform');
+                        return [exact === 1, partial > 0 && partial < 1, absent === 0,
+                                f.fastScore('platform.cljs', 'ptc') === true,
+                                f.fastScore('platform.cljs', 'zqx') === false,
+                                m.score > 0,
+                                f.wrapMatch('abc', {matched: {0: true}}) === '<em>a</em>bc'].join(',');
+                    })(),
+                    // lt.util.load reaches the filesystem through the bridge
+                    // now, and everything else loads through it. If this were
+                    // wrong the window would not have booted at all — but the
+                    // async path is only used by non-sync load/js, so it is
+                    // worth exercising separately.
+                    loadViaBridge: (function () {
+                        var b = window.lightTable;
+                        if (!b.files || !b.path) return 'no files capability';
+                        if (lt.util.load.dir !== b.host.appDir() + '/..') return 'dir mismatch';
+                        return [typeof lt.util.load.separator === 'string',
+                                b.files.existsSync(b.host.appDir() + '/package.json'),
+                                b.files.existsSync(b.host.appDir() + '/nope.json') === false,
+                                b.files.readFileSync(b.host.appDir() + '/package.json').indexOf('LightTable') !== -1,
+                                b.path.join('a', 'b') === 'a' + b.path.sep + 'b'].join(',');
+                    })(),
+                    // Workspace watching, which went from a watchFile/
+                    // unwatchFile pair keyed on callback identity to a handle.
+                    // Driven through lt.objs.workspace rather than the bridge
+                    // so the ClojureScript side is what is being checked.
+                    watching: (function () {
+                        var dir = lt.util.load.dir;
+                        try {
+                            lt.objs.workspace.watch_BANG_.cljs$core$IFn$_invoke$arity$1(dir);
+                            var ws = cljs.core.get.call(null, cljs.core.deref(lt.objs.workspace.current_ws),
+                                                        cljs.core.keyword.call(null, 'watches'));
+                            var n = cljs.core.count(ws);
+                            lt.objs.workspace.unwatch_BANG_.cljs$core$IFn$_invoke$arity$1(dir);
+                            return n > 0 ? 'watched ' + (n > 0) : 'nothing watched';
+                        } catch (e) { return 'THREW ' + e.message; }
+                    })(),
+                    consoleLog: typeof lt.objs.console.core_log === 'string',
+                    // Both client servers moved into the preload whole, with
+                    // connections identified by number. Listening on a real
+                    // port is the thing that proves they started.
+                    servers: (function () {
+                        return [lt.objs.clients.tcp.__GT_port() > 0,
+                                lt.objs.clients.ws.__GT_port() > 0,
+                                !!lt.objs.clients.tcp.server,
+                                !!lt.objs.clients.ws.server].join(',');
+                    })(),
+                    // The window has no require, no process and no __dirname
+                    // left. This is the property the whole migration is for,
+                    // and it is worth failing loudly if any of it comes back.
+                    noNodeInTheWindow: [typeof require, typeof process, typeof __dirname,
+                                        typeof module].join(','),
+                    // Present and wired, not exercised: downloading needs the
+                    // network, and a smoke test that fails when the network is
+                    // down is a smoke test people learn to ignore. The real
+                    // download is checked with script/lt-repl.sh.
+                    download: typeof (window.lightTable.net && window.lightTable.net.download) === 'function',
+                    inspect: lt.objs.console.inspect({ a: 1 }),
                     // Keyboard handling, end to end: a real key event reaching
                     // Light Table's handler through the forked Mousetrap. The
                     // fork exists precisely to route keydown/keypress/keyup
@@ -210,6 +299,7 @@ app.on('ready', function () {
                 })\`));
                 // The menubar is set by a behavior at startup, and it lands
                 // over here, so this is the only side it can be seen from.
+                step = 'reading the application menu';
                 report.appMenu = !!Menu.getApplicationMenu();
 
                 // The browser tab, last, so its devtools client cannot add to
@@ -217,6 +307,7 @@ app.on('ready', function () {
                 // webviewTag is set, which it was not for several years, and
                 // the guest's preload only reaches the page if the guest's
                 // contextIsolation is explicitly off.
+                step = 'opening a browser tab';
                 await w.webContents.executeJavaScript(
                     'lt.objs.command.exec_BANG_(cljs.core.keyword.call(null,"add-browser-tab"))');
                 await new Promise(function (r) { setTimeout(r, 6000); });
@@ -231,7 +322,8 @@ app.on('ready', function () {
                 })()\`)));
                 report.ok = true;
             } catch (e) {
-                report.failure = 'renderer probe failed: ' + e.message;
+                report.failure = 'renderer probe failed while ' + step + ': ' + e.message;
+                report.consoleErrors = consoleErrors.slice(0, 6);
             }
             finish(0);
         }, 8000);
@@ -314,6 +406,14 @@ async function main() {
         ['the TypeScript plugin loaded and registered its commands', r.tsPlugin === true],
         ['Paredit, built here from ClojureScript, loaded', r.paredit === true],
         ['a key event reaches Light Table through the forked Mousetrap', r.keyboard === 'a'],
+        ['workspace watching works through the bridge handle', r.watching === 'watched true'],
+        ['downloading is a bridge capability', r.download === true],
+        ['both client servers are listening through the bridge', r.servers === 'true,true,true,true'],
+        ['the console log is a path and inspect still formats', r.consoleLog === true && r.inspect === '{ a: 1 }'],
+        ['lt.util.load reaches the filesystem through the bridge',
+         r.loadViaBridge === 'true,true,true,true,true'],
+        ['the window TypeScript modules are required, not evaluated',
+         r.windowModules === 'true,true,true,true,true,true,true'],
         ['the enforcement gate defaults to warn and persists a change',
          !!r.gate && r.gate.before === ':warn' && r.gate.refuseMode === ':refuse'],
         ['a plugin inside its manifest loads even when refusing',
@@ -347,7 +447,11 @@ async function main() {
         console.log((passed ? 'ok    ' : 'FAIL  ') + name);
         if (!passed) failed++;
     }
-    console.log('\ncapability reports: ' + JSON.stringify(r.capabilities));
+    // Still present, because nodeIntegration is on for plugins. Light Table's
+    // own code no longer touches any of it, so this is what changes on the day
+    // contextIsolation is turned on.
+    console.log('\nwindow globals (require, process, __dirname, module): ' + r.noNodeInTheWindow);
+    console.log('capability reports: ' + JSON.stringify(r.capabilities));
     console.log('behaviors registered: ' + r.behaviors);
     console.log('CodeMirror modes registered: ' + r.codeMirrorModes);
     console.log('worker connected: ' + r.workerConnected + ', files found by background scan: ' + r.workerFilesFound);

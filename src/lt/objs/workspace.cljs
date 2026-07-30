@@ -3,6 +3,7 @@
   (:require [lt.object :as object]
             [lt.objs.app :as app]
             [lt.objs.files :as files]
+            [lt.util.bridge :as bridge]
             [lt.objs.command :as cmd]
             [lt.objs.cache :as cache]
             [lt.objs.notifos :as notifos]
@@ -18,7 +19,6 @@
 ;; TODO: The way I did this is awful. Should get cleaned up
 ;;*********************************************************
 
-(def fs (js/require "fs"))
 (def max-depth 10)
 (def watch-interval 1000)
 
@@ -50,20 +50,21 @@
    (object/merge! current-ws {:watches (unwatch (:watches @current-ws) path recursive?)})))
 
 (defn alert-file [path]
-  (fn [cur prev]
-    (if (.existsSync fs path)
+  (fn [stat]
+    (if (.existsSync bridge/files path)
       (do
-        (object/raise current-ws :watched.update path cur))
+        (object/raise current-ws :watched.update path stat))
       (do
         (unwatch! path)
         (object/raise current-ws :watched.delete path)))))
 
+;; A handle rather than a callback pair: fs keys unwatchFile on the identity of
+;; the function passed to watchFile, and a function's identity does not survive
+;; being proxied across a boundary. The bridge holds the real listener.
 (defn file->watch [path]
-  (let [alert (alert-file path)]
+  (let [handle (.watch bridge/files path watch-interval (alert-file path))]
     {:path path
-     :alert alert
-     :close (fn []
-              (.unwatchFile fs path alert))}))
+     :close (fn [] (.close handle))}))
 
 (declare folder->watch)
 
@@ -82,25 +83,19 @@
                            :else max-depth)
                watch (folder->watch path)]
            (when-not (get (:watches @current-ws) path)
-             (assoc! results path watch)
-             (.watchFile fs path (js-obj "interval" watch-interval
-                                         "persistent" false)
-                         (:alert watch)))
+             (assoc! results path watch))
            (when (> recursive? -1)
              (watch! results (files/full-path-ls path) recursive?)))
          (when (and (not (get (:watches @current-ws) path))
                     (not (get results path)))
            (let [watch (file->watch path)]
-             (assoc! results path watch)
-             (.watchFile fs path (js-obj "interval" watch-interval
-                                         "persistent" false)
-                         (:alert watch)))))))
+             (assoc! results path watch))))))
      (when-not (number? recursive?)
        (object/update! current-ws [:watches] merge (persistent! results)))))
 
 (defn alert-folder [path]
-  (fn [cur prev]
-    (if (.existsSync fs path)
+  (fn [_stat]
+    (if (.existsSync bridge/files path)
       (do
         (let [watches (:watches @current-ws)
               neue (first (filter #(and (not (get watches %))
@@ -108,17 +103,15 @@
                                   (files/full-path-ls path)))]
           (when neue
             (watch! neue)
-            (object/raise current-ws :watched.create neue (.statSync fs neue)))))
+            (object/raise current-ws :watched.create neue (.statSync bridge/files neue)))))
       (do
         (unwatch! path :recursive)
         (object/raise current-ws :watched.delete path)))))
 
 (defn folder->watch [path]
-  (let [alert (alert-folder path)]
-     {:path path
-      :alert alert
-      :close (fn []
-              (.unwatchFile fs path alert))}))
+  (let [handle (.watch bridge/files path watch-interval (alert-folder path))]
+    {:path path
+     :close (fn [] (.close handle))}))
 
 (defn stop-watching [ws]
   (unwatch! (keys (:watches @ws))))

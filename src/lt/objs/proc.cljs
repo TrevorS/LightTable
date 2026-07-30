@@ -7,10 +7,10 @@
             [lt.objs.app :as app]
             [lt.objs.notifos :as notifos]
             [lt.util.load :as load]
-            [clojure.string :as string])
+            [clojure.string :as string]
+            [lt.util.bridge :as bridge])
   (:require-macros [lt.macros :refer [behavior]]))
 
-(def spawn (.-spawn (js/require "child_process")))
 (def custom-env (atom {}))
 
 (def procs (atom #{}))
@@ -36,21 +36,22 @@
        :args (rest args)})))
 
 (defn merge-env [env]
-  (if-not env
-    js/process.env
-    (clj->js (merge (into {} (for [k (js/Object.keys js/process.env)]
-                               [k (aget js/process.env k)]))
-                    env
-                    @custom-env))))
+  (let [base (.env bridge/host)]
+    (if-not env
+      base
+      (clj->js (merge (into {} (for [k (js/Object.keys base)]
+                                 [k (aget base k)]))
+                      env
+                      @custom-env)))))
 
 (defn simple-spawn* [obj {:keys [command args]} cwd? env]
-  (let [^js proc (spawn command
-                    (when (seq args) (clj->js args))
-                    (js-obj "cwd" cwd?
-                            "env" (merge-env env)))]
+  (let [^js proc (.spawn bridge/processes command
+                         (if (seq args) (clj->js args) #js [])
+                         (js-obj "cwd" cwd?
+                                 "env" (merge-env env)))]
     (add! proc)
-    (.on proc "exit" (partial rem! proc))
-    (.on proc "error" #(when @obj
+    (.onExit proc (partial rem! proc))
+    (.onError proc #(when @obj
                          (println (str %) (> (.indexOf (str %) "ENOENT") -1))
                          (if (> (.indexOf (str %) "ENOENT") -1)
                            (do
@@ -58,13 +59,12 @@
                              (object/raise obj :proc.exit)
                              (.kill proc))
                            (object/raise obj :proc.error %))))
-    (.stderr.on proc "data" #(if-not @obj
-                               (println "ERROR running: " command)
-                               (object/raise obj :proc.error %)))
-    (.stdout.on proc "data" #(do
-                               (when @obj (object/raise obj :proc.out %))))
-    (.on proc "exit" #(when @obj (object/raise obj :proc.exit %))
-    proc)))
+    (.onStderr proc #(if-not @obj
+                       (println "ERROR running: " command)
+                       (object/raise obj :proc.error %)))
+    (.onStdout proc #(when @obj (object/raise obj :proc.out %)))
+    (.onExit proc #(when @obj (object/raise obj :proc.exit %)))
+    proc))
 
 (defn exec [com]
   (let [{:keys [command obj cwd env args] :as this} com
@@ -130,15 +130,15 @@
           :triggers #{:init}
           :reaction (fn [app]
                       (when (and (platform/mac?)
-                                 (not (aget js/process.env "LTCLI")))
-                        (.exec (js/require "child_process") (str (etc-paths->PATH) (get-path-command))
+                                 (not (aget (.env bridge/host) "LTCLI")))
+                        (.exec bridge/processes (str (etc-paths->PATH) (get-path-command))
                                (fn [err out serr]
                                  (if-not (empty? err)
                                    (do
                                      (notifos/set-msg! "Failed to source PATH files. See console log for details." {:class "error"})
                                      (.error js/console err))
                                    (when-not (empty? out)
-                                     (set! js/process.env.PATH out))))))))
+                                     (.setEnv bridge/host "PATH" out))))))))
 
 (behavior ::global-path
           :triggers #{:object.instant}
@@ -147,7 +147,7 @@
           :params [{:label "path"}]
           :exclusive true
           :reaction (fn [app path]
-                      (set! js/process.env.PATH path)))
+                      (.setEnv bridge/host "PATH" path)))
 
 (behavior ::global-env
           :triggers #{:object.instant}
@@ -166,7 +166,7 @@
 
 
 (defn capture [cmd vars cb]
-  (.exec (js/require "child_process") (str cmd " && " (var-caps vars))
+  (.exec bridge/processes (str cmd " && " (var-caps vars))
          (fn [err out serr]
            (let [vs (zipmap vars (string/split out ";"))]
              (cb vs)))))

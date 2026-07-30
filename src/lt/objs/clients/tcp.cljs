@@ -5,36 +5,40 @@
             [lt.object :as object]
             [lt.objs.clients :as clients]
             [lt.objs.console :as console]
+            [lt.util.bridge :as bridge]
             [clojure.string :as string])
   (:require-macros [lt.macros :refer [behavior]]))
 
-(def port 0)
-(def net (js/require "net"))
 
-(defn send-to [^js sock msg]
-  (if sock
-    (.write sock (str (.stringify js/JSON msg) "\n"))
+(declare server)
+
+(defn send-to [id msg]
+  (if id
+    (.send server id (str (.stringify js/JSON msg) "\n"))
     ;;TODO: some system-wide error reporting
-    (println (str "No such client: " sock))))
+    (println (str "No such client: " id))))
 
-(defn store-client! [^js socket data]
+(defn store-client! [id data]
   (let [client (clients/by-name (:name data))
         data (if-not (:tags data)
                (assoc data :tags [:tcp.client])
                (assoc data :tags (map keyword (:tags data))))]
     (when (clients/available? client)
       (clients/close! client))
-    (.on socket "close" (fn []
-                          (when-let [cur (clients/by-name (:name data))]
-                            (when (= socket (:socket @cur))
-                              (clients/rem! cur)))))
-    (clients/handle-connection! (assoc data :socket socket))))
+;; The connection is a number now, which is exactly what it needs to be: it is
+    ;; only ever stored and compared. Closing is handled by ::on-close below.
+    (clients/handle-connection! (assoc data :socket id))))
 
 (defn on-message [data]
   (object/raise clients/clients :message data))
 
-(defn each-message [^js socket cb]
-  (let [buffer (.-ltbuffer socket)
+(def ^:private buffers
+  "Partial lines per connection. A message can arrive split across packets, or
+  two can arrive joined, so what has been seen is kept until a newline."
+  (atom {}))
+
+(defn each-message [id cb]
+  (let [buffer (@buffers id)
         loc (.indexOf buffer "\n")]
   (loop [loc loc
          buf buffer]
@@ -49,29 +53,36 @@
                      (console/error e)))]
         (cb data)
         (recur (.indexOf next "\n") next))
-      (set! (.-ltbuffer socket) buf)))))
+      (swap! buffers assoc id buf)))))
 
-(defn on-result [^js socket data]
+(defn on-result [id data]
   ;;handle the case where two events come in at once and get joined
   ;;on a new line
-  (set! (.-ltbuffer socket) (str (or (.-ltbuffer socket) "") data))
-  (each-message socket (fn [data]
-                         (if (map? data)
-                           (store-client! socket data)
-                           (on-message data)))))
+  (swap! buffers update id str data)
+  (each-message id (fn [data]
+                     (if (map? data)
+                       (store-client! id data)
+                       (on-message data)))))
 
-(defn on-connect [^js socket]
-  (set! (.-ltbuffer socket) "")
-  (.on socket "data" #(on-result socket %)))
+(defn on-connect [id]
+  (swap! buffers assoc id ""))
+
+(defn on-close [id]
+  (swap! buffers dissoc id)
+  (doseq [cur (filter #(= id (:socket @%)) (vals @clients/cs))]
+    (clients/rem! cur)))
 
 (def server
   (try
-    (let [s (.createServer net on-connect)]
-      (.listen s 0)
-      (.on s "listening" #(set! port (.-port (.address s))))
-      s)
+    (.tcp bridge/servers #js {:onConnect on-connect
+                              :onData on-result
+                              :onClose on-close})
     (catch :default e
       (console/error "Error starting tcp server" e))))
+
+;; The port is assigned once the server is listening, so it is read rather than
+;; captured. `port` stays a var for the clients that read it.
+(defn ->port [] (if server (.port server) 0))
 
 (behavior ::send!
           :triggers #{:send!}

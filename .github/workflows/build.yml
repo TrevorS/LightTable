@@ -43,6 +43,11 @@ jobs:
       - name: Type-check and build the main process
         run: npm run build:main
 
+      # The window's own TypeScript, required by lt.objs.sidebar.command and
+      # lt.objs.tabs, so it has to exist before the smoke test boots.
+      - name: Type-check and build the window modules
+        run: npm run build:window
+
       - name: Unit tests
         run: |
           npx shadow-cljs compile test

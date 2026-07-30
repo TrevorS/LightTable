@@ -14,7 +14,10 @@
             [singultus.binding :refer [subatom bound map-bound computed]])
   (:require-macros [lt.macros :refer [behavior defui]]))
 
-(load/js "core/lighttable/util/fuzzy.js" :sync)
+;; Required rather than evaluated. It used to be loaded with load/js, which
+;; evals into global scope, and among other things patched String.prototype
+;; with a `score` method that the call sites below used without saying so.
+(def ^js fuzzy (js/require (str load/dir "/core/window/fuzzy.js")))
 
 ;**********************************************************
 ;; options input
@@ -116,7 +119,7 @@
             :when res]
       (dom/html li (transform (aget res 1) (aget res 4) (if-not (empty? search)
 
-                                                          (js/wrapMatch (aget res 1) (aget res 4))
+                                                          (.wrapMatch fuzzy (aget res 1) (aget res 4))
                                                           (aget res 1))
                               (aget res 0)))
       (dom/css li {:display "block"})
@@ -251,11 +254,10 @@
 
 (defn indexed-results [{:keys [search size items key size]}]
   (let [items (apply array (->items items))
-        map-func3 #(array % (key %) (js/fastScore (key %) search) nil nil)
-        map-func (fn [item] (let [^js scorer (aget item 1)]
-                              (aset item 3 (.score scorer search))
-                              item))
-        map-func2 #(do (aset % 4 (js/score (aget % 1) search)) %)
+        map-func3 #(array % (key %) (.fastScore fuzzy (key %) search) nil nil)
+        map-func (fn [item] (aset item 3 (.stringScore fuzzy (aget item 1) search))
+                      item)
+        map-func2 #(do (aset % 4 (.score fuzzy (aget % 1) search)) %)
         has-score (fn [item] (let [^js scored (aget item 4)] (> (.-score scored) 0)))]
     (if-not (empty? search)
       (let [score0 (.. items (map map-func3) (filter #(aget % 2)))

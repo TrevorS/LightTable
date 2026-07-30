@@ -10,9 +10,7 @@
             [lt.util.js :refer [now]])
   (:require-macros [lt.macros :refer [behavior]]))
 
-(def ^:private fs (js/require "fs"))
-(def ^:private fpath (js/require "path"))
-(def ^:private os (js/require "os"))
+
 (def ^:private data-path (platform/get-data-path))
 
 (defn- typelist->index [cur types]
@@ -26,7 +24,7 @@
 (defn join
   "Join path segments with the platform separator."
   [& segs]
-  (apply (.-join fpath) (filter string? (map str segs))))
+  (apply (.-join bridge/path) (filter string? (map str segs))))
 
 (def ignore-pattern
   "Regex pattern consisting of files, folders, etc... to ignore."
@@ -64,18 +62,16 @@
                                                         :exts {}
                                                         :types {})))
 
-(def line-ending "Current platform-specific line ending." (.-EOL os))
-(def separator "Current platform-specific file separator." (.-sep fpath))
+(def line-ending "Current platform-specific line ending." (.-EOL bridge/os))
+(def separator "Current platform-specific file separator." (.-sep bridge/path))
 (def ^:private available-drives #{})
-(def cwd "Directory process is started in." (js/process.cwd))
+(def cwd "Directory process is started in." (.cwd ^js (.-host bridge/bridge)))
 
+;; Was a shell-out to wmic. The bridge answers "which drives exist" instead,
+;; which is the question this was asking — see os.drives in the preload.
 (when (= separator "\\")
-  (.exec (js/require "child_process") "wmic logicaldisk get name"
-         (fn [_ out _]
-           (let [ds (rest (.split out #"\r\n|\r|\n"))
-                 ds (map #(str (.trim %) separator) (remove empty? ds))]
-             (set! available-drives (into #{} ds)))
-           )))
+  (-> (.drives bridge/os)
+      (.then #(set! available-drives (into #{} %)))))
 
 (defn basename
   "Extracts the basename of the `path`, typically the end of the path.
@@ -90,8 +86,8 @@
   (basename \"/foo/bar/baz.txt\" \".txt\")
   ;;=> \"baz\"
   ```"
-  ([path] (.basename fpath path))
-  ([path ext] (.basename fpath path ext)))
+  ([path] (.basename bridge/path path))
+  ([path ext] (.basename bridge/path path ext)))
 
 (defn get-roots
   "Example:
@@ -137,7 +133,7 @@
   (ext \"foo\")             ;;=> \"\"
   ```"
   [path]
-  (subs (.extname fpath path) 1))
+  (subs (.extname bridge/path path) 1))
 
 (defn without-ext
   "Returns the `path`, but without the last extension, determined by the final `.` of the path.
@@ -248,27 +244,29 @@
 (defn exists?
   "True if `path` exists on filesystem."
   [path]
-  (.existsSync fs path))
+  (.existsSync bridge/files path))
 
 (defn stats
-  "If `path` exists then returns [fs.Stats](https://nodejs.org/api/fs.html#fs_class_fs_stats) instance."
+  "Facts about `path`, or nil when it does not exist.
+
+  Was an [fs.Stats](https://nodejs.org/api/fs.html#fs_class_fs_stats), which
+  carried isDirectory and isFile as methods. It is plain data now — a prototype
+  does not survive the crossing into the window — with :isDirectory, :isFile,
+  :size, :mode and :mtimeMs as properties."
   [path]
-  (when (exists? path)
-    (.statSync fs path)))
+  (.statSync bridge/files path))
 
 (defn dir?
   "True if `path` corresponds to a directory that exists."
   [path]
-  (when (exists? path)
-    (let [stat (.statSync fs path)]
-      (.isDirectory stat))))
+  (when-let [stat (.statSync bridge/files path)]
+    (.-isDirectory stat)))
 
 (defn file?
   "True if `path` corresponds to a file that exists."
   [path]
-  (when (exists? path)
-    (let [stat (.statSync fs path)]
-      (.isFile stat))))
+  (when-let [stat (.statSync bridge/files path)]
+    (.-isFile stat)))
 
 (defn absolute?
   "True if `path` is formatted as an absolute filepath. False otherwise.
@@ -290,8 +288,8 @@
 (defn writable?
   "Returns 7, 6, 3, or 2 based on file permissions. `path` must exist."
   [path]
-  (let [perm (-> (.statSync fs path)
-                 (.mode.toString 8)
+  (let [perm (-> (.-mode ^js (.statSync bridge/files path))
+                 (.toString 8)
                  (js/parseInt 10)
                  (str))
         perm (subs perm (- (count perm) 3))]
@@ -309,7 +307,7 @@
   (resolve \"./\" \"codox\")       ;;=> \"/home/user/dev/LightTable/codox\"
   ```"
   [base cur]
-  (.resolve fpath base cur))
+  (.resolve bridge/path base cur))
 
 (defn real-path
   "Returns the canonicalized absolute pathname, expanding symbolic links.
@@ -323,7 +321,7 @@
   (real-path \".././bar/baz\") ;;=> \"/foo/bar/baz/\"
   ```"
   [c]
-  (.realpathSync fs c))
+  (.realpathSync bridge/files c))
 
 (defn- ->file|dir
   "If `path` and `f` together form a valid directory, then `f` is returned as a directory. Otherwise, `f` is returned as a file
@@ -341,7 +339,7 @@
 
 (defn- bomless-read [path]
   "Reads file at `path`, removes occurrences of `\uFEFF`, then returns modified result."
-  (let [content (.readFileSync fs path "utf-8")]
+  (let [content (.readFileSync bridge/files path "utf-8")]
     (string/replace content "\uFEFF" "")))
 
 (defn open
@@ -380,7 +378,7 @@
   "Save `path` with given `content`. Optional callback called after save."
   [path content & [cb]]
   (try
-    (.writeFileSync fs path content)
+    (.writeFileSync bridge/files path content)
     (object/raise files-obj :files.save path)
     (when cb (cb))
     (catch :default e
@@ -391,7 +389,7 @@
   "Append `content` to `path`. Optional callback called after append."
   [path content & [cb]]
   (try
-    (.appendFileSync fs path content)
+    (.appendFileSync bridge/files path content)
     (object/raise files-obj :files.save path)
     (when cb (cb))
     (catch :default  e
@@ -409,30 +407,30 @@
 (defn delete!
   "Delete file or directory from filesystem."
   [path]
-  (.rmSync fs path #js {:recursive true :force true}))
+  (.rmSync bridge/files path true))
 
 (defn move!
   "Move file or directory to given `path`."
   [from to]
-  (.renameSync fs from to))
+  (.renameSync bridge/files from to))
 
 (defn copy
   "Copy file or directory `from` to the path `to`. `to` is the destination
   itself, not a directory to place the copy inside."
   [from to]
   (if (dir? from)
-    (.cpSync fs from to #js {:recursive true})
+    (.cpSync bridge/files from to true)
     (save to (:content (open-sync from)))))
 
 (defn mkdir
   "Make given directory."
   [path]
-  (.mkdirSync fs path))
+  (.mkdirSync bridge/files path))
 
 (defn parent
   "Return directory of `path`."
   [path]
-	(.dirname fpath path))
+	(.dirname bridge/path path))
 
 (defn next-available-name
   "Given a `path`, if it already exists then append a digit (starts at 1 and increments after) to the end of `path` and check again."
@@ -453,7 +451,7 @@
   ([path] (ls path nil))
   ([path cb]
    (try
-     (let [fs (map (partial ->file|dir path) (.readdirSync fs path))]
+     (let [fs (map (partial ->file|dir path) (.readdirSync bridge/files path))]
        (if cb
          (cb fs)
          fs))
@@ -469,7 +467,7 @@
   * `:dirs` - When set only return directories"
   [path opts]
   (try
-    (let [fs (remove #(re-seq ignore-pattern %) (map (partial ->file|dir path) (.readdirSync fs path)))]
+    (let [fs (remove #(re-seq ignore-pattern %) (map (partial ->file|dir path) (.readdirSync bridge/files path)))]
       (cond
        (:files opts) (filter #(file? (join path %)) fs)
        (:dirs opts) (filter #(dir? (join path %)) fs)
@@ -481,7 +479,7 @@
   "Return directory's files as full paths."
   [path]
   (try
-    (doall (map (partial join path) (.readdirSync fs path)))
+    (doall (map (partial join path) (.readdirSync bridge/files path)))
     (catch :default e
       (js/lt.objs.console.error e))))
 
@@ -489,7 +487,7 @@
   "Return directory's directories."
   [path]
   (try
-    (filter dir? (map (partial join path) (.readdirSync fs path)))
+    (filter dir? (map (partial join path) (.readdirSync bridge/files path)))
     (catch :default e
       (js/lt.objs.console.error e))))
 
@@ -497,9 +495,10 @@
   "Return users' home directory (e.g. ~/) or path under it."
   ([] (home nil))
   ([path]
-   (let [h (if (= js/process.platform "win32")
-             js/process.env.USERPROFILE
-             js/process.env.HOME)]
+   (let [env (.env bridge/host)
+         h (if (platform/win?)
+             (aget env "USERPROFILE")
+             (aget env "HOME"))]
      (join h (or path separator)))))
 
 (defn lt-home
@@ -513,8 +512,8 @@
   settings, plugins, logs, and caches)."
   ([] (lt-user-dir ""))
   ([path]
-   (if js/process.env.LT_USER_DIR
-     (join js/process.env.LT_USER_DIR path)
+   (if-let [dir (aget (.env bridge/host) "LT_USER_DIR")]
+     (join dir path)
      (join data-path path))))
 
 (defn walk-up-find
@@ -535,17 +534,17 @@
 (defn relative
   "Returns a relative path, if there is one, from `a` to `b`."
   [a b]
-  (.relative fpath a b))
+  (.relative bridge/path a b))
 
 (defn- ->name|path [f & [rel]]
   (let [path (if rel
                (relative rel f)
                f)]
-    [(.basename fpath f) path]))
+    [(.basename bridge/path f) path]))
 
 (defn- path-segs [path]
   (let [segs (.split path separator)
-        segs (if (or (.extname fpath (last segs))
+        segs (if (or (.extname bridge/path (last segs))
                      (empty? (last segs)))
                (butlast segs)
                segs)]

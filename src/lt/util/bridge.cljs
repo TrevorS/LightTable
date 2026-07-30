@@ -42,7 +42,48 @@
   "Native menus, described as data: popup, setApplicationMenu, onClick."
   (.-menu bridge))
 
+(def ^js files
+  "The filesystem: existsSync, readSync, read. Served in the preload's world
+  rather than forwarded to the browser process, which is what keeps it as cheap
+  as the direct call it replaces — see doc/context-isolation.md."
+  (.-files bridge))
+
+(def ^js path
+  "Path arithmetic: join, dirname, basename, extname, relative, resolve,
+  isAbsolute, sep."
+  (.-path bridge))
+
+(def ^js os
+  "Facts about the operating system: EOL, drives."
+  (.-os bridge))
+
+(def ^js net
+  "Fetching things over the network: download. One coarse capability rather
+  than an http client — what the window wants is a file, not a socket."
+  (.-net bridge))
+
+(def ^js processes
+  "Other programs: spawn, exec, fork. Each returns a handle rather than a
+  ChildProcess — a process object cannot cross, so what crosses is a set of
+  functions over one that stays put."
+  (.-processes bridge))
+
+(def ^js servers
+  "The servers clients connect back to: tcp, ws. Whole servers rather than
+  sockets — a socket cannot cross, and connections are identified by number."
+  (.-servers bridge))
+
+(def ^js host
+  "Facts about the process this window runs in: appInfo, appDir, cwd, env,
+  setEnv, execPath, inspect."
+  (.-host bridge))
+
+(def app-dir
+  "The directory the application was loaded from — what `js/__dirname` was in
+  the window before it stopped having one."
+  (.appDir host))
+
 (def app-info
   "Values owned by the browser process that the window reads once at startup.
   Keys are :appPath, :platform, :parsedArgs, :openFiles and :argv."
-  (js->clj (.appInfo ^js (.-host bridge)) :keywordize-keys true))
+  (js->clj (.appInfo host) :keywordize-keys true))

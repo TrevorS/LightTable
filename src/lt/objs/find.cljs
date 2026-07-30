@@ -158,7 +158,9 @@
           :triggers #{:init}
           :reaction (fn [this]
                       ;; TODO: use addon/search/search.js
-                      (load/js "core/lighttable/codemirror_addons/search.js" :sync)
+                      ;; Required, not evaluated: this fork exports nothing and only extends
+                      ;; the global CodeMirror, so requiring it does what evaluating it did.
+                      (js/require (str load/dir "/core/lighttable/codemirror_addons/search.js"))
                       ))
 
 (def bar (object/create ::find-bar))

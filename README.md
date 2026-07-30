@@ -59,7 +59,9 @@ npm run build:plugins
 The window does not use Electron's modules directly. Everything it can ask the
 desktop for is a named capability exposed by the preload script, and
 `lt.util.bridge` is the only namespace that reaches it — see
-[doc/electron-guide.md](doc/electron-guide.md).
+[doc/electron-guide.md](doc/electron-guide.md), and
+[doc/context-isolation.md](doc/context-isolation.md) for what remains before the
+window can be isolated outright.
 
 ## Testing
 
@@ -78,6 +80,19 @@ reachable from unit tests, so the smoke test drives the assembled application
 instead.
 
 Both run in [CI](.github/workflows/build.yml) on every push.
+
+To ask the running editor a question rather than boot one per question:
+
+```sh
+script/lt-repl.sh start
+script/lt-repl.sh cljs "files/cwd"
+script/lt-repl.sh eval "cljs.core.count(cljs.core.deref(lt.object.behaviors))"
+script/lt-repl.sh stop
+```
+
+It attaches over the DevTools protocol to the real application, evaluates with a
+timeout so a hang reports as one, and munges ClojureScript names — `files/cwd`
+reaches `lt.objs.files.cwd` — outside string literals.
 
 ## Documentation
 

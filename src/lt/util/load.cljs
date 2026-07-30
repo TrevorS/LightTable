@@ -1,18 +1,20 @@
 (ns lt.util.load
-  "Provide functions to load js, css and node module assets into LT."
-  (:require [clojure.string :as string]))
+  "Provide functions to load js, css and node module assets into LT.
 
-(def fpath "Provides access to Node/Electron [path library](https://nodejs.org/api/path.html)." (js/require "path"))
-(def fs "Provides access to Node/Electron [fs library](https://nodejs.org/api/fs.html)." (js/require "fs"))
+  Everything here goes through [[lt.util.bridge]] rather than through Node
+  directly. This namespace is the first one to migrate because it is what the
+  rest of Light Table loads through — nothing else can move until it has."
+  (:require [clojure.string :as string]
+            [lt.util.bridge :as bridge]))
 
-(def dir "Directory where Light Table is being executed." (str js/__dirname "/.."))
+(def dir "Directory where Light Table is being executed." (str bridge/app-dir "/.."))
 
 (def ^:dynamic *force-reload* "When true, various parts of Light Table will reload."
   false)
 
 (def separator
   "Current platform-specific file separator."
-  (.-sep fpath))
+  (.-sep bridge/path))
 
 (defn absolute?
   "True if `path` is formatted as an absolute filepath. False otherwise.
@@ -32,7 +34,12 @@
   (boolean (re-seq #"^\s*[\\\/]|([\w]+:[\\\/])" path)))
 
 (defn node-module
-  "Requires Light Table's bundled node modules located at `path`."
+  "Requires Light Table's bundled node modules located at `path`.
+
+  Still a raw require, and one of the last: a node module is arbitrary code
+  that has to run in the window, so it cannot be served across the bridge. It
+  goes away by being bundled at build time instead — see
+  doc/context-isolation.md."
   [path]
   (js/require (str dir "/core/node_modules/" path)))
 
@@ -41,7 +48,7 @@
   [code file]
   (if-let [path-to-source-map (second (re-find #"\n//# sourceMappingURL=(.*\.map)" code))]
     (if-not (absolute? path-to-source-map)
-      (let [abs-path-to-source-map (string/replace (.join fpath (.dirname fpath file) path-to-source-map) "\\" "/")
+      (let [abs-path-to-source-map (string/replace (.join bridge/path (.dirname bridge/path file) path-to-source-map) "\\" "/")
             abs-path-to-source-map (if (= separator "\\")
                                      (str "/" abs-path-to-source-map)
                                      abs-path-to-source-map)]
@@ -61,15 +68,13 @@
   ([file] (js file false))
   ([file sync]
    (let [file (if-not (absolute? file)
-                (.join fpath dir file)
+                (.join bridge/path dir file)
                 file)]
-   (if sync
-     (js/window.eval (-> (.readFileSync fs file)
-                         (.toString)
-                         (prep file)))
-     (.readFile fs (.join fpath dir file) (fn [content]
-                                            (js/window.eval (-> (.toString content)
-                                                                (prep file)))))))))
+     (if sync
+       (js/window.eval (-> (.readFileSync bridge/files file)
+                           (prep file)))
+       (-> (.readFile bridge/files file)
+           (.then #(js/window.eval (prep % file))))))))
 
 (defn css
   "Loads `file` into Light Table as CSS. Returns the resulting link."
