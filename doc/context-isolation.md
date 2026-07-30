@@ -241,7 +241,7 @@ Trying it also turned up two things that had nothing to do with isolation:
 ### What it cost, and what it did not
 
 Nothing was redesigned. `lt.objs.files` is still synchronous, self-evaluation
-still works, and 42 smoke checks pass — including the isolation itself, which is
+still works, and 44 smoke checks pass — including the isolation itself, which is
 established by observation rather than by reading the config back: no
 `__dirname`, no `module`, a bridge that is a contextBridge proxy rather than
 the preload's own object, and a `require` that refuses a builtin Node would
@@ -254,17 +254,25 @@ is the only thing `lt.objs.console/inspect` is ever called on, since
 prints as `[Function (anonymous)]` and a DOM node as `HTMLBodyElement {}`.
 ## Afterwards
 
-`sandbox: true` removes Node from the preload as well. Everything then has to
-cross to the main process, at the 118x cost measured above, so it needs the
+Two further steps get proposed whenever this configuration is read. Neither is
+being taken, and the reasons are different in kind — one is a cost question,
+the other is not available at all.
+
+**`sandbox: true`** removes Node from the preload as well. Everything then has
+to cross to the main process, at the 118x cost measured above, so it needs the
 coarse-capability redesign that the cheap path avoids — `scan this workspace`
 rather than `stat this path`, with the walking done on the privileged side.
 
 That is a genuine redesign of the filesystem layer and should be judged on its
-own merits later. It is worth noting that it buys less than the step before it:
-once the window has no `require` and reaches the system only through a named
-list, moving where that list is implemented is defence in depth rather than a
-new boundary.
+own merits, not adopted because the flag exists. It also buys less than the
+step before it: once the window has no `require` and reaches the system only
+through a named list, moving where that list is implemented is defence in depth
+rather than a new boundary. So it stays off, deliberately, and this paragraph
+is the answer rather than a to-do.
 
-A content security policy remains separate and is still the one thing that
-cannot be adopted without removing self-evaluation, which is the feature Light
-Table is named for.
+**A content security policy** without `unsafe-eval` cannot be adopted at all
+while the editor evaluates the code you are writing, which is the feature Light
+Table is named for. A CSP governs what may be executed; self-evaluation is
+execution the user asked for by name. The honest version is `unsafe-eval` plus
+a much narrower `connect-src` and `img-src`, which is worth doing on its own
+one day and is not what people mean when they ask for a CSP.

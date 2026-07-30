@@ -232,9 +232,9 @@ on those.
 
 ## Build system
 
-shadow-cljs builds everything Light Table ships. `lein-cljsbuild` is gone;
-`project.clj` survives but builds nothing, existing only to generate the plugin
-API docs through codox, which has no shadow-cljs equivalent.
+shadow-cljs builds everything Light Table ships. `lein-cljsbuild` is gone, and
+so is `project.clj` — see *API documentation* below for the last thing that was
+keeping it.
 
 Three things had to change before the switch was possible.
 
@@ -1052,6 +1052,43 @@ The same reasoning applies to the forked CodeMirror addons — but only to their
 `cm-hint.ts`, against real CodeMirror 5 types in `src-window/codemirror.d.ts`
 rather than `any`. Typing them found two dead locals that a reading had not.
 
+## Documentation, and the end of `project.clj`
+
+`docs.lighttable.com` returns 503, so `doc/` in this repository is now the
+documentation. `doc/README.md` indexes it and marks each page **current** or
+**predates the modernization**, because a page that was accurate in 2015 and a
+page written this year are different things to read. A `docs` workflow publishes
+`doc/` to GitHub Pages, separately from the build: documentation should not wait
+on a ClojureScript compile, and a red build should not block a typo fix.
+
+**The API reference is generated from clj-kondo's static analysis** by
+`script/gen-api-docs.js`, into markdown, committed. That replaced codox, which
+was the last reason `project.clj` existed. Codox is a Leiningen plugin, so
+keeping it meant keeping a project file that built nothing else, a JVM
+invocation, an `--add-opens` to get past the module system since JDK 16, and
+`script/build-api-docs.sh` — a script that switched branches and force-pushed
+to `gh-pages` from whatever state the working tree was in. It also emitted a
+wall of `WARNING: Use of undeclared Var` noise the docs recommended ignoring.
+
+clj-kondo is already a dependency, for linting, and its analysis output carries
+docstrings, arglists, privacy and source positions — everything codox rendered.
+The output is markdown rather than HTML so it reads on GitHub as well as on the
+published site, and so a diff shows what changed about the API rather than what
+changed about a generator's templates. `make check` regenerates and fails if
+the tree differs, which is what keeps a committed artifact honest.
+
+The seven namespaces it covers are the ones codox published, unchanged, so the
+promised surface did not silently move with the tooling. That list lives at the
+top of the script, where adding to it is visibly a decision about what the
+editor promises to keep.
+
+Two smaller things fell out. `script/build-app.sh` derived the release name by
+`cut`-ing the first line of `project.clj`; that line had become a comment, so
+builds were coming out as `Light-Table-mac` with `Table` for a version and
+nothing saying so. It now reads `deploy/core/package.json`, the manifest
+Electron itself reads, and fails loudly if either field is missing.
+`deploy/core/version.json` still claimed Electron 13.1.2.
+
 ## CodeMirror
 
 Worth knowing before anyone treats this as urgent: **CodeMirror 5 is still
@@ -1093,9 +1130,33 @@ project-wide search implementation, so not worth rushing.
   scripts and the forked CodeMirror addons. Mechanical, and a prerequisite for
   any CSP conversation. Porting those scripts to TypeScript resolves it as a
   side effect, since a module that declares its exports can be required.
-- **`project.clj` builds nothing** and exists only for codox. It stays as long as
-  the published plugin API docs do.
 - **`lt.util.ipc` is gone**, which is a plugin API break in principle. Nothing in
   the flagship plugins referenced it — checked against the compiled artifacts,
   not just the source — and `lt.util.bridge` is where its one general-purpose
   member, `app-info`, now lives.
+- **`lt.util.load/node-module` has no callers in this repository.** It is kept
+  because published plugins have them: the Clojure plugin reaches for `bencode`
+  and `shelljs` through it and the Javascript plugin for `shelljs`, both from
+  precompiled JavaScript that no build here rebuilds. Its docstring says so, so
+  the next person to find it unused does not delete it.
+- **clj-kondo reports zero warnings**, not zero errors with warnings tolerated.
+  Nine were outstanding and each was fixed rather than suppressed. Most were
+  cosmetic — a redundant `do`, a nested `or`, a one-argument `str`. Two were
+  discarded transient returns, in `lt.object/tags->behaviors` and
+  `lt.objs.document/->snapshot`; both are on vectors, where ClojureScript's
+  `conj!` happens to mutate in place, so they were contract violations rather
+  than live bugs. The snapshot one now uses a JavaScript array, which is the
+  honest tool when the accumulation happens inside a callback that cannot
+  rebind what it closed over.
+
+- **Following that thread found a live one.** `lt.objs.workspace/watch!` did the
+  same thing to a transient *map*, where it is not benign: `assoc!` returns a
+  different object once the map outgrows its array-map representation at eight
+  entries. Watching a folder with more than eight paths kept the first eight
+  watches and silently dropped the rest, so most of a real project stopped
+  reporting changes. The same function also called `persistent!` inside its
+  loop, so `watch-workspace` on a workspace with two or more root folders threw
+  `persistent! called twice`, and it built an `fs` watcher for every folder
+  before checking whether that folder was already watched, leaking the ones it
+  discarded. It is now a `reduce` that threads the transient, makes it
+  persistent once, and only creates a watcher it is going to keep.

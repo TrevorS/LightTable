@@ -304,7 +304,7 @@
 
   (resolve \"/foo\" \"./bar/baz\") ;;=> \"/foo/bar/baz\"
 
-  (resolve \"./\" \"codox\")       ;;=> \"/home/user/dev/LightTable/codox\"
+  (resolve \"./\" \"builds\")      ;;=> \"/home/user/dev/LightTable/builds\"
   ```"
   [base cur]
   (.resolve bridge/path base cur))

@@ -563,7 +563,7 @@ Example:
 
 (resolve "/foo" "./bar/baz") ;;=> "/foo/bar/baz"
 
-(resolve "./" "codox")       ;;=> "/home/user/dev/LightTable/codox"
+(resolve "./" "builds")      ;;=> "/home/user/dev/LightTable/builds"
 ```
 
 [source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/files.cljs#L298)

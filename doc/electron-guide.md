@@ -85,9 +85,10 @@ what let precompiled plugins survive a change nobody could rebuild them for.
 `doc/context-isolation.md` has the design, the measurements and the order it
 went in.
 
-What is not done is `sandbox: true`, which would take Node out of the preload
-as well. That is a different design and a much more expensive one; the same
-document explains why it buys less than the step before it.
+Two things are deliberately not done: `sandbox: true`, which would take Node
+out of the preload as well, and a content security policy without
+`unsafe-eval`, which cannot coexist with evaluating the code you are writing.
+Both are settled decisions rather than open work; the same document says why.
 
 ## Additional links
 

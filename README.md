@@ -148,13 +148,16 @@ which predate this work. The ones to start with:
 [plugin list](https://github.com/LightTable/plugin-metadata) still live on the
 upstream repository.
 
-To regenerate the API docs:
+The [API reference](doc/api/README.md) for the namespaces plugins are written
+against is generated from the source docstrings and committed, so it reads on
+GitHub and is published with the rest of `doc/`. After changing a docstring in
+one of those namespaces:
 
 ```sh
-lein codox
+make docs
 ```
 
-`project.clj` exists only for that. It builds nothing.
+`make check` fails if it is stale, which is what stops it drifting.
 
 ## Plugins
 
