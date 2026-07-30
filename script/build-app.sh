@@ -177,7 +177,14 @@ if [ "$1" == "--release" ]; then
     popd
   else
     pushd "$BUILDS"
-    tar -zcvf $RELEASE_TARBALL $RELEASE/*
+    # COPYFILE_DISABLE stops macOS bsdtar writing an AppleDouble `._name` entry
+    # beside every file that carries an extended attribute — which, after
+    # codesigning, is most of the bundle. They are invisible on a Mac and
+    # litter the tree for anyone extracting it anywhere else. No effect on
+    # Linux, where the variable means nothing.
+    # -v is dropped: an .app bundle is tens of thousands of files, and naming
+    # each one in a CI log buries whatever went wrong.
+    COPYFILE_DISABLE=1 tar -zcf $RELEASE_TARBALL $RELEASE/*
     popd
   fi
 fi

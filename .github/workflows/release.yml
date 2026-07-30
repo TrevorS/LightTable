@@ -1,0 +1,67 @@
+name: release
+
+# Publishes a GitHub release from a tag.
+#
+#     git tag 0.9.0 && git push origin 0.9.0
+#
+# The binaries come from the same workflow every push runs, so what is
+# published is what has been tested, built the way it is always built. Nothing
+# here builds anything itself.
+#
+# Both archives are unsigned by any Apple or Microsoft identity. The macOS one
+# is ad-hoc signed, which is what lets it run at all on Apple Silicon; it is
+# not notarised, so Gatekeeper will still ask. Windows is not built here — no
+# runner in this matrix produces it, and claiming otherwise in a release would
+# be worse than its absence.
+
+on:
+  push:
+    tags: ['[0-9]+.[0-9]+.[0-9]+*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing tag to publish a release for.
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  app:
+    uses: ./.github/workflows/app.yml
+    with:
+      upload: true
+      # The tag is the version. A release whose archives are named after
+      # package.json while the tag says something else is a support question
+      # nobody can answer.
+      version: ${{ github.event.inputs.tag || github.ref_name }}
+
+  publish:
+    needs: app
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Collect the built archives
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          set -e
+          ls -la artifacts/
+          # Checksums, because a partial download of a 200MB archive fails in
+          # ways that look like a broken build.
+          (cd artifacts && shasum -a 256 *.tar.gz > SHA256SUMS.txt)
+          cat artifacts/SHA256SUMS.txt
+          gh release create "$TAG" \
+            --title "$TAG" \
+            --generate-notes \
+            --verify-tag \
+            artifacts/*

@@ -8,6 +8,12 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 if [ -n "$DISPLAY" ]; then
   exec node script/smoke-test.js
+elif [ "$(uname)" = "Darwin" ]; then
+  # macOS has no X display and never will. Electron talks to the window server
+  # directly, which is present on a Mac and on GitHub's macOS runners, so there
+  # is nothing to arrange — asking for xvfb here would fail on a working
+  # machine.
+  exec node script/smoke-test.js
 elif command -v xvfb-run >/dev/null 2>&1; then
   exec xvfb-run -a --server-args="-screen 0 1280x820x24" node script/smoke-test.js
 else

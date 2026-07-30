@@ -73,30 +73,43 @@ This background thread is invoked with the `background` macro.
 
 ## Release process
 
-Pre-release checklist:
+**Pushing a tag is the release.** `.github/workflows/release.yml` builds Light
+Table on Linux and macOS, runs the checks and the smoke test on both, packages
+each one, and publishes a GitHub release with both archives and a
+`SHA256SUMS.txt`.
 
- - [ ] Notify users (as described above in the *Node packages* section) if any Node.js packages have been removed as plugins may depend on them
+```sh
+git tag 0.X.X && git push origin 0.X.X
+```
 
-This is our release checklist which can be dropped in to an issue:
+Both platforms build the same way on every push too, through the shared
+`.github/workflows/app.yml`, so a release is not the first time a packaging
+step runs. Nothing is uploaded from a laptop, and no branch is switched under
+you.
 
-- [ ] Release 0.X.X
-      - [ ] Version updates
-         - [ ] Update deploy/core/package.json and deploy/core/version.json to 0.X.X. `script/build-app.sh` names the release from package.json, so that one decides what the archive is called
-         - [ ] Make sure electron version is up to date in version.json
-         - [ ] Make sure plugin versions in script/build.sh are latest versions
-      - [ ] Add changelog with notes for release (i.e release notes) to CHANGELOG.md
-      - [ ] Each core developer should QA at least one OS using the [QA checklist](https://github.com/LightTable/LightTable/wiki/QA-Checklist)
-      - [ ] When QA passes freeze master
-      - [ ] Add changelog to [GH release draft](https://github.com/LightTable/LightTable/releases/new)
-      - [ ] Upload binaries from `script/build.sh --release` to draft. Don't forget to click *Save draft*!
-         - [ ] Generate an MD5 checksum for the binary package:
-            - [ ] Run `certUtil -hashfile lighttable-x.y.z-windows.zip MD5` on Windows.
-            - [ ] Run `openssl md5 lighttable-x.y.z-mac.tar.gz` on Mac OS X or Linux.
-      - [ ] Publish GH release which creates git tag and notifies users about new release
-      - [ ] Update download links on lighttable.com
-      - [ ] Mailing list announcement - [example email](https://gist.github.com/cldwalker/3d67153fe1eade2ae3cf)
-      - [ ] Optional blog post if a major release
-      - [ ] Inform [Brian Dukes](https://github.com/bdukes) so that he can update the [Chocolatey package](https://chocolatey.org/packages/LightTable)
+Before tagging:
+
+- [ ] `deploy/core/package.json` and `deploy/core/version.json` say 0.X.X.
+      `script/build-app.sh` names the archive from package.json, and the
+      release workflow overrides it with the tag, so a mismatch between the two
+      shows up as a differently named file
+- [ ] `version.json` names the Electron version actually being shipped
+- [ ] Plugin versions in `script/build.sh` are the ones you mean to bundle
+- [ ] A release section exists in `deploy/core/changelog.md`
+- [ ] Notify users (as described above in the *Node packages* section) if any
+      Node.js packages have been removed, as plugins may depend on them
+- [ ] Somebody has actually used the build. CI proves it starts and loads; it
+      does not prove the editor is pleasant to use. The
+      [QA checklist](https://github.com/LightTable/LightTable/wiki/QA-Checklist)
+      is still the right list
+
+What the release does **not** include:
+
+- **Windows.** No runner in the matrix produces it. `script/build-app.sh` still
+  has the Cygwin path, and it is untested.
+- **Notarised macOS binaries.** The bundle is ad-hoc signed, which is what lets
+  it run at all on Apple Silicon. It is not signed with an Apple Developer ID
+  and not notarised, so Gatekeeper will ask on first launch.
 
 ## API documentation
 
