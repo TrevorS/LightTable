@@ -33,7 +33,7 @@ rather than merely old, it says so at the top.
 |---|---|
 | [Building and running](https://github.com/TrevorS/LightTable/blob/develop/README.md#building) | In the root README, because it changes with the build. |
 | [Developer install](developer-install.md) | *Predates the modernization; the root README is the current answer.* |
-| [For committers](for-committers.md) | Dependencies, releases, plugin metadata. *Predates the modernization.* |
+| [For committers](for-committers.md) | Dependencies, releases, plugin metadata. *Mixed: the dependency, release and API documentation sections are current; the rest predates the modernization.* |
 | [Style guide](style-guide.md) | ClojureScript conventions. *Predates the modernization, and still applies.* |
 | [Plugins in this repository](https://github.com/TrevorS/LightTable/blob/develop/plugins/README.md) | Writing one in TypeScript or ClojureScript, and the capability manifest. *Current.* |
 
