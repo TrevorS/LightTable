@@ -5,14 +5,34 @@ is the kind of proposal that sounds settled and is not.
 
 ## Where highlighting stands
 
-Light Table ships **130 CodeMirror 5 modes**, up from 27 before this work.
-`deploy/settings/default/default.behaviors` maps an extension to a mime, and the
-mode is in the bundle. Adding a language is a line in that table when a mode
-exists, which is the usual case — CodeMirror 5 has modes for essentially
-everything, and it is still receiving releases.
+This section used to say highlighting was not broken, on the evidence that
+Light Table ships **130 CodeMirror 5 modes** and maps 100 file types to them.
+That was the wrong measurement. Counting modes says nothing about what a file
+looks like, and looking at what a file actually gets found three problems, two
+of them plain bugs:
 
-So the honest starting position is that highlighting is not broken. What
-CodeMirror 5 modes are bad at is narrower than "highlighting":
+- **Rust threw instead of highlighting.** CodeMirror's simple-mode addon asks a
+  rule's token for an `apply` method to decide whether it is a function to
+  call, and extending `js/String` with `IFn` — which is what makes
+  `("key" some-map)` work, and is published API — makes ClojureScript put one
+  on every string. So the addon called a string and threw. Fixed, and the smoke
+  test now instantiates every mapped mime so the next one cannot hide.
+- **Numbers were the colour of plain text**, in both Light Table themes.
+  `cm-number` was `#ccc` against a `#ccc` body. Fixed.
+- **The palette is flat by design, and the design is from 2013.** In
+  `default.css`, six token types share `#aec`, three share `#aaa`, three share
+  `#acf`. On a realistic TypeScript file that is 7 token types rendered in 6
+  colours; after the number fix, still 6.
+
+Measured across six languages after the fixes: **5-7 distinct colours each**,
+with `variable` sharing the body colour, which is a normal choice rather than a
+bug. That is the floor raised. The ceiling is below.
+
+The reason Clojure "looks reasonable" and TypeScript does not, incidentally, is
+rainbow brackets: the theme has thirteen vivid bracket colours and a handful of
+muted everything-else, so a Lisp gets colour the palette never gave the tokens.
+
+What CodeMirror 5 modes are bad at is narrower than "highlighting":
 
 - **Nesting.** A mode is a per-line state machine, so JavaScript inside a
   `<script>`, SQL inside a template literal, or Rust inside a doc comment
@@ -116,8 +136,13 @@ ms in-process.
 
 **Recommended order:**
 
-1. **Nothing, for now.** 130 modes work. Adding a mime for a missing language is
-   a one-line change and remains the cheapest possible win.
+1. **Theme work first, and it is not a consolation prize.** The measured gap
+   between what the modes emit and what the palette shows is real: seven token
+   types rendered in six colours, with six of them collapsed onto one hue. A
+   modern palette that used every class the modes already emit would change how
+   the editor looks more than tree-sitter would, for a fraction of the work, and
+   it is reversible. Adding a mime for a missing language remains the cheapest
+   possible win after that.
 2. **The three preload gaps are closed** — `write`, `endStdin`, `onStdoutBytes`
    and `readFileBytesSync`, with five smoke checks over them. Neither project
    is now blocked on the privileged side.

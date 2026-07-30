@@ -37,6 +37,12 @@ rather than merely old, it says so at the top.
 | [Style guide](style-guide.md) | ClojureScript conventions. *Predates the modernization, and still applies.* |
 | [Plugins in this repository](https://github.com/TrevorS/LightTable/blob/develop/plugins/README.md) | Writing one in TypeScript or ClojureScript, and the capability manifest. *Current.* |
 
+## Where this is going
+
+| | |
+|---|---|
+| [Direction](direction.md) | What Light Table is for, what to keep, and the order to work in. Read this before proposing anything large. |
+
 ## What changed, and why
 
 The modernization is recorded rather than summarised, because the reasoning is
