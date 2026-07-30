@@ -37,10 +37,14 @@
 (def ^:private ts modules/treesitter)
 
 (defn- core-path
-  "A path inside the installed `deploy/core`, where the runtime dependencies
-  live. `app-dir` is that directory."
+  "A path inside the installed `deploy/core`, which is what `app-dir` is.
+
+  Relative to `deploy/core` rather than to `node_modules`, because not every
+  grammar comes from npm: the ones nobody publishes a prebuilt `.wasm` for are
+  built from source and vendored under `grammars/`. See that directory's
+  README for how."
   [& parts]
-  (apply str bridge/app-dir "/node_modules/" parts))
+  (apply str bridge/app-dir "/" parts))
 
 (defn- read-bytes
   "The byte reader `src-window/treesitter.ts` needs. A `.wasm` read as UTF-8 is
@@ -59,12 +63,21 @@
   privileged: a plugin can `swap!` into it, which is how a language plugin
   should bring its own grammar rather than waiting for an editor release."
   (atom
-   (let [js   "tree-sitter-javascript/queries/highlights.scm"
-         jsx  "tree-sitter-javascript/queries/highlights-jsx.scm"
-         ts   "tree-sitter-typescript/queries/highlights.scm"]
-     {:editor.javascript {:wasm "tree-sitter-javascript/tree-sitter-javascript.wasm"
+   (let [npm  (fn [pkg file] (str "node_modules/" pkg "/" file))
+         js   (npm "tree-sitter-javascript" "queries/highlights.scm")
+         jsx  (npm "tree-sitter-javascript" "queries/highlights-jsx.scm")
+         tsq  (npm "tree-sitter-typescript" "queries/highlights.scm")
+         cq   (npm "tree-sitter-c" "queries/highlights.scm")
+         ;; A grammar whose npm package ships both a prebuilt .wasm and a
+         ;; highlights.scm needs nothing but these two lines.
+         simple (fn [pkg]
+                  {:wasm (npm pkg (str pkg ".wasm"))
+                   :queries [(npm pkg "queries/highlights.scm")]})
+         clojure {:wasm "grammars/tree-sitter-clojure.wasm"
+                  :queries ["grammars/queries/clojure-highlights.scm"]}]
+     {:editor.javascript {:wasm (npm "tree-sitter-javascript" "tree-sitter-javascript.wasm")
                           :queries [js]}
-      :editor.jsx        {:wasm "tree-sitter-javascript/tree-sitter-javascript.wasm"
+      :editor.jsx        {:wasm (npm "tree-sitter-javascript" "tree-sitter-javascript.wasm")
                           :queries [js jsx]}
       ;; Two queries, in this order, and the order is the point. TypeScript's
       ;; own file is a 35-line supplement — types, parameters, its extra
@@ -72,24 +85,48 @@
       ;; it. Later captures win, so `(type_identifier) @type` beats
       ;; JavaScript's blanket `(identifier) @variable` for the same node, which
       ;; is what the query author meant by writing it second.
-      :editor.typescript {:wasm "tree-sitter-typescript/tree-sitter-typescript.wasm"
-                          :queries [js ts]}
-      :editor.tsx        {:wasm "tree-sitter-typescript/tree-sitter-tsx.wasm"
-                          :queries [js jsx ts]}
-      :editor.python     {:wasm "tree-sitter-python/tree-sitter-python.wasm"
-                          :queries ["tree-sitter-python/queries/highlights.scm"]}
-      :editor.rust       {:wasm "tree-sitter-rust/tree-sitter-rust.wasm"
-                          :queries ["tree-sitter-rust/queries/highlights.scm"]}
-      :editor.go         {:wasm "tree-sitter-go/tree-sitter-go.wasm"
-                          :queries ["tree-sitter-go/queries/highlights.scm"]}
-      :editor.json       {:wasm "tree-sitter-json/tree-sitter-json.wasm"
-                          :queries ["tree-sitter-json/queries/highlights.scm"]}
-      :editor.css        {:wasm "tree-sitter-css/tree-sitter-css.wasm"
-                          :queries ["tree-sitter-css/queries/highlights.scm"]}
-      :editor.html       {:wasm "tree-sitter-html/tree-sitter-html.wasm"
-                          :queries ["tree-sitter-html/queries/highlights.scm"]}
-      :editor.bash       {:wasm "tree-sitter-bash/tree-sitter-bash.wasm"
-                          :queries ["tree-sitter-bash/queries/highlights.scm"]}})))
+      :editor.typescript {:wasm (npm "tree-sitter-typescript" "tree-sitter-typescript.wasm")
+                          :queries [js tsq]}
+      :editor.tsx        {:wasm (npm "tree-sitter-typescript" "tree-sitter-tsx.wasm")
+                          :queries [js jsx tsq]}
+
+      ;; Nobody publishes a prebuilt Clojure grammar, and no package ships
+      ;; Clojure queries, so both are ours — see deploy/core/grammars/README.md.
+      ;; Worth the effort for the language this editor is written in: the
+      ;; grammar separates a defn's name from its docstring from its parameter
+      ;; vector, and an interop call from a local, none of which the CodeMirror
+      ;; mode can see.
+      ;; Every tag a Clojure file might carry. `.clj` and friends are tagged by
+      ;; the Clojure plugin rather than by the built-in file-type table, which
+      ;; only knows `.edn`, so listing one tag would cover the wrong half.
+      :editor.clj        clojure
+      :editor.cljs       clojure
+      :editor.cljc       clojure
+      :editor.cljx       clojure
+      :editor.edn        clojure
+      :editor.clojure    clojure
+      :editor.behaviors  clojure
+      :editor.keymap     clojure
+
+      :editor.python     (simple "tree-sitter-python")
+      :editor.rust       (simple "tree-sitter-rust")
+      :editor.go         (simple "tree-sitter-go")
+      :editor.json       (simple "tree-sitter-json")
+      :editor.css        (simple "tree-sitter-css")
+      :editor.html       (simple "tree-sitter-html")
+      :editor.bash       (simple "tree-sitter-bash")
+      :editor.c          (simple "tree-sitter-c")
+      ;; C++ is C plus its own rules, the same shape as TypeScript over
+      ;; JavaScript.
+      :editor.cpp        {:wasm (npm "tree-sitter-cpp" "tree-sitter-cpp.wasm")
+                          :queries [cq (npm "tree-sitter-cpp" "queries/highlights.scm")]}
+      :editor.java       (simple "tree-sitter-java")
+      :editor.ruby       (simple "tree-sitter-ruby")
+      :editor.php        (simple "tree-sitter-php")
+      :editor.yaml       {:wasm (npm "@tree-sitter-grammars/tree-sitter-yaml" "tree-sitter-yaml.wasm")
+                          :queries [(npm "@tree-sitter-grammars/tree-sitter-yaml" "queries/highlights.scm")]}
+      :editor.toml       {:wasm (npm "@tree-sitter-grammars/tree-sitter-toml" "tree-sitter-toml.wasm")
+                          :queries [(npm "@tree-sitter-grammars/tree-sitter-toml" "queries/highlights.scm")]}})))
 
 (defn grammar-for
   "The grammar for an editor's tags, or nil. First match wins, which only
@@ -98,9 +135,14 @@
   (some #(get @grammars %) tags))
 
 (defn grammar-name
-  "The npm package a grammar comes from, for reporting."
+  "Where a grammar came from, for reporting: the npm package, or `grammars` for
+  one built and vendored here."
   [grammar]
-  (when grammar (first (string/split (:wasm grammar) #"/"))))
+  (when grammar
+    (let [parts (string/split (:wasm grammar) #"/")]
+      (if (= "node_modules" (first parts))
+        (string/join "/" (rest (butlast parts)))
+        (first parts)))))
 
 (defn- read-query
   "One query file, or nothing if it is missing. A grammar that ships fewer
@@ -123,7 +165,7 @@
 (defonce ^:private runtime
   ;; One runtime for the window, initialised on first use rather than at
   ;; startup: 200KB of WebAssembly nobody needs until a supported file opens.
-  (delay (.initRuntime ts read-bytes (core-path "web-tree-sitter/web-tree-sitter.wasm"))))
+  (delay (.initRuntime ts read-bytes (core-path "node_modules/web-tree-sitter/web-tree-sitter.wasm"))))
 
 (defn- highlighter-for [grammar]
   (.then @runtime (fn [_] (.highlighterFor ts read-bytes (spec grammar)))))

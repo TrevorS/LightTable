@@ -21,15 +21,32 @@ real payoff: a theme becomes a stylesheet rather than a port.
 
 | | |
 |---|---|
-| Grammars bundled | JavaScript, TypeScript, TSX, JSX, Python, Rust, Go, JSON, CSS, HTML, Bash |
+| Grammars bundled | JavaScript, TypeScript, TSX, JSX, **Clojure**, Python, Rust, Go, C, C++, Java, Ruby, PHP, JSON, YAML, TOML, CSS, HTML, Bash |
 | Runtime load | once, ~0ms after the first grammar |
 | Grammar load | ~46ms, once per language, on first use |
 | Parse | 0.8ms for a small file; 0.2ms incremental after an edit |
 | Shipped size | 6.5MB of WebAssembly, loaded on demand |
 
-Adding a language is two lines in `lt.objs.editor.treesitter/grammars` plus the
-npm dependency — and that map is an atom a plugin can `swap!`, so a language
-plugin can bring its own grammar without waiting for an editor release.
+Adding a language is usually two lines in `lt.objs.editor.treesitter/grammars`
+plus the npm dependency — and that map is an atom a plugin can `swap!`, so a
+language plugin can bring its own grammar without waiting for an editor release.
+
+Most grammars come from npm packages that ship a prebuilt `.wasm` and a
+`queries/highlights.scm`. Clojure does neither, so its grammar is built from
+source and committed under `deploy/core/grammars/`, and its highlight query is
+Light Table's own — worth the effort for the language this editor is written
+in. That directory's README has the build, which needs neither docker nor
+emscripten: the tree-sitter CLI fetches its own wasi-sdk.
+
+Measured in the running editor, capture classes against what the CodeMirror
+mode managed for the same file:
+
+| | CodeMirror | tree-sitter |
+|---|---|---|
+| Clojure | 7 | **15** |
+| TypeScript | 7 | **14** |
+| Rust | broken entirely | **12** |
+| C++, Java, Ruby | 6-7 | **9** |
 
 The mime table still decides indentation, commenting, bracket matching and
 folding. Only the colouring changes, and only where a grammar exists.
