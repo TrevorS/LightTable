@@ -1,0 +1,9 @@
+;; Behaviors for the TypeScript plugin.
+;;
+;; Only the load. The file types for .ts, .tsx, .mts and .cts are Light
+;; Table's own — deploy/settings/default/default.behaviors — because what they
+;; carry is the CodeMirror mime, and that is the same question for every
+;; language the editor ships. This plugin adds what comes after colouring.
+[
+ [:app :lt.objs.plugins/load-js "typescript_compiled.js"]
+]

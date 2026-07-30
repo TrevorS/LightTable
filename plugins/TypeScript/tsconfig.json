@@ -8,11 +8,12 @@
     // that, and it is why plugins/lib/lt.ts is a namespace rather than a
     // module: namespaces compile to idempotent globals.
     "module": "none",
-    "outFile": "hello_compiled.js",
+    "outFile": "typescript_compiled.js",
 
     // No ambient @types at all, node's included. A plugin runs in the window,
-    // and one that declares no filesystem capability has no business seeing
-    // fs's signatures — the types a plugin gets should match what it may do.
+    // and what it may do is its manifest's business — the types it gets should
+    // match that. This plugin runs a compiler, but through the bridge, so it
+    // still has no business seeing child_process's signatures.
     "types": [],
 
     "strict": true,
@@ -27,6 +28,6 @@
   "files": [
     "../types/lighttable.d.ts",
     "../lib/lt.ts",
-    "src/hello.ts"
+    "src/typescript.ts"
   ]
 }

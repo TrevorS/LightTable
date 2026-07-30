@@ -26,6 +26,10 @@ const CORE = path.join(ROOT, 'deploy', 'core');
 // on a Mac. Hard-coding the Linux one worked here and nowhere else.
 const ELECTRON = require(path.join(ROOT, 'deploy', 'electron', 'node_modules', 'electron'));
 const SAMPLE = path.join(ROOT, 'src', 'lt', 'objs', 'platform.cljs');
+// A page for the browser tab to navigate to. A file:// url rather than a real
+// site, so the check tests Light Table rather than the network.
+const PROBE_PAGE = path.join(os.tmpdir(), 'lt-smoke-browser-probe.html');
+fs.writeFileSync(PROBE_PAGE, '<!doctype html><title>lt probe</title><body>lt-browser-probe-loaded');
 // Arguments for the background scan the smoke test uses to prove the worker
 // round trip. Note that walkdir's pattern is an exclusion, matching how
 // lt.objs.sidebar.navigate passes files/ignore-pattern through: this skips
@@ -128,9 +132,9 @@ app.on('ready', function () {
                     tsPlugin: (function () {
                         var cmds = cljs.core.get.call(null, cljs.core.deref(lt.objs.command.manager),
                                                       cljs.core.keyword.call(null, 'commands'));
-                        return !!(lt.plugins['hello-ts']) &&
-                               cljs.core.contains_QMARK_(cmds, cljs.core.keyword.call(null, 'hello-ts.say-hello')) &&
-                               cljs.core.contains_QMARK_(cmds, cljs.core.keyword.call(null, 'hello-ts.copy-greeting'));
+                        return !!(lt.plugins['typescript']) &&
+                               cljs.core.contains_QMARK_(cmds, cljs.core.keyword.call(null, 'typescript.type-check')) &&
+                               cljs.core.contains_QMARK_(cmds, cljs.core.keyword.call(null, 'typescript.open-tsconfig'));
                     })(),
                     // The window-side TypeScript modules, required rather than
                     // evaluated. Exercised, not just present: the command bar
@@ -265,32 +269,38 @@ app.on('ready', function () {
                                cljs.core.contains_QMARK_(cmds, cljs.core.keyword.call(null, 'paredit.select.parent'));
                     })(),
                     // Capability inference, against the real installed plugins.
-                    // HelloTS is the interesting case: it is the only plugin
+                    // TypeScript is the interesting case: it is the only plugin
                     // carrying a manifest, so what it declared and what it uses
                     // should agree.
                     capabilities: (function () {
                         var plugins = lt.objs.plugins.available_plugins();
                         var out = {};
-                        ['HelloTS', 'Clojure'].forEach(function (name) {
+                        ['TypeScript', 'Clojure'].forEach(function (name) {
                             var p = cljs.core.get.call(null, plugins, name);
                             if (!p) return;
                             var r = lt.objs.plugins.capability_report(p);
-                            out[name] = {
-                                declared: cljs.core.pr_str(cljs.core.get.call(null, r, cljs.core.keyword.call(null,'declared'))),
-                                used: cljs.core.pr_str(cljs.core.get.call(null, r, cljs.core.keyword.call(null,'used'))),
-                                undeclared: cljs.core.pr_str(cljs.core.get.call(null, r, cljs.core.keyword.call(null,'undeclared')))
+                            // Sorted: a set's print order is not defined, and a
+                            // check that depends on it fails for no reason.
+                            var names = function (k) {
+                                var v = cljs.core.get.call(null, r, cljs.core.keyword.call(null, k));
+                                if (v === null || v === undefined) return 'nil';
+                                return cljs.core.clj__GT_js.call(null,
+                                    cljs.core.sort.call(null, cljs.core.map.call(null, cljs.core.name, v))
+                                ).join(' ');
                             };
+                            out[name] = { declared: names('declared'), used: names('used'),
+                                          undeclared: names('undeclared') };
                         });
                         return out;
                     })(),
                     // The enforcement gate, driven directly: default mode,
                     // then refuse against the plugin that carries a manifest.
-                    // HelloTS is inside its manifest, so it stays allowed —
+                    // TypeScript is inside its manifest, so it stays allowed —
                     // an under-declaring plugin is what refusal is for, and
                     // that case is covered by unit tests.
                     gate: (function () {
                         var dir = cljs.core.get.call(null,
-                                    cljs.core.get.call(null, lt.objs.plugins.available_plugins(), 'HelloTS'),
+                                    cljs.core.get.call(null, lt.objs.plugins.available_plugins(), 'TypeScript'),
                                     cljs.core.keyword.call(null, 'dir'));
                         var before = String(lt.objs.plugins.enforcement());
                         var allowedByDefault = lt.objs.plugins.allowed_to_load_QMARK_(dir);
@@ -370,9 +380,16 @@ app.on('ready', function () {
                 // webviewTag is set, which it was not for several years, and
                 // the guest's preload only reaches the page if the guest's
                 // contextIsolation is explicitly off.
+                // Opened *with* a url, because navigating is the part that
+                // broke: the src attribute was bound to :url, and an Electron
+                // webview keeps src in step with what it has actually loaded,
+                // so every assignment was overwritten and the tab sat on
+                // about:blank. Nothing noticed, because a tab that opens is
+                // most of what a check would look at.
                 step = 'opening a browser tab';
                 await w.webContents.executeJavaScript(
-                    'lt.objs.command.exec_BANG_(cljs.core.keyword.call(null,"add-browser-tab"))');
+                    'lt.objs.command.exec_BANG_(cljs.core.keyword.call(null,"add-browser-tab"),' +
+                    JSON.stringify(${JSON.stringify('file://' + PROBE_PAGE)}) + ')');
                 await new Promise(function (r) { setTimeout(r, 6000); });
                 Object.assign(report, JSON.parse(await w.webContents.executeJavaScript(\`(async function () {
                     var v = document.querySelector('webview');
@@ -380,6 +397,11 @@ app.on('ready', function () {
                         webviewUpgraded: !!(v && typeof v.getWebContentsId === 'function' && typeof v.loadURL === 'function'),
                         guestInjection: v && typeof v.executeJavaScript === 'function'
                             ? await v.executeJavaScript('typeof window.lttools')
+                            : 'no webview api',
+                        // Did it actually go there, or is it still on about:blank?
+                        browserLanded: v && typeof v.getURL === 'function' ? v.getURL() : 'no webview api',
+                        browserPageText: v && typeof v.executeJavaScript === 'function'
+                            ? await v.executeJavaScript('document.body.innerText.trim()')
                             : 'no webview api'
                     });
                 })()\`)));
@@ -502,15 +524,15 @@ async function main() {
         ['a plugin loads the CommonJS package it vendored',
          !r.pluginsPresent || (!!r.shim && r.shim.vendoredModule === true)],
         ['capability inference matches the one declared manifest',
-         !!r.capabilities && !!r.capabilities.HelloTS &&
-         r.capabilities.HelloTS.declared === '#{:clipboard}' &&
-         r.capabilities.HelloTS.used === '#{:clipboard}' &&
-         r.capabilities.HelloTS.undeclared === '#{}'],
+         !!r.capabilities && !!r.capabilities.TypeScript &&
+         r.capabilities.TypeScript.declared === 'files processes' &&
+         r.capabilities.TypeScript.used === 'files processes' &&
+         r.capabilities.TypeScript.undeclared === ''],
         // Only meaningful when the flagships were cloned.
         ['capability inference reads an unmanifested plugin',
          !r.pluginsPresent || (!!r.capabilities.Clojure &&
                                r.capabilities.Clojure.declared === 'nil' &&
-                               r.capabilities.Clojure.used.indexOf(':processes') !== -1)],
+                               r.capabilities.Clojure.used.indexOf('processes') !== -1)],
         ['the preload bridge is exposed', r.bridge === true],
         ['the window reaches the desktop through the bridge', r.bridgeInUse === true],
         ['zoom is served by the bridge', typeof r.zoomFactor === 'number' && r.zoomFactor > 0],
@@ -518,6 +540,9 @@ async function main() {
         ['the application menu was built over the bridge', r.appMenu === true],
         ['the browser tab has a real webview', r.webviewUpgraded === true],
         ['the browser injection reached the guest page', r.guestInjection === 'object'],
+        ['the browser tab navigates where it was told',
+         typeof r.browserLanded === 'string' && r.browserLanded.startsWith('file://') &&
+         r.browserPageText === 'lt-browser-probe-loaded'],
         // Only meaningful when the published flagships were cloned, which
         // build.sh does and CI does not.
         ['bundled plugins loaded', !r.pluginsPresent || r.behaviors > 500],

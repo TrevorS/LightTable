@@ -1,0 +1,13 @@
+{:name "TypeScript"
+ :version "0.1.0"
+ :author "Light Table"
+ :desc "TypeScript support: type-checks the project the open file belongs to, using the project's own compiler."
+ :source "https://github.com/LightTable/LightTable"
+ :behaviors "typescript.behaviors"
+
+ ;; What this plugin needs, declared rather than discovered — see
+ ;; plugins/README.md.
+ ;;
+ ;; :processes  runs the project's tsc
+ ;; :files      finds the tsconfig that governs the open file
+ :capabilities #{:processes :files}}

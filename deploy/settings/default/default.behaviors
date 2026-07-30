@@ -317,7 +317,7 @@
                                     ;; No extension since .sql is used by SQL
                                     {:exts [], :mime "text/x-mysql", :tags [:editor.sql :editor.mysql], :name "MySQL"}
                                     ;; No extension since .conf is an overloaded extension
-                                    {:exts [], :mime "text/nginx", :tags [:editor.nginx], :name "Nginx"}
+                                    {:exts [], :mime "text/x-nginx-conf", :tags [:editor.nginx], :name "Nginx"}
                                     {:exts [:nt], :mime "text/n-triples", :tags [:editor.ntriples], :name "NTriples"}
                                     {:exts [:ocaml :ml], :mime "text/x-ocaml", :tags [:editor.ocaml], :name "OCaml"}
                                     {:exts [:m], :mime "text/x-octave", :tags [:editor.octave], :name "Octave"}
@@ -325,6 +325,10 @@
                                     {:exts [:pl], :mime "text/x-perl", :tags [:editor.perl], :name "Perl"}
                                     {:exts [:php], :mime "text/x-php", :tags [:editor.php], :name "PHP"}
                                     {:exts [:pig], :mime "text/x-pig", :tags [:editor.pig], :name "Pig Latin"}
+                                    ;; The one mime here that no CodeMirror mode defines, and
+                                    ;; deliberately: an unknown mime falls back to the null mode,
+                                    ;; which is exactly what plain text wants. Everything else in
+                                    ;; this list resolves — see doc/language-support.md.
                                     {:exts [:txt], :mime "plaintext", :tags [:editor.plaintext], :name "Plain Text"}
                                     {:exts [:py :pyw], :mime "text/x-python", :tags [:editor.python], :name "Python"}
                                     {:exts [:pp], :mime "text/x-puppet", :tags [:editor.puppet], :name "Puppet"}
@@ -345,7 +349,7 @@
                                     {:exts [:st], :mime "text/x-stsrc", :tags [:editor.smalltalk], :name "Smalltalk"}
                                     {:exts [:smarty], :mime "text/x-smarty", :tags [:editor.smarty], :name "Smarty"}
                                     {:exts [], :mime "text/x-solr", :tags [:editor.solr], :name "Solr"}
-                                    {:exts [:sparql], :mime "text/x-sparql-query", :tags [:editor.sparql], :name "SPARQL"}
+                                    {:exts [:sparql], :mime "application/sparql-query", :tags [:editor.sparql], :name "SPARQL"}
                                     {:exts [:sql], :mime "text/x-sql", :tags [:editor.sql], :name "SQL"}
                                     {:exts [:sv], :mime "text/x-systemverilog", :tags [:editor.systemverilog], :name "System Verilog"}
                                     {:exts [:tcl], :mime "text/x-tcl", :tags [:editor.tcl], :name "Tcl"}
@@ -355,7 +359,9 @@
                                     {:exts [:toml], :mime "text/x-toml", :tags [:editor.toml], :name "TOML"}
                                     {:exts [], :mime "text/x-tornado", :tags [:editor.tornado], :name "Tornado Template"}
                                     {:exts [:ttl], :mime "text/turtle", :tags [:editor.turtle], :name "Turtle"}
-                                    {:exts [:ts], :mime "text/x-typescript", :tags [:editor.typescript], :name "TypeScript"}
+                                    {:exts [:ts :mts :cts], :mime "application/typescript", :tags [:editor.typescript], :name "TypeScript"}
+                                    {:exts [:tsx], :mime "text/typescript-jsx", :tags [:editor.typescript :editor.tsx], :name "TypeScript JSX"}
+                                    {:exts [:jsx], :mime "text/jsx", :tags [:editor.javascript :editor.jsx], :name "JSX"}
                                     {:exts [:vb], :mime "text/x-vb", :tags [:editor.visualbasic], :name "VB"}
                                     {:exts [:vbs], :mime "text/vbscript", :tags [:editor.vbscript], :name "VBScript"}
                                     {:exts [:vtl], :mime "text/velocity", :tags [:editor.velocity], :name "Velocity"}

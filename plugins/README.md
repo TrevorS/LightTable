@@ -10,11 +10,11 @@ someone ran them.
 plugins/
 ├── types/lighttable.d.ts   the Light Table API, for TypeScript plugins
 ├── lib/lt.ts               helpers for talking to ClojureScript
-├── HelloTS/                a plugin, in TypeScript
+├── TypeScript/             a plugin, in TypeScript
 │   ├── plugin.edn          metadata, and the capability manifest
-│   ├── hello.behaviors     what the plugin contributes
+│   ├── typescript.behaviors   what the plugin contributes
 │   ├── tsconfig.json
-│   └── src/hello.ts
+│   └── src/typescript.ts
 └── Paredit/                a plugin, in ClojureScript
     ├── plugin.edn
     ├── paredit.behaviors
@@ -92,9 +92,9 @@ against the running editor by `script/smoke-test.sh`.
 `plugin.edn` may declare `:capabilities`:
 
 ```clojure
-{:name "HelloTS"
+{:name "TypeScript"
  ;; ...
- :capabilities #{:clipboard}}
+ :capabilities #{:processes :files}}
 ```
 
 ### Why these capabilities, and not `require`
@@ -121,17 +121,27 @@ counts both routes to a thing as one capability, only **4 of 20 need nothing**
 | `:worker` | 3/20 |
 | `:clipboard` | 1/20 |
 
-So capabilities are named after what a plugin *does*, and both routes to a thing
-map onto the same name. This is the better boundary anyway: Light Table's API is
-a chokepoint the editor controls, and ambient `require` is not.
+So capabilities are named after what a plugin *does*, and every route to a
+thing maps onto the same name. This is the better boundary anyway: Light Table's
+API is a chokepoint the editor controls, and ambient `require` is not.
+
+There are three routes, not two, and the third was found the hard way. A plugin
+written before `contextIsolation` reaches a capability through `require` or
+through `lt.objs`; one written now goes straight to `lt.util.bridge`, and the
+scanner did not look there until a plugin that did was written. So the bridge's
+surface is enumerated in `lt.objs.plugins.capabilities/bridge-surface` and
+checked against `lt.util.bridge` by a test — a capability added to the bridge
+without being classified fails it. An omission is the failure mode here, and an
+omission cannot be caught by a pattern nobody thought to write.
 
 | capability | covers |
 |---|---|
-| `:files` | reading and writing the filesystem — `lt.objs.files`, node `fs`, `path` |
-| `:processes` | spawning — `lt.objs.proc`, node `child_process` |
-| `:network` | sockets and http — `lt.objs.clients.tcp`/`.ws`, node `net`, `http`, `https` |
+| `:files` | reading and writing the filesystem — `lt.objs.files`, `bridge.files`, node `fs`, `path` |
+| `:processes` | spawning — `lt.objs.proc`, `bridge.processes`, node `child_process` |
+| `:network` | sockets and http — `lt.objs.clients.tcp`/`.ws`, `bridge.sockets`/`.servers`/`.net`, node `net`, `http`, `https` |
 | `:desktop` | opening things outside the window — `shell.open`, reveal, trash |
 | `:clipboard` | reading and writing the clipboard |
+| `:environment` | reading and changing environment variables |
 | `:worker` | running work on the background thread |
 | `:plugins` | installing, updating or reading other plugins |
 
@@ -187,7 +197,7 @@ what it declared and what it uses. On a stock install:
 ```
 Clojure: no manifest, uses :desktop :files :network :plugins :processes
 Emmet: no manifest, uses nothing
-HelloTS: declares :clipboard, uses :clipboard
+TypeScript: declares :files :processes, uses :files :processes
 ```
 
 Inference reads only JavaScript, because a plugin's ClojureScript sources are
@@ -207,5 +217,8 @@ inference existed would have meant every published plugin breaking on the day it
 shipped. What is missing is the enforcement gate itself, which is the point at
 which `:undeclared` stops being a report and starts being a refusal.
 
-`HelloTS` is the first plugin to carry a manifest, and the smoke test checks
-that what it declares and what it uses agree.
+`TypeScript` is the first plugin to carry a manifest, and the smoke test checks
+that what it declares and what it uses agree. It is also the case that made
+inference cover the third route to a capability: it reaches `lt.util.bridge`
+directly rather than through `require` or `lt.objs`, and until it existed the
+scanner did not look there.

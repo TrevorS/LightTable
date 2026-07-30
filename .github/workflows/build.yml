@@ -65,6 +65,40 @@ jobs:
           npx shadow-cljs compile test
           node target/test.js
 
+      # The two published flagships, at the versions script/build.sh pins. They
+      # are here rather than skipped because they are what the plugin require
+      # shim exists for: the Clojure plugin's nREPL client wants net, Buffer
+      # and bencode, and the Javascript plugin loads a CommonJS package it
+      # vendored. Without them the smoke test still passes and checks nothing
+      # about either. Shallow clones — neither one's history is wanted.
+      #
+      # Before the build, and cached by directory rather than by
+      # deploy/plugins as a whole. Both matter. deploy/plugins also holds the
+      # in-tree plugins, which script/place-plugins.js writes during the build;
+      # a cache covering the parent restored a stale Paredit *over* the fresh
+      # one, and a ClojureScript module compiled against a different bundle
+      # fails at load with `cljs$cst$NNN is not defined`, because those
+      # constants are numbered per compilation. Running the fetch first means
+      # the build always has the last word either way.
+      - name: Cache the published plugins
+        uses: actions/cache@v4
+        with:
+          path: |
+            deploy/plugins/Clojure
+            deploy/plugins/Javascript
+          key: plugins-Clojure-0.3.3-Javascript-0.2.0
+
+      - name: Fetch the published plugins
+        run: |
+          mkdir -p deploy/plugins
+          for spec in Clojure,0.3.3 Javascript,0.2.0; do
+            name="${spec%%,*}"; version="${spec##*,}"
+            [ -d "deploy/plugins/$name" ] && continue
+            git clone --quiet --depth 1 --branch "$version" \
+              "https://github.com/LightTable/$name" "deploy/plugins/$name"
+          done
+          ls deploy/plugins
+
       # shadow-cljs exits non-zero when compilation fails, but warnings alone do
       # not fail it, so the job has to read the output. The build is warning
       # free, so the bar is simply zero — no allowance, no classes to exempt.
@@ -84,29 +118,6 @@ jobs:
       # rename here fails the build rather than a user's session.
       - name: Build in-tree plugins
         run: npm run build:plugins
-
-      # The two published flagships, at the versions script/build.sh pins. They
-      # are here rather than skipped because they are what the plugin require
-      # shim exists for: the Clojure plugin's nREPL client wants net, Buffer
-      # and bencode, and the Javascript plugin loads a CommonJS package it
-      # vendored. Without them the smoke test still passes and checks nothing
-      # about either. Shallow clones — neither one's history is wanted.
-      - name: Cache the published plugins
-        uses: actions/cache@v4
-        with:
-          path: deploy/plugins
-          key: plugins-Clojure-0.3.3-Javascript-0.2.0
-
-      - name: Fetch the published plugins
-        run: |
-          mkdir -p deploy/plugins
-          for spec in Clojure,0.3.3 Javascript,0.2.0; do
-            name="${spec%%,*}"; version="${spec##*,}"
-            [ -d "deploy/plugins/$name" ] && continue
-            git clone --quiet --depth 1 --branch "$version" \
-              "https://github.com/LightTable/$name" "deploy/plugins/$name"
-          done
-          ls deploy/plugins
 
       # The failures this project actually hits are load-time and cross-process
       # ones, which only show up in the assembled app.

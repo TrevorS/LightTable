@@ -66,7 +66,7 @@
                 :init (fn [this]
                         (let [^js worker (.fork bridge/processes
                                                (files/lt-home "/core/lighttable/background/worker.js")
-                                               #js ["--harmony"]
+                                               #js []
                                                #js {:execPath (.execPath bridge/host)
                                                     ;; ATOM_SHELL_INTERNAL_RUN_AS_NODE became
                                                     ;; ELECTRON_RUN_AS_NODE in Electron 1.x. Without it the
@@ -74,8 +74,19 @@
                                                     ;; channel, so process.send is undefined in the worker.
                                                     ;; Extend the current env rather than replacing it,
                                                     ;; otherwise the worker loses PATH and friends.
+                                                    ;;
+                                                    ;; ELECTRON_NO_ASAR turns off Electron's patching of fs
+                                                    ;; to read inside .asar archives. Light Table ships
+                                                    ;; unpacked — script/build-app.sh copies directories and
+                                                    ;; builds no archive — so the patch has nothing to do
+                                                    ;; here but wrap every fs call, and its statSync wrapper
+                                                    ;; builds an fs.Stats, which Node 24 deprecates. The
+                                                    ;; workspace walk stats every file it sees, so this was
+                                                    ;; a warning in the console on the first scan of any
+                                                    ;; folder.
                                                     :env (js/Object.assign #js {} (.env bridge/host)
-                                                                           #js {"ELECTRON_RUN_AS_NODE" "1"})
+                                                                           #js {"ELECTRON_RUN_AS_NODE" "1"
+                                                                                "ELECTRON_NO_ASAR" "1"})
                                                     :cwd files/cwd})]
                           (.onStdout worker (fn [data]
                                               (console/loc-log {:file "thread"

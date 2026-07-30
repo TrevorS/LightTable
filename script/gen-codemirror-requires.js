@@ -25,16 +25,31 @@ const ROOT = path.join(__dirname, '..');
 const CM = path.join(ROOT, 'deploy', 'core', 'node_modules', 'codemirror');
 const OUT = path.join(ROOT, 'src-gen', 'lt', 'editor', 'codemirror_modes.cljs');
 
-// Modes a bundled plugin provides a better version of. Kept in step with
-// lt.objs.editor/mode-blacklist, which this replaces the runtime use of.
-const BLACKLIST = new Set(['clojure', 'css', 'htmlembedded', 'htmlmixed', 'javascript', 'python']);
+// There is no blacklist any more, and removing it is the point.
+//
+// This inherited lt.objs.editor/mode-blacklist, which skipped six modes that a
+// bundled plugin ships its own copy of. That made sense when modes were loaded
+// out of node_modules at runtime, where two copies genuinely conflict. It stops
+// making sense once everything is bundled: a plugin's `load-js` runs after the
+// bundle and `defineMIME` overwrites, so the plugin's copy still wins.
+//
+// What the list actually did was make Light Table's own highlighting depend on
+// which plugins happened to be installed. With no plugins, `.js` and `.json`
+// had no mode, `.ts` had none under any circumstances, and — this is the one
+// that decided it — neither did `.clj`, `.cljs`, `.edn`, or Light Table's own
+// `.behaviors` and `.keymap` files, because `text/x-clojure` came from the
+// Clojure plugin and nowhere else.
+//
+// Bundling all of them costs a few hundred KB on a 3.8MB bundle. Checked by
+// asking the running editor which of the 102 registered mimes CodeMirror can
+// resolve, which is the only way to see this: a mime nothing defines falls back
+// to the null mode, silently.
 
 function modes() {
     const dir = path.join(CM, 'mode');
     if (!fs.existsSync(dir)) return [];
     const found = [];
     for (const name of fs.readdirSync(dir).sort()) {
-        if (BLACKLIST.has(name)) continue;
         const modeDir = path.join(dir, name);
         if (!fs.statSync(modeDir).isDirectory()) continue;
         for (const file of fs.readdirSync(modeDir).sort()) {

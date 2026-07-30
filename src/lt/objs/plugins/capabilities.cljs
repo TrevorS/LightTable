@@ -28,17 +28,20 @@
   [{:capability :files
     :desc "Read and write the filesystem"
     :patterns [#"lt\.objs\.files\.[a-zA-Z_]"
+               #"lt\.util\.bridge\.files"
                #"require\(\s*['\"](?:fs|path)['\"]"]}
 
    {:capability :processes
     :desc "Start and talk to other programs"
     :patterns [#"lt\.objs\.proc\.[a-zA-Z_]"
+               #"lt\.util\.bridge\.processes"
                #"require\(\s*['\"]child_process['\"]"]}
 
    {:capability :network
     :desc "Open sockets and make network requests"
     :patterns [#"lt\.objs\.clients\.(?:tcp|ws)\.[a-zA-Z_]"
                #"lt\.objs\.deploy\.[a-zA-Z_]"
+               #"lt\.util\.bridge\.(?:net|sockets|servers)"
                #"require\(\s*['\"](?:net|http|https|tls|dns)['\"]"]}
 
    {:capability :desktop
@@ -51,6 +54,20 @@
     :patterns [#"lt\.objs\.platform\.(?:copy|paste)"
                #"lt\.util\.bridge\.clipboard"]}
 
+   {:capability :environment
+    :desc "Read and change environment variables"
+    ;; Its own capability rather than folded into :processes, because the two
+    ;; reasons to want it are not the same. Setting PATH so a spawned compiler
+    ;; can be found is ordinary; reading the environment is reading whatever
+    ;; credentials the user started Light Table with, and a plugin doing that
+    ;; is worth saying out loud.
+    ;;
+    ;; Matched per member, not per namespace: `host` also answers appDir, cwd
+    ;; and versions, and a plugin asking where it is installed has not asked
+    ;; for this.
+    :patterns [#"lt\.util\.bridge\.host\.(?:env|setEnv)"
+               #"lt\.objs\.proc\.custom_env"]}
+
    {:capability :worker
     :desc "Run work on the background thread"
     :patterns [#"lt\.objs\.thread\.[a-zA-Z_]"]}
@@ -62,6 +79,43 @@
 (def known
   "Every capability name a manifest may declare."
   (into #{} (map :capability) capabilities))
+
+(def bridge-surface
+  "Every namespace `lt.util.bridge` exposes, and the capability that reaching
+  it implies — nil where reaching it implies none.
+
+  This exists to close a hole rather than to be read. Inference started by
+  looking for `require` and for `lt.objs.*`, which is how a plugin written
+  before contextIsolation reaches a capability. A plugin written now goes
+  straight to the bridge, and three of those namespaces were invisible to the
+  scanner until the first plugin that used one was written — which is a bad way
+  to find out.
+
+  So the surface is enumerated here and checked against `lt.util.bridge` by a
+  test. A capability added to the bridge without being classified fails that
+  test, which is the point: the omission is the failure mode, and an omission
+  cannot be caught by a pattern nobody wrote."
+  {"shell"     :desktop
+   "clipboard" :clipboard
+   "files"     :files
+   "processes" :processes
+   "net"       :network
+   "servers"   :network
+   "sockets"   :network
+   ;; Per member — see the :environment patterns above.
+   "host"      :environment
+
+   ;; Reaching these implies nothing, and each for a stated reason rather than
+   ;; because nobody got to it:
+   "path"      nil ;; string arithmetic; touches no filesystem
+   "os"        nil ;; the line ending and which drive letters exist
+   "zoom"      nil ;; this window's zoom factor
+   "window"    nil ;; this window, and only ever itself — no method takes an id
+   "menu"      nil ;; native menus, described as data
+   "dialog"    nil ;; asks the user for a path; reading it needs :files
+   "bridge"    nil ;; the root object the rest hang off
+   "app-dir"   nil ;; where Light Table is installed
+   "app-info"  nil});; platform, argv and the like, read once at startup
 
 (defn describe
   "Human-readable description of `capability`, or nil if it is not one."

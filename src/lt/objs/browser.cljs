@@ -19,7 +19,7 @@
             [lt.util.dom :as dom]
             [clojure.string :as string]
             [singultus.core :as crate]
-            [singultus.binding :refer [bound subatom]])
+            [singultus.binding :refer [bound]])
   (:require-macros [lt.macros :refer [behavior defui]]))
 
 (def utils (js-obj))
@@ -43,6 +43,21 @@
 
 (defn to-frame [this]
   (dom/$ :webview (object/->content this)))
+
+(defn navigate!
+  "Point this browser tab's guest at `url`.
+
+  A webview cannot be navigated before its guest page exists, and a tab is
+  created and navigated in the same turn — `:add-browser-tab` does both — so
+  being too early is the normal case rather than a corner. loadURL throws then,
+  which is the signal to hold the url until `dom-ready` fires and flush it
+  there."
+  [this url]
+  (let [^js frame (to-frame this)]
+    (try
+      (.loadURL frame url)
+      (catch :default _
+        (object/merge! this {::pending-url url})))))
 
 (defn client->devtools [ed]
   (-> @ed (:frame) (deref) (:devtools-client)))
@@ -99,7 +114,13 @@
   ;; No :preload attribute: the guest's preload is pinned by the main process,
   ;; which is the only side that should decide what runs inside an arbitrary
   ;; web page. See secureWebContents() in src-electron/main.ts.
-  [:webview {:src (bound (subatom this :url))
+  ;;
+  ;; src is set once and deliberately not bound to :url. An Electron <webview>
+  ;; reads src when it attaches and then keeps it in step with whatever it has
+  ;; actually loaded — so assigning to it later is overwritten by the page that
+  ;; is already there, and the tab sits on about:blank. Navigation goes through
+  ;; loadURL instead; see navigate!.
+  [:webview {:src "about:blank"
              :id (browser-id this)}]
   :focus (fn []
            (object/raise this :active))
@@ -163,7 +184,11 @@
                       (let [bar (dom/$ :input (object/->content this))
                             url (check-http (or n (dom/val bar)))]
                         (notifos/working)
-                        (object/merge! this {:url url :loading-counter (inc (:loading-counter @this 0))}))))
+                        (object/merge! this {:url url :loading-counter (inc (:loading-counter @this 0))})
+                        ;; Show where it is going straight away; did-finish-load
+                        ;; replaces this with where it actually arrived.
+                        (dom/val bar url)
+                        (navigate! this url))))
 
 (behavior ::url-focus!
           :triggers #{:url.focus!}
@@ -243,6 +268,13 @@
                                                                      ))))
                         (.addEventListener frame "contextmenu" (fn [e]
                                                                  (object/raise this :menu! e)))
+                        ;; The guest is ready; anything navigate! could not
+                        ;; deliver before now goes through here.
+                        (.addEventListener frame "dom-ready"
+                                           (fn []
+                                             (when-let [pending (::pending-url @this)]
+                                               (object/merge! this {::pending-url nil})
+                                               (.loadURL ^js frame pending))))
                         (.addEventListener frame "did-finish-load" (fn []
                                                                      (let [loc (.getURL ^js frame)]
                                                                        (devtools/clear-scripts! (:devtools-client @this))

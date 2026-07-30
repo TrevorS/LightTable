@@ -7,6 +7,7 @@
   disproves the obvious design: it requires nothing from Node and spawns
   processes anyway."
   (:require [cljs.test :refer [deftest is testing]]
+            [clojure.string :as string]
             [lt.objs.plugins.capabilities :as caps]))
 
 (deftest finds-node-requires
@@ -28,6 +29,37 @@
   (is (= (caps/scan "require('child_process')")
          (caps/scan "lt.objs.proc.exec(x)")
          #{:processes})))
+
+(deftest every-bridge-capability-is-classified
+  (testing "so adding one to the bridge without deciding what it implies fails here"
+    ;; Read rather than required: lt.util.bridge names js/lightTable at
+    ;; namespace load, so it cannot be loaded under node at all. The source is
+    ;; the thing being checked anyway — the question is whether someone
+    ;; classified each entry, not what the entries evaluate to.
+    (let [source (.readFileSync (js/require "fs") "src/lt/util/bridge.cljs" "utf8")
+          defs (->> (re-seq #"(?m)^\(def (?:\^js )?([a-z-]+)\b" source)
+                    (map second)
+                    set)]
+      (is (seq defs) "the regex still matches how bridge.cljs declares things")
+      (is (empty? (remove #(contains? caps/bridge-surface %) defs))
+          (str "unclassified bridge capabilities: "
+               (string/join " " (remove #(contains? caps/bridge-surface %) defs))
+               " — add them to lt.objs.plugins.capabilities/bridge-surface"))
+      (testing "and nothing is classified that no longer exists"
+        (is (empty? (remove defs (keys caps/bridge-surface)))))
+      (testing "and every capability named is one a manifest can declare"
+        (is (every? caps/known (remove nil? (vals caps/bridge-surface))))))))
+
+(deftest finds-the-bridge-itself
+  (testing "the third route, and the one a plugin written today takes"
+    ;; A plugin reaching the bridge directly needs no require and touches none
+    ;; of lt.objs — the TypeScript plugin spawns a compiler exactly this way.
+    (is (= #{:processes} (caps/scan "lt.util.bridge.processes.spawn(cmd, args, {});")))
+    (is (= #{:files} (caps/scan "lt.util.bridge.files.existsSync(p);")))
+    (is (= #{:network} (caps/scan "lt.util.bridge.sockets.connect(port, host);")))
+    (is (= #{:network} (caps/scan "lt.util.bridge.servers.tcp(handlers);"))))
+  (testing "path arithmetic is not filesystem access, and is not counted"
+    (is (empty? (caps/scan "lt.util.bridge.path.join(a, b);")))))
 
 (deftest splits-the-platform-namespace-by-what-is-being-done
   (is (= #{:clipboard} (caps/scan "lt.objs.platform.copy(text);")))

@@ -582,7 +582,7 @@ no ClojureScript at all — Emmet by Light Table's own author. So a TypeScript
 plugin is a third source language for an unchanged loader, and nothing in the
 editor had to change to accept one.
 
-`plugins/HelloTS` is a Light Table plugin written in TypeScript, built from
+`plugins/TypeScript` is a Light Table plugin written in TypeScript, built from
 source against the editor it extends, carrying a capability manifest. It is
 small on purpose: what it demonstrates is the shape.
 

@@ -88,6 +88,34 @@ declare const lt: {
             };
             clipboard: { readText(): string; writeText(text: string): void };
             zoom: { get(): number; set(factor: number): void };
+            /** Declares `:files`. */
+            files: {
+                existsSync(path: string): boolean;
+                readFileSync(path: string): string;
+            };
+            /** No capability: arithmetic on strings, not filesystem access. */
+            path: {
+                join(...parts: string[]): string;
+                dirname(path: string): string;
+                basename(path: string, ext?: string): string;
+                extname(path: string): string;
+            };
+            /**
+             * Declares `:processes`. A handle rather than a ChildProcess: the
+             * process stays in the preload and what crosses is functions over
+             * it, which is also why output arrives by callback.
+             */
+            processes: {
+                spawn(command: string, args: string[],
+                      options: { cwd?: string; env?: Record<string, string> }): {
+                    readonly pid: number | undefined;
+                    kill(): void;
+                    onStdout(cb: (chunk: string) => void): void;
+                    onStderr(cb: (chunk: string) => void): void;
+                    onExit(cb: (code: number | null) => void): void;
+                    onError(cb: (message: string) => void): void;
+                };
+            };
             app_info: unknown;
         };
     };

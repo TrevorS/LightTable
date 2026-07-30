@@ -38,15 +38,19 @@ Nothing in the build is platform-specific; macOS, Linux and Windows-under-Cygwin
 all go through the same scripts.
 
 ```sh
-script/build.sh            # fetches dependencies and plugins, builds, packages
-script/light.sh            # run what you just built, from the tree
+make deps                  # dependencies, including the Electron binary
+make build                 # fetches plugins, builds, packages
+make run                   # run what you just built, from the tree
 ```
 
-`script/build.sh --release` also produces a release archive — a `.app` on macOS,
-a directory on Linux. Packaging is the least exercised part of this repository
-and CI does not cover it, so `script/light.sh` is the path to prefer while
-developing: it launches the same editor from `deploy/core` without the bundling,
-renaming and code-signing step in between.
+`make help` lists the rest. The Makefile is a wrapper: the npm scripts and
+`script/*.sh` stay the source of truth, and CI runs those.
+
+`make dist` also produces a release archive — a `.app` on macOS, a directory on
+Linux. Packaging is the least exercised part of this repository and CI does not
+cover it, so `make run` is the path to prefer while developing: it launches the
+same editor from `deploy/core` without the bundling, renaming and code-signing
+step in between.
 
 The first build downloads Electron, which is about 300MB and takes a while.
 Subsequent builds reuse it.
@@ -54,7 +58,7 @@ Subsequent builds reuse it.
 To rebuild just the ClojureScript after a source change:
 
 ```sh
-npm run build:cljs
+make build-cljs
 ```
 
 `app` is the window bundle; `worker` is the background thread that runs
@@ -80,21 +84,28 @@ why they are separate.
 Plugins that live in this repository are built separately:
 
 ```sh
-npm run build:plugins
+make build-plugins
 ```
+
+`plugins/TypeScript` is the worked example, and does something real: it finds
+the tsconfig governing the open file, runs that project's own compiler, and
+reports the diagnostics to Light Table's console. See
+[doc/language-support.md](doc/language-support.md) for what language support
+looks like beyond that, and where a language server would fit.
 
 The window does not use Electron's modules directly. Everything it can ask the
 desktop for is a named capability exposed by the preload script, and
 `lt.util.bridge` is the only namespace that reaches it — see
 [doc/electron-guide.md](doc/electron-guide.md), and
-[doc/context-isolation.md](doc/context-isolation.md) for what remains before the
-window can be isolated outright.
+[doc/context-isolation.md](doc/context-isolation.md) for how the window came to
+be isolated and what it cost.
 
 ## Testing
 
 ```sh
-npx shadow-cljs compile test && node target/test.js   # unit tests
-script/smoke-test.sh                                  # boots the app and checks it
+make test    # unit tests, under node
+make smoke   # boots the real application and checks it
+make check   # lint and type-check
 ```
 
 The smoke test matters more than its size suggests. Almost nothing in Light

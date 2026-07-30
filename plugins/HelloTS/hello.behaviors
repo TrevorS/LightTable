@@ -1,4 +1,0 @@
-;; Behaviors for the HelloTS plugin.
-[
- [:app :lt.objs.plugins/load-js "hello_compiled.js"]
-]
