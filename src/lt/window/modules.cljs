@@ -14,6 +14,7 @@
   ;; somewhere else entirely.
   (:require ["./fuzzy.js" :as fuzzy-js]
             ["./dragdrop.js" :as dragdrop-js]
+            ["./treesitter.js" :as treesitter-js]
             ;; Required for their side effects: each registers itself with the
             ;; global CodeMirror as it loads.
             ["./cm-search.js"]
@@ -27,3 +28,8 @@
 (def ^js dragdrop
   "Drag-and-drop reordering for the tab bar: sortable."
   dragdrop-js)
+
+(def ^js treesitter
+  "Tree-sitter highlighting: initRuntime, highlighterFor, makeMode,
+  captureClasses, spansFromCaptures, styleAt. See src-window/treesitter.ts."
+  treesitter-js)

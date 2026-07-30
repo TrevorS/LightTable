@@ -11,6 +11,15 @@
     "module": "commonjs",
     "moduleResolution": "node",
 
+    // web-tree-sitter is a runtime dependency, so it lives in
+    // deploy/core/node_modules beside what ships rather than in the build
+    // tooling's tree. Resolution walks up from src-window and would never
+    // find it.
+    "paths": {
+      "web-tree-sitter": ["./deploy/core/node_modules/web-tree-sitter"]
+    },
+    "baseUrl": ".",
+
     "strict": true,
     "noImplicitOverride": true,
     "noUncheckedIndexedAccess": true,

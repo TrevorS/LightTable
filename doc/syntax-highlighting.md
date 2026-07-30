@@ -1,7 +1,65 @@
-# Syntax highlighting, and whether tree-sitter is the answer
+# Syntax highlighting with tree-sitter
 
-Not built. This is what was measured before deciding, because "use tree-sitter"
-is the kind of proposal that sounds settled and is not.
+**Built.** This page was written as a scouting note arguing tree-sitter was not
+worth it for highlighting; the argument was wrong in a specific and interesting
+way, and the measurements that overturned it are kept below the line.
+
+## What it does
+
+Editors whose language has a bundled grammar are highlighted from a parse tree
+rather than a per-line tokenizer. On a realistic TypeScript file that is **14
+capture classes in 10 colours**, against 7 token types in 6 from CodeMirror's
+javascript mode — and the difference is not mainly quantity. Tree-sitter can
+tell a type from a value, a parameter from a local, a method call from a
+variable. A per-line state machine cannot, at all, ever.
+
+Capture names arrive as every prefix of themselves, so `variable.parameter`
+becomes `cm-ts-variable cm-ts-variable-parameter`. A theme can be broad or
+precise and both work, with specificity deciding. That cascade, and the fact
+that the names are a **vocabulary Helix, Neovim and Zed already share**, is the
+real payoff: a theme becomes a stylesheet rather than a port.
+
+| | |
+|---|---|
+| Grammars bundled | JavaScript, TypeScript, TSX, JSX, Python, Rust, Go, JSON, CSS, HTML, Bash |
+| Runtime load | once, ~0ms after the first grammar |
+| Grammar load | ~46ms, once per language, on first use |
+| Parse | 0.8ms for a small file; 0.2ms incremental after an edit |
+| Shipped size | 6.5MB of WebAssembly, loaded on demand |
+
+Adding a language is two lines in `lt.objs.editor.treesitter/grammars` plus the
+npm dependency — and that map is an atom a plugin can `swap!`, so a language
+plugin can bring its own grammar without waiting for an editor release.
+
+The mime table still decides indentation, commenting, bracket matching and
+folding. Only the colouring changes, and only where a grammar exists.
+
+## What decided it, having first decided the other way
+
+The original conclusion here was "feasible, but not a highlighting project",
+resting on two measurements. One was sound and one was not.
+
+**Sound:** `markText` costs 34ms to apply 200 marks and 30ms to clear them,
+against a 16ms frame budget. That approach is still wrong and is not what this
+does.
+
+**Not sound:** the claim that a CodeMirror mode cannot know which line it is
+on. That was tested by keeping a counter in mode state, which indeed does not
+survive CodeMirror restarting a mode from a cached checkpoint —
+`getStateAfter(350)` reported 1. But CodeMirror passes modes its own `Context`
+as `stream.lineOracle`, and that carries `.line`, maintained by CodeMirror.
+Verified against a document where tokenizing jumps straight to line 350: it
+reports 350. The blocker was an artefact of how it was measured.
+
+With that gone, the design is small: parse on change, build a per-line span
+table, and let the mode do a lookup. Tokenizing a line touches no parser.
+
+---
+
+## The original scouting note
+
+Kept because the measurements are still the reason the design looks the way it
+does.
 
 ## Where highlighting stands
 
@@ -110,7 +168,7 @@ measured at **34 ms to apply 200 marks and 30 ms to clear them** — 64 ms per
 update against a 16 ms frame budget. That is not a viable per-keystroke path,
 and 200 marks is one viewport.
 
-## The conclusion
+## The conclusion at the time — since overturned
 
 **Tree-sitter is feasible and is not a highlighting project.**
 

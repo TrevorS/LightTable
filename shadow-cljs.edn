@@ -31,7 +31,17 @@
    ;; Runtime dependencies live in deploy/core/node_modules, next to what ships;
    ;; the root tree is build tooling. Shadow looks in the root by default.
    :js-options {:js-provider :shadow
-                :js-package-dirs ["deploy/core/node_modules" "node_modules"]}
+                :js-package-dirs ["deploy/core/node_modules" "node_modules"]
+                ;; web-tree-sitter is emscripten output: one module that branches
+                ;; on `ENVIRONMENT_IS_NODE` at runtime and therefore mentions
+                ;; `require("fs")` in a branch the window never takes. A bundler
+                ;; resolves that statically and fails. Pointing it at an empty
+                ;; module is the honest answer — the window has no filesystem,
+                ;; it has lt.util.bridge.files.
+                :resolve {"fs" {:target :file
+                                :file "src-window/fs-stub-shim.js"}
+                          "fs/promises" {:target :file
+                                         :file "src-window/fs-stub-shim.js"}}}
 
    :compiler-options {:optimizations  :simple
                       :pretty-print   true

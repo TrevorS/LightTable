@@ -59,6 +59,20 @@ const SCAN_ARGS = JSON.stringify({
 // location to search. `loc` is a plain path, which lt.objs.search/string->loc
 // turns into a single search root.
 const SEARCH_ARGS = JSON.stringify({ search: 'SMOKENEEDLE', replace: '', loc: SEARCH_DIR });
+// A TypeScript file for the tree-sitter highlighting check. Written here rather
+// than pointed at one in the repository so the expected captures are stable.
+const TS_PROBE = path.join(os.tmpdir(), 'lt-smoke-highlight.ts');
+fs.writeFileSync(TS_PROBE, [
+    'import { readFile } from "node:fs/promises";',
+    '',
+    'interface User { id: number; name: string; }',
+    '',
+    'export async function loadUsers(p: string): Promise<User[]> {',
+    '  const raw = await readFile(p, "utf8");',
+    '  return JSON.parse(raw).filter((u) => u.id > 0);',
+    '}',
+    ''
+].join('\n'));
 // A file that is not text, for the byte-reading capability. A WebAssembly
 // header is the case that turned up the gap, plus one byte that is not valid
 // UTF-8 — 0xFF cannot begin a sequence.
@@ -180,6 +194,63 @@ app.on('ready', function () {
                     } catch (e) { out.error = String((e && e.message) || e); }
                     return JSON.stringify(out);
                 })()\`));
+
+                // Tree-sitter highlighting, end to end: open a TypeScript
+                // file and read the classes CodeMirror actually rendered.
+                //
+                // Asserted on capture names rather than a count, because the
+                // point is the vocabulary. A per-line CodeMirror mode cannot
+                // produce ts-type or ts-variable-parameter at all — it does not
+                // know a type from a value or a parameter from a local — so
+                // their presence is proof the parser is driving the colours.
+                step = 'highlighting a TypeScript file with tree-sitter';
+                await w.webContents.executeJavaScript(
+                    'lt.objs.command.exec_BANG_(cljs.core.keyword.call(null,"open-path"),' +
+                    JSON.stringify(${JSON.stringify(TS_PROBE)}) + ')');
+                await new Promise(function (r) { setTimeout(r, 6000); });
+                const treesitter = JSON.parse(await w.webContents.executeJavaScript(\`(function () {
+                    var PROBE_TS = ${JSON.stringify(TS_PROBE)};
+                    var out = { classes: [] };
+                    try {
+                        // By path, not last-active: the harness window is
+                        // never focused, so last-active can be nil, and other
+                        // steps have opened tabs since.
+                        // by-path returns a sequence, not an editor. Handing
+                        // the sequence on recurses through every editor object
+                        // it contains and blows the stack.
+                        var ed = cljs.core.first.call(null, lt.objs.editor.pool.by_path(PROBE_TS));
+                        if (!ed) { out.error = 'no editor for ' + PROBE_TS; return JSON.stringify(out); }
+                        out.report = cljs.core.clj__GT_js(lt.objs.editor.treesitter.report(ed));
+                        var cm = lt.objs.editor.__GT_cm_ed(ed);
+                        out.modeName = cm.getMode().name;
+                        // Asserted on what the mode tokenizes rather than on
+                        // the painted DOM. The harness window is created with
+                        // show:false, so nothing drives a repaint and the
+                        // rendered lines keep the tokens they had before the
+                        // mode was swapped in — getLineTokens asks the mode
+                        // directly and does not care whether anything is
+                        // visible.
+                        var seen = {};
+                        var lineCount = cm.lineCount();
+                        for (var l = 0; l < lineCount; l++) {
+                            cm.getLineTokens(l, true).forEach(function (t) {
+                                if (!t.type) return;
+                                t.type.split(' ').forEach(function (c) {
+                                    if (c) seen['cm-' + c] = true; });
+                            });
+                        }
+                        out.classes = Object.keys(seen).sort();
+                        out.lines = lineCount;
+                    } catch (e) { out.error = String((e && e.message) || e); }
+                    return JSON.stringify(out);
+                })()\`));
+
+                // Back to the sample, so the checks that read the visible
+                // editor still see what every other step set up.
+                await w.webContents.executeJavaScript(
+                    'lt.objs.command.exec_BANG_(cljs.core.keyword.call(null,"open-path"),' +
+                    JSON.stringify(${JSON.stringify(SAMPLE)}) + ')');
+                await new Promise(function (r) { setTimeout(r, 2500); });
 
                 step = 'collecting the report';
                 report = JSON.parse(await w.webContents.executeJavaScript(\`JSON.stringify({
@@ -552,6 +623,7 @@ app.on('ready', function () {
                     })()
                 })\`));
                 report.stdio = stdio;
+                report.treesitter = treesitter;
                 // The menubar is set by a behavior at startup, and it lands
                 // over here, so this is the only side it can be seen from.
                 step = 'reading the application menu';
@@ -692,6 +764,14 @@ async function main() {
     r.pluginsPresent = pluginsPresent;
     if (!r.ok) fail(r.failure || 'the app did not report success', JSON.stringify(r, null, 1));
 
+    // Which capture classes the parser emitted that treesitter.css says nothing
+    // about. A capture with no rule renders as body text — invisible in exactly
+    // the way numbers were before this — so the stylesheet has to keep up with
+    // the grammars, and this is what says when it has not.
+    const themeCss = fs.readFileSync(path.join(CORE, 'css', 'treesitter.css'), 'utf8');
+    const unstyledCaptures = (r.treesitter.classes || []).filter(
+        (c) => !new RegExp('\\.' + c + '\\s*[,{]').test(themeCss));
+
     const checks = [
         ['lt.objs.app initialized', r.appInitialized === true],
         ['platform resolved over ipc', r.platform === ':linux' || r.platform === ':mac' || r.platform === ':windows'],
@@ -724,6 +804,26 @@ async function main() {
         ['only plaintext resolves to no mode',
             r.modes.noMode.length === 1 && r.modes.noMode[0] === 'plaintext'],
         ['the file-type table still covers what it used to', r.modes.total >= 100],
+        // Tree-sitter highlighting. The capture names are the assertion: a
+        // CodeMirror mode emits seven token types for TypeScript and cannot
+        // tell a type from a value, so these names existing at all means the
+        // parse is what is driving the colours.
+        ['tree-sitter highlighting is active for TypeScript',
+            r.treesitter.report && r.treesitter.report.active === true &&
+            r.treesitter.report.grammar === 'tree-sitter-typescript'],
+        ['it distinguishes types, which a per-line mode cannot',
+            r.treesitter.classes.includes('cm-ts-type') &&
+            r.treesitter.classes.includes('cm-ts-type-builtin')],
+        ['it distinguishes parameters from locals',
+            r.treesitter.classes.includes('cm-ts-variable-parameter')],
+        ['capture names cascade, so a theme can be broad or precise',
+            r.treesitter.classes.includes('cm-ts-punctuation') &&
+            r.treesitter.classes.includes('cm-ts-punctuation-bracket')],
+        ['it distinguishes far more than a CodeMirror mode managed',
+            r.treesitter.classes.length >= 12],
+        // A capture the parser emits and the stylesheet never heard of renders
+        // as body text, which is the bug this whole change exists to fix.
+        ['every capture it emits has a rule in treesitter.css', unstyledCaptures.length === 0],
         // The capabilities added for language servers and for WebAssembly.
         // Twelve bytes for four three-byte characters, decoded back to what
         // was written: that is stdin working, stdout working, and no character
@@ -820,6 +920,10 @@ async function main() {
     console.log('file types: ' + r.modes.total + ' mimes, ' + r.modes.ok + ' tokenizing, ' +
                 r.modes.broken.length + ' broken' +
                 (r.modes.broken.length ? ': ' + r.modes.broken.join('; ') : ''));
+    console.log('tree-sitter: ' + r.treesitter.classes.length + ' capture classes (' +
+                (r.treesitter.report ? r.treesitter.report.grammar : '?') + ')' +
+                (r.treesitter.error ? ' — ' + r.treesitter.error : '') +
+                (unstyledCaptures.length ? ' UNSTYLED: ' + unstyledCaptures.join(', ') : ''));
     console.log('process stdio: ' + r.stdio.bytesLen + ' bytes back, decoded "' + r.stdio.decoded +
                 '"; file bytes: [' + r.readBytes.magic + ']');
     if (r.errors && r.errors.length) {

@@ -1,0 +1,102 @@
+/* Tree-sitter capture names, as CodeMirror token classes.
+ *
+ * A tree-sitter highlight query captures nodes under names from a vocabulary
+ * other editors already share — Helix, Neovim and Zed themes are written
+ * against these same names. src-window/treesitter.ts turns each capture into
+ * every prefix of itself, so `variable.parameter` arrives as
+ *
+ *     cm-ts-variable cm-ts-variable-parameter
+ *
+ * and a rule can be as broad or as narrow as it wants. That cascade is the
+ * reason this is worth more than CodeMirror's flat token list: a theme that
+ * only knows `variable` still colours parameters, and one that wants them
+ * dimmer says so and wins on specificity.
+ *
+ * This file is the vocabulary with sensible defaults. It is linked from
+ * LightTable.html, and themes are injected into the head at runtime, so a theme
+ * overrides any of it simply by arriving later. Themes set colours; this sets
+ * which names exist.
+ *
+ * The palette deliberately stays in Light Table's voice — cool, quiet, contrast
+ * where it carries meaning — rather than importing somebody else's. The
+ * difference from what came before is that there is now something to say: the
+ * old themes collapsed six token types onto one colour because a per-line mode
+ * gave them nothing finer to distinguish.
+ */
+
+/* ── Comments and documentation ─────────────────────────────────────────── */
+.cm-ts-comment            { color: #6a7f92; font-style: italic; }
+.cm-ts-comment-doc        { color: #7d95aa; }
+
+/* ── Literals ───────────────────────────────────────────────────────────── */
+.cm-ts-string             { color: #9ecfa8; }
+.cm-ts-string-special     { color: #7fb98d; }
+.cm-ts-string-escape      { color: #d7c07a; }
+.cm-ts-number             { color: #c9a6e8; }
+.cm-ts-constant           { color: #c9a6e8; }
+.cm-ts-constant-builtin   { color: #b98fe0; font-weight: 500; }
+.cm-ts-boolean            { color: #b98fe0; }
+.cm-ts-character          { color: #9ecfa8; }
+
+/* ── Keywords ───────────────────────────────────────────────────────────── */
+.cm-ts-keyword            { color: #7fb3d5; }
+.cm-ts-keyword-control    { color: #8fa8e0; }
+.cm-ts-keyword-operator   { color: #7fb3d5; }
+.cm-ts-keyword-function   { color: #7fb3d5; }
+.cm-ts-keyword-return     { color: #8fa8e0; }
+.cm-ts-conditional        { color: #8fa8e0; }
+.cm-ts-repeat             { color: #8fa8e0; }
+.cm-ts-include            { color: #8fa8e0; }
+.cm-ts-exception          { color: #e0908f; }
+
+/* ── Names ──────────────────────────────────────────────────────────────── */
+/* Plain identifiers stay body-coloured on purpose. Colouring every name is how
+ * a file ends up looking like confetti; the point is that the *interesting*
+ * ones stand out. */
+.cm-ts-variable           { color: inherit; }
+.cm-ts-variable-parameter { color: #cfa88a; }
+.cm-ts-variable-builtin   { color: #b98fe0; font-style: italic; }
+.cm-ts-variable-member    { color: #a8c4d8; }
+.cm-ts-property           { color: #a8c4d8; }
+.cm-ts-field              { color: #a8c4d8; }
+.cm-ts-parameter          { color: #cfa88a; }
+
+.cm-ts-function           { color: #e0c987; }
+.cm-ts-function-builtin   { color: #e0c987; font-style: italic; }
+.cm-ts-function-method    { color: #e0c987; }
+.cm-ts-function-macro     { color: #d7a0c8; }
+.cm-ts-method             { color: #e0c987; }
+.cm-ts-constructor        { color: #86d0c4; }
+
+.cm-ts-type               { color: #86d0c4; }
+.cm-ts-type-builtin       { color: #86d0c4; font-style: italic; }
+.cm-ts-type-definition    { color: #86d0c4; }
+.cm-ts-class              { color: #86d0c4; }
+.cm-ts-namespace          { color: #9db6c9; }
+.cm-ts-module             { color: #9db6c9; }
+.cm-ts-label              { color: #d7a0c8; }
+.cm-ts-attribute          { color: #d7a0c8; }
+
+/* ── Punctuation and operators ──────────────────────────────────────────── */
+/* Dimmer than the body text rather than brighter. Punctuation is structure you
+ * read past, and the old themes painting brackets in thirteen vivid colours is
+ * why a Lisp looked lively and everything else looked flat. */
+.cm-ts-punctuation        { color: #7f8c99; }
+.cm-ts-punctuation-bracket    { color: #7f8c99; }
+.cm-ts-punctuation-delimiter  { color: #7f8c99; }
+.cm-ts-punctuation-special    { color: #d7a0c8; }
+.cm-ts-operator           { color: #9aa7b4; }
+
+/* ── Markup, for the languages that have it ─────────────────────────────── */
+.cm-ts-tag                { color: #7fb3d5; }
+.cm-ts-tag-attribute      { color: #d7a0c8; }
+.cm-ts-tag-delimiter      { color: #7f8c99; }
+.cm-ts-markup-heading     { color: #e0c987; font-weight: 600; }
+.cm-ts-markup-link        { color: #7fb3d5; text-decoration: underline; }
+.cm-ts-markup-raw         { color: #9ecfa8; }
+.cm-ts-markup-bold        { font-weight: 600; }
+.cm-ts-markup-italic      { font-style: italic; }
+
+/* ── Problems ───────────────────────────────────────────────────────────── */
+.cm-ts-error              { color: #e0908f; text-decoration: underline wavy; }
+.cm-ts-warning            { color: #d7c07a; }

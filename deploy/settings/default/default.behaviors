@@ -161,6 +161,9 @@
 
  [:editor :lt.objs.document/close-document-on-editor-close]
  [:editor :lt.objs.editor/active-on-focus]
+ [:editor :lt.objs.editor.treesitter/use-treesitter]
+ [:editor :lt.objs.editor.treesitter/reparse-on-change]
+ [:editor :lt.objs.editor.treesitter/dispose-highlighter]
  [:editor :lt.objs.editor/on-tags-added]
  [:editor :lt.objs.editor/on-tags-removed]
  [:editor :lt.objs.editor/inactive-on-blur]

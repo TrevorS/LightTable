@@ -46,6 +46,26 @@ interface CMStream {
     eol(): boolean;
     skipTo(ch: string): boolean | undefined;
     skipToEnd(): void;
+    /** The whole line being tokenized. */
+    readonly string: string;
+    /** How far into it the tokenizer has got. Writable: a mode consumes by moving it. */
+    pos: number;
+    /**
+     * CodeMirror's own Context for this line, carrying the line number.
+     *
+     * Undocumented but stable, and the only way a mode can learn where it is —
+     * a counter kept in mode state does not survive CodeMirror restarting the
+     * mode from a cached checkpoint. src-window/treesitter.ts depends on it.
+     */
+    readonly lineOracle?: { line: number };
+}
+
+/** A mode: something that tokenizes a line at a time. */
+interface CMMode<S> {
+    startState?(): S;
+    copyState?(state: S): S;
+    token(stream: CMStream, state: S): string | null | undefined;
+    blankLine?(state: S): void;
 }
 
 /**
@@ -104,3 +124,10 @@ declare module 'codemirror' {
     const CodeMirror: CMStatic;
     export = CodeMirror;
 }
+
+/**
+ * web-tree-sitter's type definitions reference `EmscriptenModule`, which comes
+ * from `@types/emscripten`. Nothing here uses the type — it appears once, in a
+ * field this code never touches — so it is declared rather than depended on.
+ */
+declare type EmscriptenModule = Record<string, unknown>;
