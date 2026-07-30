@@ -8,6 +8,10 @@
  ;; What this plugin needs, declared rather than discovered — see
  ;; plugins/README.md.
  ;;
- ;; :files    reads a stylesheet to rewrite its relative urls
- ;; :network  pushes the result to a connected browser
- :capabilities #{:files :network}}
+ ;; :files  works out a stylesheet's path relative to the connected client's,
+ ;;         so that url() references still resolve once the CSS is injected
+ ;;
+ ;; Not :network. It sends through lt.objs.clients, which is Light Table's own
+ ;; routing rather than a socket the plugin opens; the connection belongs to
+ ;; whatever the editor is connected to.
+ :capabilities #{:files}}

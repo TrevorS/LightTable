@@ -8,6 +8,9 @@
  ;; What this plugin needs, declared rather than discovered — see
  ;; plugins/README.md.
  ;;
- ;; :files    reads the page it evaluates
- ;; :network  pushes the result to a connected browser
- :capabilities #{:files :network}}
+ ;; Nothing. It reads the open editor, sends the result through
+ ;; lt.objs.clients, and opens a browser tab inside Light Table — none of which
+ ;; is a capability, which the capability report confirms rather than takes on
+ ;; trust. An empty set is a claim; omitting the key would be declining to make
+ ;; one.
+ :capabilities #{}}

@@ -564,14 +564,17 @@ app.on('ready', function () {
                         return !!lt.plugins.paredit &&
                                cljs.core.contains_QMARK_(cmds, cljs.core.keyword.call(null, 'paredit.select.parent'));
                     })(),
-                    // Capability inference, against the real installed plugins.
-                    // TypeScript is the interesting case: it is the only plugin
-                    // carrying a manifest, so what it declared and what it uses
-                    // should agree.
+                    // Capability inference, against the real installed
+                    // plugins. Every plugin in this repository carries a
+                    // manifest now, so this is read over all of them: what a
+                    // plugin declared should cover what inference says it
+                    // does. Two of these manifests were written wrong on the
+                    // first attempt and this is what said so.
                     capabilities: (function () {
                         var plugins = lt.objs.plugins.available_plugins();
                         var out = {};
-                        ['TypeScript', 'Clojure'].forEach(function (name) {
+                        ['TypeScript', 'Clojure', 'CSS', 'HTML', 'Javascript',
+                         'Paredit', 'Python'].forEach(function (name) {
                             var p = cljs.core.get.call(null, plugins, name);
                             if (!p) return;
                             var r = lt.objs.plugins.capability_report(p);
@@ -634,9 +637,12 @@ app.on('ready', function () {
                                                nrepl.bencode.decode(nrepl.encode(
                                                  cljs.core.clj__GT_js.call(null, {op: 'clone'})),
                                                  'utf-8').op === 'clone'),
-                            // The Javascript plugin's vendored harbor, which is
-                            // a CommonJS package inside the plugin rather than
-                            // anything Light Table serves.
+                            // The Javascript plugin's harbor, a CommonJS
+                            // package installed into the plugin's own
+                            // node_modules rather than anything Light Table
+                            // serves — so this exercises the resolver in
+                            // lt.objs.plugins.local-modules, not the shim's
+                            // fixed list.
                             vendoredModule: !!(jsnode && jsnode.harbor && jsnode.harbor.claim)
                         };
                     })(),
@@ -874,19 +880,28 @@ async function main() {
         if (!fs.existsSync(where)) fail(what + ' is missing at ' + where, 'Run script/build.sh first.');
     }
 
-    // Plugins are cloned by build.sh. Without the directory the plugin loader
-    // reports an error that has nothing to do with what is being tested.
+    // Every plugin is in this repository now and script/place-plugins.js puts
+    // it here, so the checks below that used to be gated on "were the
+    // published flagships cloned?" are unconditional. That gate existed
+    // because CI did not clone them and build.sh did, which meant the shim,
+    // the local-module loader and the capability report were checked on a
+    // developer's machine and not in CI — precisely backwards.
     //
-    // In-tree plugins are placed here too, so presence of the directory no
-    // longer means the published ones were fetched — the behavior count check
-    // below only makes sense when the flagships are there, so look for them by
-    // name rather than counting entries.
+    // A missing directory is now a build that did not run rather than an
+    // environment difference, and it is worth saying so plainly.
     const pluginDir = path.join(ROOT, 'deploy', 'plugins');
-    const madePluginDir = !fs.existsSync(pluginDir);
-    const installed = madePluginDir ? [] : fs.readdirSync(pluginDir);
-    const pluginsPresent = installed.includes('Clojure') && installed.includes('Javascript');
-    if (installed.length) console.log('plugins present: ' + installed.join(', '));
-    if (madePluginDir) fs.mkdirSync(pluginDir, { recursive: true });
+    if (!fs.existsSync(pluginDir)) {
+        fail('deploy/plugins does not exist',
+             'Plugins are built from source in this repository. Run `npm run build:plugins`.');
+    }
+    const installed = fs.readdirSync(pluginDir);
+    console.log('plugins present: ' + installed.join(', '));
+    for (const name of ['Clojure', 'CSS', 'HTML', 'Javascript', 'Paredit', 'Python', 'TypeScript']) {
+        if (!installed.includes(name)) {
+            fail('the ' + name + ' plugin was not placed',
+                 'plugins/' + name + ' is in this repository. Run `npm run build:plugins`.');
+        }
+    }
 
     const appDir = fs.mkdtempSync(path.join(os.tmpdir(), 'lt-smoke-'));
     const reportPath = path.join(appDir, 'report.json');
@@ -906,11 +921,8 @@ async function main() {
         child.on('exit', resolve);
     });
 
-    if (madePluginDir) { try { fs.rmSync(pluginDir, { recursive: true }); } catch (e) {} }
-
     if (!fs.existsSync(reportPath)) fail('the app never reported back', 'It most likely failed before the window finished loading.');
     const r = JSON.parse(fs.readFileSync(reportPath, 'utf8'));
-    r.pluginsPresent = pluginsPresent;
     if (!r.ok) fail(r.failure || 'the app did not report success', JSON.stringify(r, null, 1));
 
     // Which capture classes the parser emitted that treesitter.css says nothing
@@ -1017,26 +1029,33 @@ async function main() {
          /neither one Light Table serves/.test(r.shim.refusedUnserved || '')],
         ['the Node globals a plugin expects come from the bundle',
          !!r.shim && r.shim.bufferIsBundled === true && r.shim.processShimmed === true],
-        // Both only meaningful when the published flagships were cloned, which
-        // build.sh does and CI does not: the shim is exercised against the
-        // Clojure plugin's nREPL client and the Javascript plugin's vendored
-        // harbor, and neither is here otherwise.
+        // The two the shim exists for: the Clojure plugin's nREPL client wants
+        // net, Buffer and bencode, and the Javascript plugin loads acorn out
+        // of its own node_modules through the CommonJS loader.
         ['the Clojure plugin got its net, Buffer and bencode from the shim',
-         !r.pluginsPresent || (!!r.shim && r.shim.clojureNet === true &&
-                               r.shim.clojureBuffer === true &&
-                               r.shim.clojureBencode === true)],
-        ['a plugin loads the CommonJS package it vendored',
-         !r.pluginsPresent || (!!r.shim && r.shim.vendoredModule === true)],
-        ['capability inference matches the one declared manifest',
+         !!r.shim && r.shim.clojureNet === true &&
+         r.shim.clojureBuffer === true &&
+         r.shim.clojureBencode === true],
+        ['a plugin loads the CommonJS package it depends on',
+         !!r.shim && r.shim.vendoredModule === true],
+        ['capability inference matches the declared manifest',
          !!r.capabilities && !!r.capabilities.TypeScript &&
          r.capabilities.TypeScript.declared === 'files processes' &&
          r.capabilities.TypeScript.used === 'files processes' &&
          r.capabilities.TypeScript.undeclared === ''],
-        // Only meaningful when the flagships were cloned.
-        ['capability inference reads an unmanifested plugin',
-         !r.pluginsPresent || (!!r.capabilities.Clojure &&
-                               r.capabilities.Clojure.declared === 'nil' &&
-                               r.capabilities.Clojure.used.indexOf('processes') !== -1)],
+        // Every plugin in this repository declares one now, so the interesting
+        // question is no longer "can inference read a plugin that declared
+        // nothing" but "does what a plugin declared cover what it does".
+        // :undeclared empty across all of them is the whole point of the
+        // manifest, and it is a real answer only because inference reads the
+        // JavaScript the plugin actually loads.
+        ['no in-tree plugin uses a capability it did not declare',
+         !!r.capabilities &&
+         Object.keys(r.capabilities).every((n) => r.capabilities[n].undeclared === '')],
+        ['the Clojure plugin declares the process it spawns',
+         !!r.capabilities.Clojure &&
+         r.capabilities.Clojure.declared.indexOf('processes') !== -1 &&
+         r.capabilities.Clojure.used.indexOf('processes') !== -1],
         ['the preload bridge is exposed', r.bridge === true],
         ['the window reaches the desktop through the bridge', r.bridgeInUse === true],
         ['zoom is served by the bridge', typeof r.zoomFactor === 'number' && r.zoomFactor > 0],
@@ -1049,9 +1068,7 @@ async function main() {
         ['the browser tab navigates where it was told',
          typeof r.browserLanded === 'string' && r.browserLanded.startsWith('file://') &&
          r.browserPageText === 'lt-browser-probe-loaded'],
-        // Only meaningful when the published flagships were cloned, which
-        // build.sh does and CI does not.
-        ['bundled plugins loaded', !r.pluginsPresent || r.behaviors > 500],
+        ['bundled plugins loaded', r.behaviors > 500],
         ['a save reaches the disk', !!r.save && r.save.onDisk === 'after\nbefore\n'],
         ['and the tab stops saying it is dirty', !!r.save && r.save.dirty === false],
         // The language server spine. `before` is after didOpen, `after` is

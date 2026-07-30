@@ -44,37 +44,10 @@ npm run build:window
 rm -f deploy/core/lighttable/bootstrap.js
 npm run build:cljs
 
-# Plugins that live in this repository, built from source against the editor
-# they extend rather than fetched as prebuilt artifacts.
+# Plugins. Every one of them lives in this repository now and is built from
+# source against the editor it extends; nothing is cloned. This also installs
+# each plugin's own npm dependencies and fetches the Clojure plugin's nREPL
+# jar, which is the one binary in plugins/ and is pinned and checksummed.
 npm run build:plugins
-
-# Fetch plugins
-# Paredit is not here: it is built from source in plugins/ instead.
-PLUGINS=("Clojure,0.3.3" "CSS,0.0.6" "HTML,0.1.0" "Javascript,0.2.0"
-         "Python,0.0.7" "Rainbow,0.0.8")
-
-# Plugins cache
-mkdir -p deploy/plugins
-
-pushd deploy/plugins
-  for plugin in "${PLUGINS[@]}" ; do
-      NAME="${plugin%%,*}"
-      VERSION="${plugin##*,}"
-      if [ -d $NAME ]; then
-        echo "Updating plugin $NAME $VERSION..."
-        cd $NAME
-        git checkout --quiet master
-        git pull --quiet
-        git checkout --quiet $VERSION
-        cd -
-      else
-        echo "Cloning plugin $NAME $VERSION..."
-        git clone "https://github.com/LightTable/$NAME"
-        cd $NAME
-        git checkout --quiet $VERSION
-        cd -
-      fi
-  done
-popd
 
 script/build-app.sh $@

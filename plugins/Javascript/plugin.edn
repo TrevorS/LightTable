@@ -12,4 +12,5 @@
  ;; :files      resolves node/ltnodeclient.js beside itself
  ;; :network    the browser and node clients, over ws and tcp
  ;; :plugins    resolves its own node_modules
- :capabilities #{:processes :files :network :plugins}}
+ ;; :desktop    opens a page outside the window
+ :capabilities #{:processes :files :network :plugins :desktop}}

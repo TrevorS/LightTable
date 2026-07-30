@@ -12,4 +12,5 @@
  ;; :files      resolves py-src/ beside itself, and finds the interpreter
  ;; :network    speaks to that client over tcp
  ;; :desktop    opens the pyzmq and ipython install pages when they are missing
- :capabilities #{:processes :files :network :desktop}}
+ ;; :plugins    resolves py-src/ beside itself
+ :capabilities #{:processes :files :network :desktop :plugins}}
