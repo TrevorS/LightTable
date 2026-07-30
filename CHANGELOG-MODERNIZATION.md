@@ -1103,11 +1103,22 @@ and friends, each independently versioned and actively developed.
 
 So there is no security cliff and no forced migration. CodeMirror 6 is a genuine
 rewrite — immutable state, transactions, a different extension model — and Light
-Table has 59 `js/CodeMirror` references, 16 addon loads, and a plugin API that
-exposes the CodeMirror object directly. That last point makes it a plugin API
-break at least as large as the editor work itself.
+Table has 59 `js/CodeMirror` references and 14 addon loads.
 
-Reasonable position: stay on 5, revisit if upstream signals an end.
+The claim that used to close this section — that exposing the CodeMirror object
+made it "a plugin API break at least as large as the editor work itself" — was
+an assumption, and counting contradicted it. Exactly one published function
+leaks the object (`lt.objs.editor/->cm-ed`), 34 of the 59 references are
+`js/CodeMirror.commands.*` in one command table, and the compiled Clojure,
+Javascript and Paredit plugins reference CodeMirror **zero** times. Paredit is
+a structural editor and should have been the worst case; it goes through
+`lt.objs.editor` wrappers instead. The abstraction holds better than anyone
+assumed.
+
+Reasonable position: stay on 5, revisit if upstream signals an end — but the
+migration is a bounded project rather than a rewrite, and if nothing were
+already chosen, CodeMirror 6 is what Light Table would pick. See
+[doc/editor-engine.md](doc/editor-engine.md).
 
 ## Dependencies
 
