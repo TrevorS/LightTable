@@ -72,6 +72,68 @@ export function captureClasses(name: string): string {
 }
 
 /**
+ * How many distinct bracket depths get their own class before they repeat.
+ *
+ * Six, because the point is telling *this* bracket from the one outside it, and
+ * a reader cannot hold more than a handful of colours apart anyway. Repeating
+ * is what every rainbow-paren implementation does past its palette.
+ */
+export const BRACKET_DEPTHS = 6;
+
+const OPENERS = '([{';
+const CLOSERS = ')]}';
+
+function isBracketCapture(name: string): boolean {
+    return name === 'punctuation.bracket' || name.startsWith('punctuation.bracket.');
+}
+
+/**
+ * Nesting depth per bracket, keyed by the bracket's byte offset.
+ *
+ * This is what the Rainbow plugin did by re-tokenizing the whole document
+ * through `CodeMirror.overlayMode` — and it is one pass over the brackets the
+ * highlight query already found, because the parse tree has the answer.
+ *
+ * Read from the bracket text rather than from the tree's shape. Depth by
+ * counting ancestors sounds more principled and is not: grammars differ wildly
+ * in how many wrapper nodes sit between a delimiter and the thing it delimits,
+ * so the same code would come out at a different depth per language. What a
+ * reader means by "one deeper" is one more unclosed bracket to their left, and
+ * that is exactly what this counts.
+ *
+ * A closer is given the depth of the opener it matches, so a pair is one
+ * colour. Unbalanced text clamps at zero rather than going negative — a bracket
+ * with nothing open outside it is at depth 1 whatever came before.
+ */
+export function bracketDepths(captures: QueryCapture[]): Map<number, number> {
+    const brackets: { at: number; text: string }[] = [];
+    for (const capture of captures) {
+        if (!isBracketCapture(capture.name)) continue;
+        brackets.push({ at: capture.node.startIndex, text: capture.node.text });
+    }
+    // Captures arrive in query order, not document order, and depth is a
+    // document-order question.
+    brackets.sort((a, b) => a.at - b.at);
+
+    const depths = new Map<number, number>();
+    let level = 0;
+    for (const bracket of brackets) {
+        const first = bracket.text.charAt(0);
+        if (OPENERS.includes(first)) {
+            level++;
+            depths.set(bracket.at, level);
+        } else if (CLOSERS.includes(first)) {
+            depths.set(bracket.at, level);
+            if (level > 0) level--;
+        }
+        // Anything else a grammar calls a bracket — a `#{` reader macro's
+        // brace is captured as one token in some queries — is left alone
+        // rather than guessed at.
+    }
+    return depths;
+}
+
+/**
  * Turn query captures into per-line spans.
  *
  * Captures overlap by design: a query says "every identifier is a variable" and
@@ -85,12 +147,20 @@ export function captureClasses(name: string): string {
 export function spansFromCaptures(captures: QueryCapture[], lineCount: number): Map<number, Span[]> {
     interface Raw { row: number; from: number; to: number; style: string; size: number; ord: number }
     const raw: Raw[] = [];
+    const depths = bracketDepths(captures);
 
     let ord = 0;
     for (const capture of captures) {
         const node = capture.node;
         ord++;
-        const style = captureClasses(capture.name);
+        let style = captureClasses(capture.name);
+        // A bracket carries its nesting depth as a further class, so a theme
+        // can colour by depth and one that says nothing about depth still gets
+        // the plain bracket colour from the class before it.
+        const depth = depths.get(node.startIndex);
+        if (depth !== undefined && isBracketCapture(capture.name)) {
+            style += ' ts-punctuation-bracket-' + (((depth - 1) % BRACKET_DEPTHS) + 1);
+        }
         const startRow = node.startPosition.row;
         const endRow = node.endPosition.row;
         // The whole capture's extent, used only for ordering: a capture over a

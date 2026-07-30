@@ -87,6 +87,35 @@
 .cm-ts-punctuation-special    { color: #d7a0c8; }
 .cm-ts-operator           { color: #9aa7b4; }
 
+/* Every bracket also carries its nesting depth, cycling at six:
+ * cm-ts-punctuation-bracket-1 through -6. This replaces the Rainbow plugin,
+ * which produced the same information by re-tokenizing the whole document
+ * through CodeMirror.overlayMode; the parse tree already knows.
+ *
+ * The default is to use none of it — the rule above still applies and every
+ * bracket stays the same quiet grey, for the reason given just above it. These
+ * exist so a theme can decide otherwise, and so that this stylesheet accounts
+ * for every class the highlighter emits, which script/smoke-test.js checks.
+ *
+ * Uncomment for rainbow parens. Six hues at this saturation read as depth
+ * without reading as decoration; the thirteen vivid ones the old themes used
+ * are what the note above is about. */
+.cm-ts-punctuation-bracket-1,
+.cm-ts-punctuation-bracket-2,
+.cm-ts-punctuation-bracket-3,
+.cm-ts-punctuation-bracket-4,
+.cm-ts-punctuation-bracket-5,
+.cm-ts-punctuation-bracket-6 { color: inherit; }
+
+/*
+.cm-ts-punctuation-bracket-1 { color: #9db6c9; }
+.cm-ts-punctuation-bracket-2 { color: #9ecfa8; }
+.cm-ts-punctuation-bracket-3 { color: #d7a0c8; }
+.cm-ts-punctuation-bracket-4 { color: #e0c987; }
+.cm-ts-punctuation-bracket-5 { color: #86d0c4; }
+.cm-ts-punctuation-bracket-6 { color: #c9a0d7; }
+*/
+
 /* ── Markup, for the languages that have it ─────────────────────────────── */
 .cm-ts-tag                { color: #7fb3d5; }
 .cm-ts-tag-attribute      { color: #d7a0c8; }
