@@ -12,6 +12,7 @@
 *.iml
 /lsp
 /deploy/core/lighttable/bootstrap.js
+/deploy/core/lighttable/manifest.edn
 /deploy/core/lighttable/bootstrap.js.map
 /deploy/core/lighttable/cljs/
 /User/
@@ -22,3 +23,7 @@
 /target/
 /codox/
 /deploy/core/lighttable/background/worker.js
+/deploy/core/main.js
+/deploy/core/main.js.map
+/deploy/core/preload.js
+/deploy/core/preload.js.map

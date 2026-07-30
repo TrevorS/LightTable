@@ -6,7 +6,7 @@
             [lt.objs.platform :as platform]
             [lt.objs.app :as app]
             [lt.util.dom :as dom]
-            [lt.util.ipc :as ipc]
+            [lt.util.bridge :as bridge]
             [clojure.string :as string])
   (:require-macros [lt.macros :refer [behavior]]))
 
@@ -65,15 +65,15 @@
     (mapv menu-item (remove nil? items))))
 
 (defn show-menu [m]
-  (ipc/send "lt:menu-popup" m))
+  (.popup bridge/menu (clj->js m)))
 
-(ipc/on "lt:menu-click"
-        (fn [_ token]
-          (when-let [handler (or (@popup-handlers token) (@app-handlers token))]
-            (try
-              (handler)
-              (catch :default e
-                (js/lt.objs.console.error e))))))
+(.onClick bridge/menu
+          (fn [token]
+            (when-let [handler (or (@popup-handlers token) (@app-handlers token))]
+              (try
+                (handler)
+                (catch :default e
+                  (js/lt.objs.console.error e))))))
 
 (dom/on (dom/$ :body) :contextmenu (fn [e]
                                      (dom/prevent e)
@@ -83,7 +83,7 @@
 (defn set-menubar [items]
   (binding [*handlers* app-handlers]
     (reset! app-handlers {})
-    (ipc/send "lt:menu-app" (mapv menu-item (remove nil? items)))))
+    (.setApplicationMenu bridge/menu (clj->js (mapv menu-item (remove nil? items))))))
 
 (def key-mappings {"cmd" "Command"
                    "shift" "Shift"

@@ -1,39 +1,92 @@
 ## Intro
 
-Please read [Electron's Quick start](https://github.com/atom/electron/blob/master/docs/tutorial/quick-start.md). The rest of this document assumes you've read it.
+Light Table is an [Electron](https://www.electronjs.org/) application. If you
+have not written one before, Electron's [process
+model](https://www.electronjs.org/docs/latest/tutorial/process-model) is the
+thing to read first — the rest of this document assumes it.
 
-## Electron App Layout
-
-Light Table's Electron app has the following layout:
+## Layout
 
 ```
+src-electron/            TypeScript, compiled by `npm run build:main`
+├── main.ts              the main process
+└── preload.ts           the bridge between the window and the main process
+
 deploy/core/
-├── package.json
-├── main.js
-├── LightTable.html
-├── node_modules/
-└── ../../src/
+├── package.json         Electron's manifest, plus browserWindowOptions
+├── main.js              compiled from src-electron/main.ts     (not in git)
+├── preload.js           compiled from src-electron/preload.ts  (not in git)
+├── LightTable.html      the window
+├── lighttable/          compiled from src/, by shadow-cljs     (not in git)
+└── node_modules/        packages the window and plugins load at runtime
 ```
 
-Description of each file/directory:
+* **package.json** sets the app name, version and entry point. Its extra
+  `browserWindowOptions` key is Light Table's own: `createWindow()` passes it
+  to [BrowserWindow](https://www.electronjs.org/docs/latest/api/browser-window).
+  It lives here because it declares the Electron app, like the rest of the file.
+* **main.ts** is the privileged half. It owns the windows, the menus, the
+  dialogs and every ipc channel the window is allowed to reach. It is
+  TypeScript because that boundary is worth having checked.
+* **preload.ts** runs in the window, before the page, and is what the window
+  talks to. See below.
+* **src/** is the ClojureScript that runs in the window.
 
-* [package.json](../deploy/core/package.json) - This is a manifest file that sets the name, version and the js file to start the main process. To learn more about how Electron uses it [read the source](https://github.com/atom/electron/blob/c441dd143690aab71a925f0b941a6d9760768fa5/atom/browser/lib/init.coffee#L62).
-   * Our package.json has an additional 'browserWindowOptions' key. This key is used by the main process to set [BrowserWindow](https://github.com/atom/electron/blob/master/docs/api/browser-window.md) options. This is placed in package.json because it is a declaration of an Electron app, like the rest of the file.
-* [main.js](../deploy/core/main.js) - This is the heart of the main process. _All_ GUI interactions run through this file. This also handles the CLI. Recommend understanding this file.
-* [LightTable.html](../deploy/core/LightTable.html) - This is the web page we see as our editor. It lives in the renderer process.
-* [node\_modules](../deploy/core/node_modules) - These are node packages used by the renderer process. These are described in [this doc](../doc/for-committers.md#node-packages)
-* [../../src/](../src) - This is the ClojureScript code that is run in the renderer process. It is [loaded by LightTable.html](https://github.com/LightTable/LightTable/blob/8e8d20a5da5d2ee42db4ff761eb2cd15a2c178b2/deploy/core/LightTable.html#L24-L40).
+## The bridge
 
-## Miscellaneous Pointers
+The window does not use Electron's modules, and does not `require('electron')`.
+Everything it can ask the desktop for is a named capability on the object
+`preload.ts` exposes as `lightTable`:
 
-* Communication between `main.js` (main process) and ClojureScript code (renderer process) happens through [ipc messages](https://github.com/atom/electron/blob/master/docs/api/ipc-main-process.md) and [remote objects](https://github.com/atom/electron/blob/master/docs/api/remote.md).
-  * For example, when a window [receives a focus event](https://github.com/LightTable/LightTable/blob/686c9b1e5e24fcb08ff44eb57eb7889e31e37806/deploy/core/main.js#L33-L36), the main process sends an ipc message on the "app" channel to the renderer process. The renderer process [receives that message](https://github.com/LightTable/LightTable/blob/686c9b1e5e24fcb08ff44eb57eb7889e31e37806/src/lt/objs/app.cljs#L228) and invokes a :focus trigger on the app object.
-  * IPC messages between the main and renderer process can be logged in the terminal with $IPC\_DEBUG e.g. `IPC_DEBUG=1 script/light.sh`.
-* We use [webview](https://github.com/atom/electron/blob/master/docs/api/web-view-tag.md) for our browser.
-* We use [remote-debugging-port](https://github.com/atom/electron/blob/1bc49487add140f22ea4e454dcb0050e08679b4b/docs/api/chrome-command-line-switches.md#--remote-debugging-portport) to do browser eval.
+| | |
+|---|---|
+| `shell` | open a path or url, reveal in file manager, move to trash |
+| `clipboard` | read and write text |
+| `zoom` | this window's zoom factor |
+| `window` | close, focus, minimize, geometry, devtools, app events |
+| `dialog` | open and save dialogs |
+| `menu` | context menus and the menubar |
+| `host` | app path, platform, argv, files to open — read once at startup |
 
-## Additional Links
+`lt.util.bridge` is the only ClojureScript namespace that names that object;
+everything else goes through it. It replaced `lt.util.ipc`, which handed out
+the raw `ipcRenderer` — with that, the set of things the window could do was
+however many `ipc/send` calls happened to exist, discoverable only by grep.
 
-* [Electron docs](https://github.com/atom/electron/tree/master/docs) - Modules to know: browser-window, app, dialog, ipc, remote
-* [Mature ClojureScript Electron app](https://github.com/oakmac/cuttle)
-* [Our ipc util fns](https://github.com/LightTable/LightTable/blob/master/src/lt/util/ipc.cljs)
+Two reasons for the shape. The first is that Electron has sandboxed renderers
+by default since v20, and a sandboxed preload has no Node — only `electron`,
+`events`, `timers` and `url`. So a preload cannot be a thin wrapper over
+`require()` even if one wanted it to be: every privileged operation has to run
+in the main process. The second is that a named list is something you can hold
+plugins to, and an ambient `require` is not.
+
+A few things are answered in the preload rather than forwarded: `webFrame` is
+renderer-side, and the preload shares this window's frame, so zoom does not
+round-trip.
+
+`main.ts` is the other end. `lt:window-call` carries the eight window methods
+Light Table actually uses and refuses anything else; nothing that acts on a
+window takes a window id, so a window can only act on itself.
+
+## Miscellaneous pointers
+
+* `IPC_DEBUG=1 script/light.sh` logs ipc messages arriving at the main process.
+* [webview](https://www.electronjs.org/docs/latest/api/webview-tag) backs the
+  browser tab.
+* [remote-debugging-port](https://www.electronjs.org/docs/latest/reference/command-line-switches)
+  is how the browser eval client attaches.
+
+## Where this is going
+
+`contextIsolation` is still off, and the window still has Node. Turning
+isolation on takes `require()` away from the window, which `lt.objs.files`,
+`lt.objs.proc` and others still depend on — and so do precompiled plugins,
+which the host cannot rebuild. CHANGELOG-MODERNIZATION.md has the details and
+the staging.
+
+## Additional links
+
+* [Electron docs](https://www.electronjs.org/docs/latest) — modules to know:
+  BrowserWindow, app, dialog, ipcMain, contextBridge
+* [Context isolation](https://www.electronjs.org/docs/latest/tutorial/context-isolation)
+* [Electron's security checklist](https://www.electronjs.org/docs/latest/tutorial/security)

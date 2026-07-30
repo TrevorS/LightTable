@@ -28,6 +28,9 @@ popd
 # Build tooling lives at the repo root
 npm install
 
+# The main process, compiled from TypeScript.
+npm run build:main
+
 # The window bundle and the worker thread that backs lt.objs.thread. The worker
 # is a separate target because it runs under node rather than in the window.
 rm -f deploy/core/lighttable/bootstrap.js

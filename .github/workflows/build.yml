@@ -39,6 +39,10 @@ jobs:
         working-directory: deploy/core
         run: npm ci
 
+      # Compiled first: the smoke test boots the real main process.
+      - name: Type-check and build the main process
+        run: npm run build:main
+
       - name: Unit tests
         run: |
           npx shadow-cljs compile test

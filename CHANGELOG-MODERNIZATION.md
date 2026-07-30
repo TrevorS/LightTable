@@ -376,22 +376,83 @@ That last row is the one that matters. `lt.objs.clients.local` is the
 running editor, which is how Light Table is customized from inside itself. It
 calls `js/eval` deliberately.
 
-## Content isolation (not started)
+## A capability bridge between the window and the desktop
 
-`nodeIntegration: true` and `contextIsolation: false` are still set.
+`src-electron/preload.ts` is new, and the window now talks to its privileged
+half through it rather than through Electron directly. `js/require("electron")`
+does not appear in `src/` any more.
 
-`contextIsolation` and a content security policy are separable, and they have
-different prices:
+The shape was not a style choice. Electron has sandboxed renderers by default
+since v20, and a sandboxed preload cannot require `fs`, `child_process`, `net`,
+`path` or `os` — only `electron`, `events`, `timers` and `url`. A preload
+therefore cannot be a thin wrapper over Node even if one wanted it to be: every
+privileged operation has to run in the main process, with the preload carrying
+nothing but the request. That constraint forces a named list, which is exactly
+what a permission model needs.
 
-- **`contextIsolation: true`** means a preload script and a `contextBridge`.
-  The renderer's Node use is enumerable — 37 `js/require` sites across 19 files,
-  around 30 distinct operations — so this is bounded work. It breaks plugins that
-  reach for Node directly.
-- **A CSP without `unsafe-eval`** cannot be adopted without removing
-  self-evaluation, and self-evaluation is the feature Light Table is named for.
+What the window can ask for:
 
-So the honest position is that the eval surface has narrowed as far as it
-usefully can. What remains is not cleanup deferred; it is the product.
+| | |
+|---|---|
+| `shell` | open a path or url, reveal in file manager, move to trash |
+| `clipboard` | read and write text |
+| `zoom` | this window's zoom factor |
+| `window` | close, focus, minimize, geometry, devtools, app events |
+| `dialog` | open and save dialogs |
+| `menu` | context menus and the menubar |
+| `host` | app path, platform, argv, files to open — read once at startup |
+
+`lt.util.bridge` is the only namespace that names that object. It replaced
+`lt.util.ipc`, which handed out the raw `ipcRenderer`: with that, the set of
+things the window could do was however many `ipc/send` calls existed,
+discoverable only by grep.
+
+Three things got narrower on the way:
+
+- `lt:window-call` took a method name and invoked it on `BrowserWindow` — "call
+  whatever you like on the window" as a channel. The eight methods Light Table
+  actually uses are named in main; anything else is refused.
+- `initWindow` and `toggleDevTools` took a window id from the renderer, so a
+  window could name one it did not own. They use the sender's window now, which
+  is the only one they were ever called with.
+- Deciding whether a string is a path or a url took `fs.existsSync` in the
+  window. That decision moved to the privileged side rather than handing the
+  window a filesystem to make it with. Same for the platform name, which was
+  read off the renderer's own `process`.
+
+Not everything forwards. `webFrame` is renderer-side and the preload shares the
+window's frame, so zoom is answered locally.
+
+Verified by five smoke checks: the bridge is exposed, the window is really going
+through it, zoom resolves, the clipboard round-trips in both directions, and the
+menubar — built by a behavior in the window — actually arrives in the main
+process.
+
+## Content isolation (not yet)
+
+`nodeIntegration: true` and `contextIsolation: false` are still set. The bridge
+above is deliberately shaped so that the window could migrate onto it *before*
+the flip rather than in the same change, and it has.
+
+What blocks the flip is that `contextIsolation: true` takes `require()` away
+from the window entirely:
+
+- **Light Table's own code**: 20 `js/require` sites across 10 renderer
+  namespaces — `fs` ×5, `child_process` ×5, `path` ×2, `net` ×2, `http` ×2, and
+  one each of `https`, `util`, `url`, `os`. Bounded, and the natural next tranche.
+- **Plugins**: not bounded, and not ours. The Clojure plugin requires `net` and
+  `buffer` at load time for nREPL; the Javascript plugin requires `net` and
+  `util`. These ship precompiled, so the host cannot rebuild them — flipping
+  isolation breaks them the moment the namespace loads, with no recourse for
+  anyone who has them installed.
+
+That second point is the whole difficulty, and it is not a technical one. See
+below.
+
+- **A CSP without `unsafe-eval`** remains separately unavailable: it cannot be
+  adopted without removing self-evaluation, and self-evaluation is the feature
+  Light Table is named for. The eval surface has narrowed as far as it usefully
+  can. What remains is not cleanup deferred; it is the product.
 
 ---
 
@@ -412,41 +473,60 @@ deletes it. Any plan that starts by banning `eval` has already lost the argument
 The useful reframing is that **the two things people bundle together are
 separable, and only one of them is a real cost.**
 
-- `contextIsolation` is about *who can reach Node*. That is bounded work: 37
-  `js/require` sites over 19 files, roughly 30 distinct operations, behind a
-  preload and a `contextBridge`. Nothing about self-evaluation requires the
-  renderer to hold `child_process`.
+- `contextIsolation` is about *who can reach Node*. Nothing about
+  self-evaluation requires the window to hold `child_process`.
 - A CSP is about *what can be executed*. This is where the feature lives.
 
 Split that way, most of the value is available without touching the feature. A
-renderer that cannot spawn processes or read arbitrary files is a much smaller
+window that cannot spawn processes or read arbitrary files is a much smaller
 target even while it can still evaluate expressions, because the interesting
 attacks are not "run some JavaScript in a sandboxed page" — they are "run some
 JavaScript that then shells out".
 
-Which points at where the real exposure is today, and it is not `eval`:
+The bridge is the first half of that, and it is done. What is left is the part
+that was always going to be harder, and it is not `eval`:
 
-1. **Plugins are arbitrary code with no boundary.** They are fetched over the
-   network, `eval`'d into the renderer, and inherit full Node. There is no
-   manifest of what a plugin may touch, no signature, and no review gate. In an
-   era of dependency-confusion and typosquat attacks on package ecosystems, that
-   is the supply chain, and `contextIsolation` alone does not fix it — it just
-   means a plugin has to ask the bridge instead of calling `fs` directly.
-2. **The bridge is the security model.** Once plugins go through a
-   `contextBridge`, its surface *is* the permission system, so it should be
-   designed as one: capability-scoped rather than a flat re-export of Node.
-   `readFile` scoped to the workspace is a different thing from `fs.readFile`,
-   and the difference is worth having before a hundred plugins are written
-   against the wrong one.
-3. **Self-evaluation can be scoped too.** The connector model already
+1. **Light Table's own Node use.** 20 `js/require` sites, 10 namespaces, mostly
+   `fs` and `child_process`. Mechanical, and it should be done as capabilities
+   rather than as an `fs` passthrough — the point of moving `existsSync` behind
+   `shell.open` was to establish that pattern on something small. The hard case
+   is `lt.objs.proc`: spawning a process and streaming its output is stateful,
+   so the bridge needs handles and events, not request/response.
+2. **Plugins are the actual blocker, and it is a compatibility problem, not a
+   technical one.** They are fetched over the network, loaded into the window,
+   and inherit full Node. They also ship precompiled, so the host cannot rebuild
+   them: the Clojure plugin calls `require("net")` at namespace load time for
+   nREPL, the Javascript plugin does the same. Turning on isolation breaks both
+   instantly for everyone who has them installed. Three ways out, none free:
+   - **Compatibility `require` on the bridge.** A `window.require` backed by an
+     allowlist proxied through main. Keeps plugins working and still gives a
+     chokepoint — an audited set of modules with a place to log, scope or
+     refuse. But `net` is stateful and callback-driven, so proxying it means
+     modelling socket handles across the boundary. Real work, and it hands back
+     much of what isolation was for.
+   - **Rebuild the bundled plugins.** Fine for the seven that ship with Light
+     Table (see the monorepo section — this is a second reason to want it), and
+     no help at all for anything third-party.
+   - **Isolate per plugin.** The interesting one. Plugins do not all need the
+     same things: a syntax mode needs nothing, an nREPL client needs a socket.
+     A manifest declaring what a plugin uses, enforced by which capabilities its
+     load gets, is the design the bridge is already shaped for. It is also a
+     migration: unmanifested plugins get everything, manifested plugins get less,
+     and the default flips later.
+3. **The bridge is the permission system**, so its surface should keep being
+   designed as one. `readFile` scoped to the workspace is a different thing from
+   `fs.readFile`, and the difference is worth having before a hundred plugins
+   are written against the wrong one. This is the argument against the
+   compatibility-`require` route as anything but a bridge to somewhere else.
+4. **Self-evaluation can be scoped too.** The connector model already
    distinguishes evaluating *in Light Table* from evaluating *in a client*. That
    distinction is the natural place for a trust boundary: an editor-scoped eval
    with the bridge available is defensible in a way that "everything can do
    everything" is not.
 
-So: `contextIsolation` and a capability-shaped bridge are worth doing, in that
-order, and neither costs the feature. A CSP is the last question, and the honest
-answer may be `unsafe-eval` with a much smaller blast radius behind it.
+So the order is: finish Light Table's own Node use behind capabilities, decide
+the plugin story, then flip isolation. A CSP is the last question, and the
+honest answer may be `unsafe-eval` with a much smaller blast radius behind it.
 
 ## Monorepo for the bundled plugins
 
@@ -471,25 +551,32 @@ plugin loader already looks, with `plugin.edn`/`plugin.json` kept so nothing
 about distribution changes for anyone else. Candidates beyond the two flagships:
 CSS, HTML, Paredit, Python, Rainbow — the set `script/build.sh` already pins.
 
+There is now a second reason, which may be the stronger one: `contextIsolation`
+cannot be turned on while the flagship plugins call `require("net")` from
+precompiled code nobody rebuilds. In-tree plugins can be moved onto the bridge
+in the same commit that flips it.
+
 ## Hand-written JavaScript to TypeScript
 
-About 2,529 lines across thirteen files, and they fall into three groups that
-deserve different answers.
+The privileged half is done: `src-electron/main.ts` (392 lines) and
+`src-electron/preload.ts` (196), compiled to `deploy/core` by a `tsc` step,
+strict, with `noUncheckedIndexedAccess` and `exactOptionalPropertyTypes`. That
+was the part worth doing first because it is where the privilege is — the type
+checker found two live bugs during the port, and every capability added to the
+bridge lands there.
+
+What is left is 1,761 lines, and it does not all deserve the same answer.
 
 | | lines | notes |
 |---|---|---|
-| `main.js` | 269 | The whole main process. Ideal TypeScript candidate: Electron ships its own types, and this is the security boundary. |
-| `script/smoke-test.js` | 194 | Test harness; types would catch the probe mistakes made while writing it. |
-| `ws.js`, `browserInjection.js`, `dragdrop.js`, `fuzzy.js`, `throttle.js`, `behaviorsParser.js`, `walkdir2.js` | 1,675 | Light Table's own runtime scripts. `keyevents.js` alone is 1,086 of that and is a vendored keyboard library. |
-| forked CodeMirror addons | 281 | Vendored forks; typing them means diverging further from upstream. |
+| `script/smoke-test.js` | 220 | Test harness. Types would have caught the probe mistakes made while writing it, twice. |
+| `ws.js`, `browserInjection.js`, `dragdrop.js`, `fuzzy.js`, `throttle.js`, `behaviorsParser.js`, `walkdir2.js` | ~660 | Light Table's own runtime scripts. Worth porting; none are large. |
+| `util/keyevents.js` | 1,086 | A vendored keyboard library. Should be replaced rather than ported. |
+| forked CodeMirror addons | 281 | Vendored forks; typing them means diverging further from upstream. Leave them. |
 
-The argument for starting with `main.js` is that it is where the privilege is.
-Every ipc handler added for `contextIsolation` lands there, and a typed
-`contextBridge` surface is worth considerably more than a typed drag-and-drop
-helper. shadow-cljs does not compile TypeScript, so this needs a small `tsc`
-step feeding `deploy/core` — worth scoping before committing.
-
-`keyevents.js` should probably be replaced rather than ported.
+The window's own scripts are loaded as global-scope `<script>` tags, so porting
+them is also the remaining half of the eval question below — a module that
+declares its exports can be `require`d instead of evaluated.
 
 ## CodeMirror
 
@@ -530,6 +617,11 @@ project-wide search implementation, so not worth rushing.
   judgement call, not a technical obstacle.
 - **Three `load/js` eval sites remain** for Light Table's own global-scope
   scripts and the forked CodeMirror addons. Mechanical, and a prerequisite for
-  any CSP conversation.
+  any CSP conversation. Porting those scripts to TypeScript resolves it as a
+  side effect, since a module that declares its exports can be required.
 - **`project.clj` builds nothing** and exists only for codox. It stays as long as
   the published plugin API docs do.
+- **`lt.util.ipc` is gone**, which is a plugin API break in principle. Nothing in
+  the flagship plugins referenced it — checked against the compiled artifacts,
+  not just the source — and `lt.util.bridge` is where its one general-purpose
+  member, `app-info`, now lives.

@@ -5,13 +5,13 @@
             [lt.objs.cache :as cache]
             [lt.objs.notifos :as notifos]
             [lt.objs.command :as cmd]
-            [lt.util.ipc :as ipc]
+            [lt.util.bridge :as bridge]
             [lt.objs.app :as app]))
 
 (cmd/command {:command :dev-inspector
               :desc "Dev: Open Developer Tools"
               :exec (fn []
-                      (ipc/send "toggleDevTools" (app/window-number)))})
+                      (.toggleDevTools bridge/window))})
 
 (cmd/command {:command :toggle-edge
               :desc "Toggle edge"

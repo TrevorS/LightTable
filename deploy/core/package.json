@@ -14,7 +14,8 @@
       "webaudio": true,
       "plugins": true,
       "nodeIntegration": true,
-      "contextIsolation": false
+      "contextIsolation": false,
+      "preload": "preload.js"
     }
   },
   "dependencies": {

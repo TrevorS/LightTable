@@ -11,7 +11,7 @@
             [singultus.core :as crate]
             [lt.util.dom :as dom]
             [lt.util.js :as js-util :refer [every wait ->clj]]
-            [lt.util.ipc :as ipc]
+            [lt.util.bridge :as bridge]
             [singultus.binding :refer [bound subatom]]
             [clojure.string :as string])
   (:require-macros [lt.macros :refer [behavior defui]]))
@@ -197,7 +197,7 @@
 (def local (object/create ::devtools-client (app/app-url)))
 
 ;; Handle events e.g. disconnect and reconnect!
-(ipc/on "devtools" #(object/raise local (keyword %2)))
+(.onDevtoolsEvent bridge/window #(object/raise local (keyword %)))
 
 ;;*********************************************************
 ;; Behaviors

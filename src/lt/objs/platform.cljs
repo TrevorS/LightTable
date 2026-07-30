@@ -1,18 +1,11 @@
 (ns lt.objs.platform
   "Provide platform-agnostic and platform related fns"
-  (:require [lt.object :as object]
-            [lt.util.dom :as dom]
-            [lt.util.ipc :as ipc])
-  (:require-macros [lt.macros :refer [behavior]]))
+  (:require [lt.util.bridge :as bridge]))
 
 (def electron true)
 
-(def fs (js/require "fs"))
-(def clipboard (.-clipboard (js/require "electron")))
-(def electron-shell (.-shell (js/require "electron")))
-
 (defn get-data-path []
-  (:appPath ipc/app-info))
+  (:appPath bridge/app-info))
 
 (defn normalize [plat]
   (condp = plat
@@ -21,34 +14,33 @@
     "darwin" :mac))
 
 (defn open-url [path]
-  (.openExternal electron-shell path))
+  (.openExternal bridge/shell path))
 
 (defn open
   "If the given path exists, open it with the desktop's default manner.
   Otherwise, open it as an external protocol e.g. a url."
   [path]
-  (if (.existsSync fs path)
-    ;; shell.openItem was removed in Electron 9; openPath replaces it and
-    ;; resolves to an error string rather than throwing.
-    (-> (.openPath electron-shell path)
-        (.then #(when (seq %)
-                  (js/lt.objs.console.error (str "Could not open " path ": " %)))))
-    (open-url path)))
+  ;; Which of the two it is gets decided on the other side of the bridge, where
+  ;; there is a filesystem to decide it with.
+  (-> (.open bridge/shell path)
+      (.then #(when (seq %)
+                (js/lt.objs.console.error (str "Could not open " path ": " %))))))
 
 (defn show-item [path]
-  (.showItemInFolder electron-shell path))
+  (.showItemInFolder bridge/shell path))
 
 (defn copy
   "Copies given text to platform's clipboard"
   [text]
-  (.writeText clipboard text))
+  (.writeText bridge/clipboard text))
 
 (defn paste
   "Returns text of last copy to platform's clipboard"
   []
-  (.readText clipboard))
+  (.readText bridge/clipboard))
 
-(def platform (normalize (.-platform js/process)))
+;; Was (.-platform js/process), which a sandboxed window does not have.
+(def platform (normalize (:platform bridge/app-info)))
 
 (defn mac? []
   (= platform :mac))

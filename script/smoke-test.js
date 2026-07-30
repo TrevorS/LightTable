@@ -55,6 +55,10 @@ app.on('ready', function () {
     const pkg = require(CORE + '/package.json');
     const opts = Object.assign({}, pkg.browserWindowOptions, { show: false, width: 1280, height: 820 });
     opts.icon = CORE + '/' + pkg.browserWindowOptions.icon;
+    // Electron resolves neither of these relative to the app directory, the
+    // same way createWindow() does not.
+    opts.webPreferences = Object.assign({}, pkg.browserWindowOptions.webPreferences,
+                                        { preload: CORE + '/' + pkg.browserWindowOptions.webPreferences.preload });
     const w = new BrowserWindow(opts);
 
     w.webContents.on('did-finish-load', function () {
@@ -90,6 +94,20 @@ app.on('ready', function () {
                     editorText: (function () { var e = document.querySelector('.CodeMirror-code'); return e ? e.innerText.slice(0, 40) : ''; })(),
                     behaviors: cljs.core.count(cljs.core.deref(lt.object.behaviors)),
                     crateShim: typeof (window.crate && window.crate.core && window.crate.core.html) === 'function',
+                    // The preload bridge, and that the window is actually going
+                    // through it rather than still reaching Electron directly.
+                    bridge: (function () {
+                        var b = window.lightTable;
+                        return !!(b && b.shell && b.clipboard && b.zoom && b.host);
+                    })(),
+                    bridgeInUse: lt.util.bridge.shell === (window.lightTable && window.lightTable.shell),
+                    zoomFactor: lt.objs.app.zoom_level(),
+                    // A clipboard round trip covers both directions of the
+                    // bridge: a send out and a sendSync back.
+                    clipboard: (function () {
+                        lt.objs.platform.copy('lt-smoke-clipboard');
+                        return lt.objs.platform.paste();
+                    })(),
                     workerConnected: cljs.core.boolean$(new cljs.core.Keyword(null,"connected","connected",-169833045).cljs$core$IFn$_invoke$arity$1(cljs.core.deref(lt.objs.thread.worker))),
                     workerFilesFound: (function () {
                         var files = cljs.core.get.call(null, cljs.core.deref(lt.objs.sidebar.navigate.sidebar_navigate), cljs.core.keyword.call(null, "files"));
@@ -102,6 +120,9 @@ app.on('ready', function () {
                         } catch (e) { return ['could not read the console: ' + e.message]; }
                     })()
                 })\`));
+                // The menubar is set by a behavior at startup, and it lands
+                // over here, so this is the only side it can be seen from.
+                report.appMenu = !!Menu.getApplicationMenu();
                 report.ok = true;
             } catch (e) {
                 report.failure = 'renderer probe failed: ' + e.message;
@@ -170,6 +191,11 @@ async function main() {
         ['the worker thread connected', r.workerConnected === true],
         ['a background job round-tripped', r.workerFilesFound >= 5],
         ['the crate compatibility shim is published', r.crateShim === true],
+        ['the preload bridge is exposed', r.bridge === true],
+        ['the window reaches the desktop through the bridge', r.bridgeInUse === true],
+        ['zoom is served by the bridge', typeof r.zoomFactor === 'number' && r.zoomFactor > 0],
+        ['the clipboard round-trips over the bridge', r.clipboard === 'lt-smoke-clipboard'],
+        ['the application menu was built over the bridge', r.appMenu === true],
         // Only meaningful when deploy/plugins is populated, which build.sh does.
         ['bundled plugins loaded', !r.pluginsPresent || r.behaviors > 500],
         ['nothing logged to the console', Array.isArray(r.errors) && r.errors.length === 0]

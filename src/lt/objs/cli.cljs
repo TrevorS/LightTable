@@ -7,7 +7,7 @@
             [lt.objs.workspace :as workspace]
             [lt.objs.command :as cmd]
             [clojure.string :as string]
-            [lt.util.ipc :as ipc]
+            [lt.util.bridge :as bridge]
             [lt.objs.opener :as opener])
   (:require-macros [lt.macros :refer [behavior]]))
 
@@ -26,14 +26,14 @@
       (object/raise opener/opener :new! path))))
 
 (def parsed-args "Map of commandline options parsed by yargs"
-  (:parsedArgs ipc/app-info))
+  (:parsedArgs bridge/app-info))
 
 (def open-files "Files to open from a file manager"
-  (:openFiles ipc/app-info))
+  (:openFiles bridge/app-info))
 
-(def argv "Arguments used to start LightTable" (:argv ipc/app-info))
+(def argv "Arguments used to start LightTable" (:argv bridge/app-info))
 
-(ipc/on "openFileAfterStartup" #(object/raise app/app :open! %))
+(.onOpenFile bridge/window #(object/raise app/app :open! %))
 
 (defn args
   "Returns path arguments passed to executable or nil if none given. Only returns

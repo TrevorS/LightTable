@@ -6,13 +6,12 @@
             [lt.util.load :as load]
             [clojure.string :as string]
             [lt.objs.platform :as platform]
+            [lt.util.bridge :as bridge]
             [lt.util.js :refer [now]])
   (:require-macros [lt.macros :refer [behavior]]))
 
 (def ^:private fs (js/require "fs"))
 (def ^:private fpath (js/require "path"))
-;; https://github.com/electron/electron/blob/master/docs/api/shell.md
-(def ^:private electron-shell (.-shell (js/require "electron")))
 (def ^:private os (js/require "os"))
 (def ^:private data-path (platform/get-data-path))
 
@@ -405,7 +404,7 @@
   [path]
   ;; Was .moveItemTotrash — a typo, so this never resolved to a real method even
   ;; before Electron replaced moveItemToTrash with the promise-based trashItem.
-  (.trashItem electron-shell path))
+  (.trashItem bridge/shell path))
 
 (defn delete!
   "Delete file or directory from filesystem."

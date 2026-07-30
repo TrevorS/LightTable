@@ -19,7 +19,7 @@ feedback. It is highly customizable and can display anything a
 |---|---|
 | Runtime | Electron 43 — Chromium 150, Node 24 |
 | Language | ClojureScript 1.12, Clojure 1.12 |
-| Build | [shadow-cljs](https://github.com/thheller/shadow-cljs) |
+| Build | [shadow-cljs](https://github.com/thheller/shadow-cljs), plus `tsc` for the main process |
 | Toolchain | JDK 25 (JDK 21 also works), Node 24 |
 
 ## Building
@@ -41,6 +41,17 @@ npx shadow-cljs release app worker
 `app` is the window bundle; `worker` is the background thread that runs
 searching, file walking and behavior parsing off the main thread. Both are
 defined in [shadow-cljs.edn](shadow-cljs.edn).
+
+The main process and the preload script are TypeScript, in `src-electron/`:
+
+```sh
+npm run build:main
+```
+
+The window does not use Electron's modules directly. Everything it can ask the
+desktop for is a named capability exposed by the preload script, and
+`lt.util.bridge` is the only namespace that reaches it — see
+[doc/electron-guide.md](doc/electron-guide.md).
 
 ## Testing
 

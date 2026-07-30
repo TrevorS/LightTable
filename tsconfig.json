@@ -1,0 +1,26 @@
+{
+  "compilerOptions": {
+    // Electron 43 runs Node 24, so nothing here needs downlevelling. The main
+    // process is CommonJS.
+    "target": "ES2022",
+    "lib": ["ES2023"],
+    "module": "commonjs",
+    "moduleResolution": "node",
+
+    "strict": true,
+    "noImplicitOverride": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+
+    "rootDir": "src-electron",
+    "outDir": "deploy/core",
+    "sourceMap": true,
+    "newLine": "lf",
+
+    // Electron and @types/node ship their own declarations; checking them adds
+    // time and reports nothing actionable here.
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true
+  },
+  "include": ["src-electron/**/*.ts"]
+}

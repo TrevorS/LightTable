@@ -8,25 +8,19 @@
             [clojure.string :as string]
             [lt.util.js :refer [now]]
             [lt.util.dom :refer [$] :as dom]
-            [lt.util.ipc :as ipc])
+            [lt.util.bridge :as bridge])
   (:require-macros [lt.macros :refer [behavior]]))
 
-(def frame (.-webFrame (js/require "electron")))
-
-;; BrowserWindow lives in the browser process. It used to be reached through
-;; `remote`, which Electron removed in v14. Mutations are fire-and-forget sends;
-;; the few reads are synchronous because they happen while the window is closing.
-
-(defn- window-call!
-  "Invoke `method` on this renderer's BrowserWindow, in the browser process."
-  [method & args]
-  (ipc/send "lt:window-call" (name method) (vec args)))
+;; This window lives in the browser process. It used to be reached through
+;; `remote`, which Electron removed in v14, then through an ipc channel that
+;; would call any method the renderer named. It is bridge/window now: a fixed
+;; set, none of whose members take a window id.
 
 (defn- window-state
-  "Current geometry of this renderer's BrowserWindow: :id, :size, :position
-  and :fullScreen."
+  "Current geometry of this window: :id, :size, :position and :fullScreen.
+  Synchronous because it is read while the window is closing."
   []
-  (js->clj (ipc/send-sync "lt:window-state") :keywordize-keys true))
+  (js->clj (.state bridge/window) :keywordize-keys true))
 (def closing true)
 (def default-zoom 1)
 
@@ -51,8 +45,8 @@
      (do
        (object/raise app :closing)
        (object/raise app :closed)
-       (window-call! :destroy))
-     (window-call! :close))))
+       (.destroy bridge/window))
+     (.close bridge/window))))
 
 (defn refresh []
   (js/window.location.reload true))
@@ -90,11 +84,11 @@
     (max x cap)))
 
 (defn zoom-level []
-  (when (not= (.getZoomFactor frame) 0)
-    (.getZoomFactor frame)))
+  (when (not= (.get bridge/zoom) 0)
+    (.get bridge/zoom)))
 
 (defn open-window []
-  (ipc/send "createWindow"))
+  (.openNew bridge/window))
 
 ;;*********************************************************
 ;; Behaviors
@@ -119,7 +113,7 @@
 (behavior ::notify-init-window
           :triggers #{:init}
           :reaction (fn [this]
-                      (ipc/send "initWindow" (window-number))))
+                      (.init bridge/window)))
 
 (behavior ::store-position-on-close
           :triggers #{:closed :refresh}
@@ -138,14 +132,14 @@
           :triggers #{:show}
           :reaction (fn [this]
                       (when (= js/localStorage.fullscreen "true")
-                        (window-call! :setFullScreen true))))
+                        (.setFullScreen bridge/window true))))
 
 (behavior ::restore-position-on-init
           :triggers #{:show}
           :reaction (fn [this]
                       (when js/localStorage.width
-                        (window-call! :setSize (ensure-greater js/localStorage.width 400) (ensure-greater js/localStorage.height 400))
-                        (window-call! :setPosition (ensure-greater js/localStorage.x 0) (ensure-greater js/localStorage.y 0)))))
+                        (.setSize bridge/window (ensure-greater js/localStorage.width 400) (ensure-greater js/localStorage.height 400))
+                        (.setPosition bridge/window (ensure-greater js/localStorage.x 0) (ensure-greater js/localStorage.y 0)))))
 
 (behavior ::on-show-bind-navigate
           :triggers #{:show}
@@ -156,7 +150,7 @@
                                                       (dom/prevent e)
                                                       (when-let [href (.-target.href e)]
                                                         (platform/open-url href)
-                                                        (window-call! :focus)))))))
+                                                        (.focus bridge/window)))))))
 
 (behavior ::track-focus
           :triggers #{:focus :show}
@@ -240,7 +234,7 @@
 (def app (object/create ::app))
 
 ;; Handles events e.g. focus, blur and close
-(ipc/on "app" #(object/raise app (keyword %2)))
+(.onAppEvent bridge/window #(object/raise app (keyword %)))
 
 
 ;;*********************************************************
@@ -261,30 +255,30 @@
 (cmd/command {:command :window.zoom-in
               :desc "Window: Zoom in"
               :exec (fn []
-                      (.setZoomFactor frame (+ (.getZoomFactor frame) 0.2)))})
+                      (.set bridge/zoom (+ (.get bridge/zoom) 0.2)))})
 
 (cmd/command {:command :window.zoom-out
               :desc "Window: Zoom out"
               :exec (fn []
-                      (when (> (.getZoomFactor frame) 0)
-                        (.setZoomFactor frame (- (.getZoomFactor frame) 0.2))))})
+                      (when (> (.get bridge/zoom) 0)
+                        (.set bridge/zoom (- (.get bridge/zoom) 0.2))))})
 
 (cmd/command {:command :window.zoom-reset
               :desc "Window: Zoom reset"
               :exec (fn []
-                      (.setZoomFactor frame default-zoom))})
+                      (.set bridge/zoom default-zoom))})
 
 (cmd/command {:command :window.fullscreen
               :desc "Window: Toggle fullscreen"
               :exec (fn []
-                      (window-call! :setFullScreen (not (:fullScreen (window-state)))))})
+                      (.setFullScreen bridge/window (not (:fullScreen (window-state)))))})
 
 (cmd/command {:command :window.minimize
               :desc "Window: Minimize"
               :exec (fn []
-                      (window-call! :minimize))})
+                      (.minimize bridge/window))})
 
 (cmd/command {:command :window.maximize
               :desc "Window: Maximize"
               :exec (fn []
-                      (window-call! :maximize))})
+                      (.maximize bridge/window))})
