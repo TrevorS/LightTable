@@ -2,13 +2,27 @@ name: build
 
 # Every push and every pull request, on Linux and macOS. The steps live in
 # app.yml so that a release runs the same ones.
+#
+# Run manually to keep the packaged applications as artifacts. That is how a
+# branch gets tried on a real machine without cutting a release: a tag is a
+# public, permanent claim about a version, and "does this run on your Mac"
+# should not need one.
 
 on:
   push:
     branches: ['**']
   pull_request:
   workflow_dispatch:
+    inputs:
+      upload:
+        description: Keep the packaged applications as downloadable artifacts.
+        type: boolean
+        default: true
 
 jobs:
   app:
     uses: ./.github/workflows/app.yml
+    with:
+      # Only ever true on a manual run: every push building an artifact would
+      # be gigabytes a week for builds nobody downloads.
+      upload: ${{ inputs.upload || false }}
