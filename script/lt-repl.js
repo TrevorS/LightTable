@@ -110,6 +110,19 @@ if (typeof window.LT === 'undefined') {
     },
     open: function (path) {
       return lt.objs.command.exec_BANG_(LT.kw('open-path'), path);
+    },
+    tabsets: function () { return cljs.core.vec(lt.object.by_tag(LT.kw('tabset'))); },
+    // Opening a file puts it in the active tabset, and opening one that is
+    // already open focuses it where it already is — so arranging a split
+    // means moving the tab, not opening it twice.
+    openIn: function (path, index) {
+      var ts = cljs.core.nth.call(null, LT.tabsets(), index);
+      LT.open(path);
+      return LT.sleep(1200).then(function () {
+        var ed = LT.editor(path);
+        if (ed && ts) { lt.objs.tabs.move_tab_to_tabset(ed, ts); }
+        return ed;
+      });
     }
   };
 }

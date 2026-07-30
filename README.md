@@ -142,6 +142,7 @@ Every evaluation gets an `LT` object holding the things that go wrong by hand:
 | `LT.watchErrors()` → `LT.errors` | what behaviors threw. `lt.object` catches exceptions inside reactions, so a behavior that throws is indistinguishable from one that decided not to act |
 | `LT.until(test, ms)`, `LT.sleep(ms)` | wait for a state rather than for a duration |
 | `LT.editor(path)`, `LT.get(obj, "ns/key")`, `LT.open(path)`, `LT.kw(name)` | the lookups every probe starts with |
+| `LT.openIn(path, n)`, `LT.tabsets()` | arrange a split. Opening a file puts it in the *active* tabset, and opening one that is already open focuses it where it already is — so a second pane is filled by moving a tab, not by opening one |
 
 `script/screenshot.sh <file>...` is the other one: it boots its own instance and
 writes a PNG per file, which is right for a fixed list and wrong for a window

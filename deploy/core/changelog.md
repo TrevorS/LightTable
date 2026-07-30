@@ -1,5 +1,23 @@
 #Changes
 
+## 0.10.0
+
+Syntax highlighting is now driven by a parser rather than a per-line
+tokenizer, and Light Table talks to language servers. Both are foundations
+rather than finished features: the highlighting is complete for the languages
+listed below, and the language server client renders diagnostics and nothing
+else yet.
+
+* ADDED: tree-sitter highlighting for 19 languages — C, C++, C#, CSS, Clojure, Go, HTML, Java, JavaScript, JSON, Lua, PHP, Python, Ruby, Rust, Scala, TOML, TypeScript/TSX and YAML. A parser knows a type from a value and a parameter from a local, which a per-line mode cannot, so declarations, parameters, types and documentation are distinguishable for the first time
+* ADDED: The capture names are the ones Helix, Neovim and Zed use, so a theme written for any of them is a stylesheet away. `deploy/core/css/treesitter.css` is the default one
+* ADDED: A Clojure grammar and highlight query, built and bundled here — `defn` names, docstrings, parameters, namespaced keywords and interop are each their own thing
+* ADDED: A Language Server Protocol client. Diagnostics appear inline, under the line they are about, using the same mechanism as inline eval results. TypeScript and TSX are configured; a project that has not installed a server is unaffected. See [doc/lsp-architecture.md](https://github.com/TrevorS/LightTable/blob/develop/doc/lsp-architecture.md)
+* ADDED: `script/lt-repl.sh shot` captures the running window, and evaluations get a small helper object — chiefly a way to replace a ClojureScript function without breaking its arity dispatch
+* CHANGED: The smoke test drives a language server end to end against a fixture that reports what it was told, so document synchronisation is checked rather than assumed. 72 checks, up from 64
+* FIXED: Project-wide search returned nothing at all and reported that it had searched `undefined` files — the package it called had no `result` callback. It has its own implementation now, and a smoke check
+* FIXED: Numbers were `#ccc` on `#ccc` in the default theme, and Rust threw while highlighting. Every mime in the table is now checked against the mode that claims it
+* FIXED: A namespace docstring is documentation rather than a string
+
 ## 0.9.0
 
 The development branch had stopped launching. This release is the work to get
