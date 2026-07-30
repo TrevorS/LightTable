@@ -10,7 +10,7 @@
 
 .DEFAULT_GOAL := run
 .PHONY: help deps build build-cljs build-main build-plugins run check test \
-        smoke lint typecheck repl clean dist screenshot
+        smoke lint typecheck docs repl clean dist screenshot
 
 help: ## Show this list
 	@grep -hE '^[a-z-]+:.*##' $(MAKEFILE_LIST) \
@@ -51,7 +51,8 @@ screenshot: ## Screenshot files in the editor — make screenshot FILES="a.ts b.
 
 ## ── Checking ──────────────────────────────────────────────────────────────
 
-check: lint typecheck ## Lint and type-check everything
+check: ## Lint, type-check, and confirm doc/api matches the source
+	npm run --silent check
 
 lint: ## clj-kondo over ClojureScript, eslint over JavaScript and TypeScript
 	npm run lint:cljs
@@ -65,6 +66,9 @@ test: ## Unit tests, under node
 
 smoke: ## Boot the real application and check it — needs a build first
 	script/smoke-test.sh
+
+docs: ## Regenerate doc/api from the source docstrings
+	npm run --silent docs:api
 
 ## ── Housekeeping ──────────────────────────────────────────────────────────
 

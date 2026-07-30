@@ -1,5 +1,6 @@
 ;; Build config for shadow-cljs, which builds everything Light Table ships.
-;; project.clj remains only for the codox API docs and builds nothing.
+;; It is the only Clojure build file here — there is no project.clj and no
+;; deps.edn.
 ;;
 ;; deploy/core/User/src is the default user plugin. It shipped as a compiled
 ;; artifact that nothing rebuilt, so it drifted from the editor around it — it

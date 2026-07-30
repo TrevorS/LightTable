@@ -44,7 +44,9 @@ jobs:
       # Everything that needs neither a display nor a build, first: a lint or
       # type error should not cost a ClojureScript compile to discover. Both
       # linters run in about two seconds.
-      - name: Lint and type-check
+      # Also confirms doc/api still matches the docstrings it was generated
+      # from: it is committed, so nothing else would notice it going stale.
+      - name: Lint, type-check, and check the generated API docs
         run: npm run check
 
       - name: Type-check and build the main process

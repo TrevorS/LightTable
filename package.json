@@ -26,6 +26,8 @@
     "lint:js": "eslint script src-electron src-window src-worker src-browser",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.window.json --noEmit && tsc -p tsconfig.worker.json --noEmit && tsc -p tsconfig.browser.json --noEmit && tsc -p plugins/TypeScript/tsconfig.json --noEmit",
     "test": "shadow-cljs compile test && node target/test.js",
-    "check": "npm run --silent lint:cljs && npm run --silent lint:js && npm run --silent typecheck"
+    "docs:api": "node script/gen-api-docs.js",
+    "docs:check": "node script/gen-api-docs.js --check",
+    "check": "npm run --silent lint:cljs && npm run --silent lint:js && npm run --silent typecheck && npm run --silent docs:check"
   }
 }

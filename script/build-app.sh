@@ -42,10 +42,21 @@ fi
 # Determine release name and output location
 #----------------------------------------------------------------------
 
-META=`head -n 1 project.clj`
-NAME=`echo $META | cut -d' ' -f2`
-DEFAULT_VERSION=`echo $META | cut -d' ' -f3 | tr -d '"'`
+# deploy/core/package.json is the app's own manifest — the one Electron reads
+# at startup — so the release is named from it rather than from a build file.
+# This used to parse project.clj's first line with `cut`, which stopped being a
+# defproject form and became a comment; the release then came out as
+# `Light-Table-mac`, with "Table" for a version, and nothing said so.
+META=deploy/core/package.json
+NAME=`node -p "require('./$META').name"`
+DEFAULT_VERSION=`node -p "require('./$META').version"`
 : ${VERSION:="$DEFAULT_VERSION"}
+
+# Anything unset here would silently produce a release called `-` or `-mac`.
+if [ -z "$NAME" ] || [ -z "$VERSION" ]; then
+  echo "Could not read name and version from $META." >&2
+  exit 1
+fi
 
 BUILDS=builds
 RELEASE="$NAME-$VERSION-$OS"
