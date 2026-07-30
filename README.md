@@ -93,8 +93,10 @@ extends. Nothing is cloned at build time, there is no binary in the tree, and
 the only thing downloaded is each plugin's own npm dependencies.
 
 Clojure evaluation needs [Leiningen](https://leiningen.org/#install) on your
-`PATH`. Light Table used to carry its own copy; that copy was from 2015 and
-does not start on a current JDK — see
+`PATH`. Light Table starts a `cider-nrepl` REPL in your project through it, the
+same way every other Clojure editor does. It used to carry its own copy of both
+Leiningen and the middleware; the first was from 2015 and does not start on a
+current JDK, and the second is a maintained library now — see
 [plugins/Clojure/VENDORED.md](plugins/Clojure/VENDORED.md).
 
 `plugins/TypeScript` is the worked example, and does something real: it finds

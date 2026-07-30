@@ -57,8 +57,16 @@ uberjar fetched from a pinned tag. It is gone, and the reason is worth reading:
 it did not run. `plugins/Clojure/VENDORED.md` has the whole account — the jar
 was Leiningen 2.5.2 packaged, it died on any JDK newer than 8, and it did not
 contain the Light Table middleware at all, fetching that from Clojars when a
-REPL started. The plugin uses the user's own Leiningen now and the middleware
-source is vendored.
+REPL started.
+
+That plugin is also the worked example of the other rule, which is **buy the
+intelligence and build the editor**. Its 1,192 lines of bespoke nREPL
+middleware — completion, documentation, stacktrace formatting — are
+`cider-nrepl` and `orchard` now, the same libraries every other Clojure editor
+uses. What was kept and rewritten rather than bought is the part nobody sells:
+a result beside each top-level form, and watches. Those come from the
+tree-sitter parse tree the editor already keeps, so they work whether or not a
+REPL is attached.
 
 ### Bringing a published plugin in
 

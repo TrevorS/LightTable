@@ -1,10 +1,45 @@
 (ns lt.plugins.clojure.nrepl
-  (:require [lt.object :as object]
-            [lt.objs.console :as console]
+  "Light Table's side of a Clojure nREPL connection.
+
+  **What this is now.** A translation layer, and deliberately nothing more:
+  standard nREPL and cider-nrepl operations go out, and what comes back is
+  turned into the events Light Table already renders — an inline result beside
+  a form, a printed line, an exception with a stacktrace.
+
+  It used to be the other half of a bespoke middleware, `lighttable.nrepl`,
+  vendored in this repository: 1,192 lines of Clojure that reimplemented
+  completion on clojure-complete from 2013, documentation lookup, stacktrace
+  formatting and a ClojureScript compiler driver, and served them over
+  operations only Light Table understood. All of that is somebody's maintained
+  library now — `cider-nrepl` and `orchard`, which CIDER, Calva, Conjure and
+  vim-iced all sit on — so none of it is ours to keep working.
+
+  What is worth keeping is the other end: results that appear *beside the form
+  they came from*, which is the thing Light Table is for and which no editor
+  bought this from. So the intelligence is bought and the presentation is not.
+
+  ## The shape of the translation
+
+  nREPL streams. One request produces `:out` and `:err` as they happen, then a
+  `:value` or an `:ex`, then `:status [\"done\"]`. Light Table's renderers want
+  one message per evaluation, so replies are accumulated per request id and
+  emitted when the request finishes.
+
+  ## Which operations
+
+  | Light Table wants | operation | comes from |
+  |---|---|---|
+  | evaluate a form | `eval` | nREPL |
+  | what it printed | `:out` / `:err` on that eval | nREPL |
+  | an exception, structured | `analyze-last-stacktrace` | orchard |
+  | documentation | `info` | orchard |
+  | completions | `complete` | compliment |
+  | stop it | `interrupt` | nREPL |"
+  (:require [clojure.string :as string]
+            [lt.object :as object]
             [lt.objs.clients :as clients]
-            [lt.objs.files :as files]
+            [lt.objs.console :as console]
             [lt.objs.notifos :as notifos]
-            [lt.util.cljs :refer [str-contains?]]
             [lt.util.load :refer [node-module]]
             [cljs.reader :as reader])
   (:require-macros [lt.macros :refer [behavior]]))
@@ -13,175 +48,408 @@
 (def Buffer (js/require "buffer"))
 (def net (js/require "net"))
 
-;; Forward references: this namespace is written in call order — see
-;; plugins/Clojure/VENDORED.md.
-(declare queue running? non-blocking-loop send send*)
+(declare send send*)
+
+;;*********************************************************
+;; The wire
+;;*********************************************************
 
 (defn encode [msg]
   (.encode bencode (clj->js msg)))
 
-(defn create-buffer [size]
-  (let [b (.-Buffer Buffer)]
-    (new b size)))
+(defn decode
+  "Every complete bencode message in the client's buffer, leaving the rest.
 
-(defn decode [client failed-recently?]
-  (let [buffer (:buffer @client)
-        msg @buffer
-        msgs (array)]
-    (loop [msg msg]
-      (if (<= (.-length msg) 0)
-        (reset! buffer nil)
-        ;; `recur` cannot cross a `try`, so the attempt yields the bytes still
-        ;; to decode — or nil when there are none, and when decoding threw —
-        ;; and the loop recurs outside it. Upstream recurred from inside the
-        ;; try, which the ClojureScript compiler now rejects.
-        (when-let [remaining
-                   (try
-                     (let [neue (js->clj (.decode bencode msg "utf-8") :keywordize-keys true)
-                           pos (.. bencode -decode -position)]
-                       (.push msgs neue)
-                       (if (and pos (>= pos (.-length msg)))
-                         (do (reset! buffer nil) nil)
-                         (.slice msg pos)))
-                     ;; js/global.Error upstream. The window has no `global`
-                     ;; under contextIsolation, so that catch never matched
-                     ;; anything it was meant to.
-                     (catch js/Error _e
-                       ;; stop trying for 50ms to avoid locking up the editor
-                       (reset! failed-recently? true)
-                       (reset! buffer msg)
-                       (js/setTimeout #(do (reset! failed-recently? false)
-                                           (decode client failed-recently?))
-                                      50)
-                       nil))]
-          (recur remaining))))
-    (set! queue (.concat queue msgs))
-    (when-not running?
-      (set! running? true)
-      (non-blocking-loop client))))
+  Returns a vector of messages. A partial message at the end of the buffer is
+  normal — a reply can straddle two reads — and is kept for the next one."
+  [client]
+  (let [buffer (:buffer @client)]
+    (loop [msg @buffer
+           out []]
+      (if (or (nil? msg) (<= (.-length msg) 0))
+        (do (reset! buffer nil) out)
+        (let [decoded (try
+                        (let [m (js->clj (.decode bencode msg "utf-8") :keywordize-keys true)
+                              pos (.. bencode -decode -position)]
+                          {:msg m :pos pos})
+                        ;; Incomplete rather than corrupt, almost always. Keep
+                        ;; the bytes and decode them when the rest arrives.
+                        (catch js/Error _e nil))]
+          (if-not decoded
+            (do (reset! buffer msg) out)
+            (let [{:keys [msg' pos]} {:msg' (:msg decoded) :pos (:pos decoded)}]
+              (if (and pos (< pos (.-length msg)))
+                (recur (.slice msg pos) (conj out msg'))
+                (do (reset! buffer nil) (conj out msg'))))))))))
 
-(defn maybe-decode [client failed-recently? data]
+(defn- deliver-messages!
+  "Hand `msgs` to the client one at a time, yielding between them.
+
+  A file evaluated form by form produces a reply per form, and doing all of
+  them in one turn is how the window stops repainting while a REPL is busy."
+  [client msgs]
+  (when (seq msgs)
+    (try
+      (object/raise client ::message (first msgs))
+      (catch :default e
+        (console/error e)))
+    ;; setTimeout rather than setImmediate: there is no `global` in the window
+    ;; and Chromium has no setImmediate either.
+    (js/setTimeout #(deliver-messages! client (rest msgs)) 0)))
+
+(defn maybe-decode [client data]
   (swap! (:buffer @client) #(if % (.Buffer.concat Buffer (array % data)) data))
-  (when-not @failed-recently?
-    (decode client failed-recently?)))
-
-(def queue (array))
-(def queue-index 0)
-(def running? false)
-
-(defn non-blocking-loop [client]
-  (when (> queue-index 20)
-    (.splice queue 0 queue-index)
-    (set! queue-index 0))
-  (try
-    (object/raise client ::message (aget queue queue-index))
-    (catch :default e
-      (console/error e)))
-  (if (>= queue-index (.-length queue))
-    (do
-      (set! running? false)
-      (set! queue-index 0)
-      (set! queue (array)))
-    ;; js/global.setImmediate upstream. There is no `global` in the window and
-    ;; no `setImmediate` in Chromium either, so this threw on the second
-    ;; message and the pump stopped — silently, because the caller is a socket
-    ;; callback. A zero timeout is the same yield.
-    (js/setTimeout (fn []
-                     (set! queue-index (inc queue-index))
-                     (non-blocking-loop client))
-                   0)))
+  (deliver-messages! client (decode client)))
 
 (defn connect-to [host port client]
-  (let [socket (.connect net port host)
-        failed-recently? (atom false)]
+  (let [socket (.connect net port host)]
     (.on socket "connect" #(when @client (object/raise client ::connect)))
     (.on socket "error" #(when @client (object/raise client ::connect-fail)))
-    (.on socket "data" #(when @client (maybe-decode client failed-recently? %)))
-    (.on socket "close" #(when @client
-                           (object/raise client :close!)))
+    (.on socket "data" #(when @client (maybe-decode client %)))
+    (.on socket "close" #(when @client (object/raise client :close!)))
     socket))
+
+;;*********************************************************
+;; Requests in flight
+;;*********************************************************
+
+(defn- pending
+  "The record kept for a request until nREPL says it is done."
+  [client id]
+  (get-in @client [::pending id]))
+
+(defn- track! [client id record]
+  (object/merge! client {::last-id id})
+  (object/update! client [::pending] assoc id record))
+
+(defn- last-record
+  "The most recently sent request, for replies that name none."
+  [client]
+  (or (get-in @client [::pending (::last-id @client)])
+      {:cb 0}))
+
+(defn- forget! [client id]
+  (object/update! client [::pending] dissoc id))
+
+(defn- accumulate
+  "Fold one nREPL reply into what has arrived for its request so far.
+
+  `:class`, `:message` and `:stacktrace` are orchard's, and they arrive in
+  their own reply *before* the `done` that ends the request — so they have to
+  be kept rather than read off whichever message happens to finish it."
+  [record {:keys [value out err ex root-ex ns status] :as msg}]
+  (cond-> record
+    value (update :values (fnil conj []) value)
+    ns (assoc :ns ns)
+    out (update :out (fnil str "") out)
+    err (update :err (fnil str "") err)
+    ex (assoc :ex ex :root-ex root-ex)
+    (:stacktrace msg) (assoc :class (:class msg)
+                             :message (:message msg)
+                             :stacktrace (:stacktrace msg))
+    (some #{"eval-error"} status) (assoc :errored? true)))
+
+(defn- done? [{:keys [status]}]
+  (boolean (some #{"done"} status)))
+
+;;*********************************************************
+;; Standard nREPL out, Light Table in
+;;*********************************************************
+
+(defn- eval-message
+  "One `eval` request for one form.
+
+  `:file`, `:line` and `:column` are what make a stacktrace point back at the
+  editor rather than at a generated form, and they cost nothing to send."
+  [{:keys [code ns path pos]}]
+  (cond-> {:op "eval" :code code}
+    ns (assoc :ns ns)
+    path (assoc :file path)
+    (:line pos) (assoc :line (inc (:line pos)))
+    (:ch pos) (assoc :column (inc (:ch pos)))))
+
+(defn- ->result
+  "One accumulated eval, as the map `:editor.eval.clj.result` renders.
+
+  `:results` is a vector because Light Table draws one result per form; each
+  carries the `:meta` that says which lines it belongs beside."
+  [{:keys [values ns meta] :as record}]
+  {:ns ns
+   :meta meta
+   :results [{:result (if (seq values)
+                        (string/join "\n" values)
+                        ;; A form that produced no value at all — an `ns` form
+                        ;; under some setups — still gets a result, because a
+                        ;; blank beside a line reads as "nothing happened".
+                        "nil")
+              :meta meta}]})
+
+(defn- ->exception
+  "One failed eval, as `:editor.eval.clj.exception` renders it.
+
+  `:stack` is filled in later by [[request-stacktrace!]] if the server can
+  analyse it; `:err` is what nREPL already printed, which is a good summary
+  and is always there."
+  [{:keys [ex err meta]}]
+  {:result (or (some-> err string/trim (string/split #"\n") first) ex)
+   :stack (or err ex)
+   :meta meta})
+
+(def watch-sentinel
+  "The marker a watch prints its value behind.
+
+  The other end of `lt.plugins.clojure/watch-src`. A watch used to be a
+  bespoke nREPL operation carried by Light Table's own middleware; it is a
+  tagged line on stdout now, so it needs nothing of the server and works
+  against any nREPL. This is where the tag is taken back off."
+  "LT-WATCH ")
+
+(defn split-watches
+  "Separate watch reports from ordinary printed output.
+
+  Returns `{:watches [{:meta :result}] :text \"…\"}`. A watch prints one line
+  and the rest of what a form printed is the user's, so both have to come out
+  of the same `:out` — and the user's has to be left exactly as it was, minus
+  the lines that were never theirs."
+  [out]
+  (let [lines (string/split out #"\n" -1)
+        watch? #(string/starts-with? % watch-sentinel)]
+    {:watches (keep (fn [line]
+                      (when (watch? line)
+                        (try
+                          (reader/read-string (subs line (count watch-sentinel)))
+                          ;; A watch whose value does not read back is a watch
+                          ;; on something unprintable. Dropping it is better
+                          ;; than taking the connection down.
+                          (catch :default _e nil))))
+                    lines)
+     :text (string/join "\n" (remove watch? lines))}))
+
+;;*********************************************************
+;; Sending
+;;*********************************************************
+
+(behavior ::nrepl-send!
+          :triggers #{:send!}
+          :desc "Clojure: send an operation to the REPL"
+          :reaction (fn [this msg]
+                      ;; `lt.objs.clients/->message` puts `(name command)` in
+                      ;; here, so what arrives is a string and not the keyword
+                      ;; the rest of the plugin deals in.
+                      (let [command (:command msg)
+                            data (:data msg)
+                            cb (or (:cb msg) 0)]
+                        (case command
+                          "editor.eval.clj"
+                          (doseq [[n form] (map-indexed vector (:forms data))]
+                            (let [id (str cb "-" n)]
+                              (track! this id {:command :editor.eval.clj
+                                               :cb cb
+                                               :meta (:meta form)
+                                               :origin (:origin data)})
+                              (send this (assoc (eval-message (assoc form :ns (:ns data) :path (:path data)))
+                                                :id id))))
+
+                          "editor.clj.doc"
+                          (let [id (str cb)]
+                            (track! this id {:command :editor.clj.doc :cb cb :meta (:meta data)})
+                            (send this {:op "info" :id id
+                                        :ns (or (:ns data) "user")
+                                        :sym (:sym data)}))
+
+                          "editor.clj.hints"
+                          (let [id (str cb)]
+                            (track! this id {:command :editor.clj.hints :cb cb})
+                            (send this {:op "complete" :id id
+                                        :ns (or (:ns data) "user")
+                                        :prefix (or (:prefix data) "")}))
+
+                          ;; Anything the plugin still asks for that has no
+                          ;; standard operation behind it. Saying so is better
+                          ;; than a request that never answers.
+                          (console/error
+                           (str "The Clojure REPL client has no nREPL operation for " command
+                                ". See plugins/Clojure/VENDORED.md."))))))
+
+(defn interrupt!
+  "Ask the server to stop what it is running."
+  [client]
+  (send client {:op "interrupt" :id (str "interrupt-" (rand-int 100000))}))
+
+;;*********************************************************
+;; Receiving
+;;*********************************************************
+
+(defn- request-stacktrace!
+  "Ask orchard to analyse the exception just thrown, and redraw with it.
+
+  A second round trip, and worth it: `:err` is a one-line summary and this is
+  the frame list, already classified into the user's code and everything
+  else. Light Table draws the whole thing in a widget that collapses."
+  [client id record]
+  (let [st-id (str id "-stacktrace")]
+    (track! client st-id (assoc record :command ::stacktrace))
+    (send client {:op "analyze-last-stacktrace" :id st-id})))
+
+(defn- frames->text
+  "orchard's frame list, as the block the exception widget shows."
+  [frames]
+  (string/join "\n"
+               (for [f frames]
+                 (str "  " (:file f) ":" (:line f) " " (:name f)))))
+
+(defn- finish!
+  "A request is done: turn what accumulated into what Light Table renders."
+  [client id {:keys [command cb meta errored?] :as record} msg]
+  (forget! client id)
+  (case command
+    :editor.eval.clj
+    (if errored?
+      ;; The exception is drawn now from what nREPL printed, and again with
+      ;; orchard's frames when they arrive. Drawing twice is deliberate: the
+      ;; first is instant and the second is better.
+      (do (object/raise clients/clients :message
+                        [cb :editor.eval.clj.exception (->exception record)])
+          (request-stacktrace! client id record))
+      (object/raise clients/clients :message
+                    [cb :editor.eval.clj.result (->result record)]))
+
+    ::stacktrace
+    (let [{:keys [class message stacktrace]} record]
+      (when (seq stacktrace)
+        (object/raise clients/clients :message
+                      [cb :editor.eval.clj.exception
+                       {:result (str class ": " message)
+                        :stack (str class ": " message "\n"
+                                    (frames->text stacktrace))
+                        :meta meta}])))
+
+    :editor.clj.doc
+    (object/raise clients/clients :message
+                  [cb :editor.clj.doc
+                   {:ns (:ns msg)
+                    :name (:name msg)
+                    :args (:arglists-str msg)
+                    :doc (:doc msg)
+                    :file (:file msg)
+                    :line (:line msg)
+                    :meta meta}])
+
+    :editor.clj.hints
+    (object/raise clients/clients :message
+                  [cb :editor.clj.hints.result
+                   (clj->js (for [c (:completions msg)]
+                              {:completion (:candidate c)}))])
+
+    nil))
+
+(behavior ::nrepl-message
+          :triggers #{::message}
+          :desc "Clojure: handle one nREPL reply"
+          :reaction (fn [this msg]
+                      (let [id (:id msg)
+                            status (set (:status msg))]
+                        (when (:new-session msg)
+                          (object/raise this :new-session (:new-session msg)))
+
+                        (when (status "interrupted")
+                          (notifos/done-working "Interrupted"))
+
+                        ;; Printed output is drawn as it arrives rather than
+                        ;; held until the form finishes. Watching a long
+                        ;; computation print is the point of an inline REPL.
+                        ;;
+                        ;; nREPL's out and err are written by the session's
+                        ;; writers, and a reply carrying them does not always
+                        ;; carry the id of the request that caused them — a
+                        ;; future that outlives an eval prints under no request
+                        ;; at all. So the last request to be sent stands in,
+                        ;; which is right for the common case and never drops
+                        ;; the line on the floor.
+                        (when-let [out (:out msg)]
+                          (let [record (or (pending this id) (last-record this))
+                                {:keys [watches text]} (split-watches out)]
+                            (doseq [w watches]
+                              (object/raise clients/clients :message
+                                            [(:cb record) :editor.eval.clj.watch w]))
+                            (when-not (string/blank? text)
+                              (object/raise clients/clients :message
+                                            [(:cb record) :editor.eval.clj.print {:out text}]))))
+                        (when-let [err (:err msg)]
+                          (let [record (or (pending this id) (last-record this))]
+                            (object/raise clients/clients :message
+                                          [(:cb record) :editor.eval.clj.print.err {:out err}])))
+
+                        (when-let [record (or (pending this id)
+                                              ;; An err with no id still belongs
+                                              ;; to the eval that is running,
+                                              ;; and its text is the readable
+                                              ;; half of the exception.
+                                              (when (or (:err msg) (:ex msg))
+                                                (last-record this)))]
+                          (let [record (accumulate record msg)
+                                id (or (when (pending this id) id) (::last-id @this))]
+                            (if (done? msg)
+                              (finish! this id record msg)
+                              (track! this id record)))))))
+
+;;*********************************************************
+;; Connecting
+;;*********************************************************
 
 (behavior ::nrepl-connect
           :triggers #{::connect}
           :reaction (fn [this]
-                      ;;clone a :session
-                      (object/merge! this {:buffer (atom nil)})
-                      (send* this {:op "clone"})
-                      ;;get client info
-                      ))
+                      (object/merge! this {:buffer (atom nil) ::pending {}})
+                      (send* this {:op "clone" :id "clone"})))
 
-(behavior ::init-remote-session
-          :triggers #{:new-session}
-          :reaction (fn [this session]
-                      (object/merge! this {:session session})
-                      (send this {:op "client.init"
-                                  :id (clients/->id this)
-                                  :data (pr-str {:settings {:name (:name @this)
-                                                            :remote true
-                                                            :client-id (clients/->id this)}})})))
+(defn- client-settings
+  "What Light Table records about a connection.
 
-(behavior ::client.settings.remote
-          :triggers #{:client.settings}
-          :reaction (fn [this info]
-                      (clients/handle-connection! info)
-                      (object/merge! this {:dir nil})))
-
-(behavior ::nrepl-send!
-          :triggers #{:send!}
-          :reaction (fn [this msg]
-                      (send this {:op (:command msg)
-                                  :id (or (:cb msg) 0)
-                                  :data (pr-str (:data msg))})
-                      ))
-
-(behavior ::client.settings
-          :triggers #{:client.settings}
-          :reaction (fn [this info]
-                      (clients/handle-connection! info)))
+  `:commands` is the list `lt.objs.clients` matches an editor's request
+  against, and it is now what this client can actually do rather than what a
+  bespoke server advertised."
+  [this]
+  {:name (:name @this)
+   :type "nrepl"
+   :dir (:dir @this)
+   :client-id (clients/->id this)
+   :commands [:editor.eval.clj
+              :editor.eval.clj.cancel
+              :editor.clj.doc
+              :editor.clj.hints]})
 
 (behavior ::init-session
           :triggers #{:new-session}
           :reaction (fn [this session]
                       (object/merge! this {:session session})
-                      (send this {:op "client.init"
-                                  :id (clients/->id this)
-                                  :data (pr-str {:settings {:client-id (clients/->id this)
-                                                            :dir (:dir @this)}})})))
+                      ;; There is no handshake to perform: a standard nREPL
+                      ;; has told us everything by answering `clone`. What
+                      ;; used to be a `client.init` round trip to a bespoke
+                      ;; server is now just Light Table recording what it has.
+                      (clients/handle-connection! (client-settings this))
+                      (notifos/done-working "Connected to the REPL")))
 
-
-(behavior ::nrepl-message
-          :triggers #{::message}
-          :reaction (fn [this msg]
-                      (let [op (:op msg)
-                            encoding (:encoding msg)
-                            info (when (:data msg)
-                                   (condp = encoding
-                                     "edn" (reader/read-string (:data msg))
-                                     "json" (js/JSON.parse (:data msg))
-                                     (reader/read-string (:data msg))))]
-
-                        (when (:new-session msg)
-                          (object/raise this :new-session (:new-session msg)))
-
-                        (when ((set (:status msg)) "interrupted")
-                          (notifos/done-working))
-
-                        (when op
-                          (if (str-contains? op "client.")
-                            (object/raise this (keyword op) info)
-                            (object/raise clients/clients :message [(:id msg) op info])
-                            )))))
+(behavior ::init-remote-session
+          :triggers #{:new-session}
+          :reaction (fn [this session]
+                      (object/merge! this {:session session})
+                      (clients/handle-connection! (assoc (client-settings this)
+                                                         :remote true
+                                                         :dir nil))))
 
 (behavior ::try-connect!
           :triggers #{:try-connect!}
-          :reaction (fn [this info]
+          :reaction (fn [this _info]
                       (when (:port @this)
                         (object/raise this :connect!))))
 
 (behavior ::connect!
           :triggers #{:connect!}
           :reaction (fn [this]
-                      (object/merge! this {:socket (connect-to (:host @this "localhost") (:port @this) this)})))
+                      (object/merge! this {:socket (connect-to (:host @this "localhost")
+                                                               (:port @this)
+                                                               this)})))
 
 (behavior ::close
           :triggers #{:close!}
@@ -189,10 +457,8 @@
                       (clients/rem! this)))
 
 (defn send* [client msg]
-  (let [c (encode msg)]
-    (.write (:socket @client) c)))
+  (.write (:socket @client) (encode msg)))
 
 (defn send [client msg]
-  (let [session (:session @client)
-        msg (merge (when session {:session session}) msg)]
-    (send* client msg)))
+  (let [session (:session @client)]
+    (send* client (merge (when session {:session session}) msg))))

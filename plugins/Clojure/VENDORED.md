@@ -57,64 +57,82 @@ suggests:
   dependency than the build-time one, and one that fails on an aeroplane.
 
 So there is no jar any more, and nothing is downloaded. Light Table starts a
-REPL through **the user's own Leiningen**, pointing it at the middleware
-sources vendored here:
+REPL through **the user's own Leiningen** — the same jack-in every other
+Clojure editor performs, which is why a project does not have to know anything
+about Light Table to be opened in it. `lt.plugins.clojure/lein-args` builds the
+command line, and **The middleware** below says what goes on it.
+
+Using the Leiningen the user already has means the REPL tracks their JDK and
+their project rather than a 2015 snapshot of both. The cost is that Leiningen
+has to be installed; the plugin says so, with a link, rather than failing
+silently the way the jar did.
+
+## The middleware: bought, not built
+
+`lein-light-nrepl/` is gone. It was 1,192 lines of Clojure that reimplemented
+completion on clojure-complete from 2013, documentation lookup, stacktrace
+formatting and a ClojureScript compiler driver, and served them over nREPL
+operations only Light Table understood.
+
+All of that is somebody's maintained library:
+
+| was ours | lines | is now |
+|---|---|---|
+| `auto_complete.clj` | 72 | **compliment**, through cider-nrepl's `complete` |
+| `doc.clj` | 142 | **orchard**, through `info` |
+| `exception.clj` | 22 | **orchard**, through `analyze-last-stacktrace` |
+| `cljs.clj` | 487 | nothing yet — see below |
+| `eval.clj` | 226 | nREPL's own `eval`, which takes `:file`, `:line` and `:column` |
+| `core.clj`, `handler.clj`, `fs.clj` | 241 | nREPL |
+
+The REPL is a plain cider-nrepl jack-in now:
 
 ```
-lein update-in :source-paths conj "<plugin>/lein-light-nrepl/src" -- \
-     update-in :dependencies conj '[org.clojure/data.json "2.5.1"]' -- \
-     ... -- \
-     update-in :repl-options:nrepl-middleware conj \
-         '"lighttable.nrepl.handler/lighttable-ops"' -- \
+lein update-in :dependencies conj '[nrepl/nrepl "1.7.0"]' -- \
+     update-in :plugins conj '[cider/cider-nrepl "0.62.2"]' -- \
      repl :headless
 ```
 
-`lt.plugins.clojure/lein-args` builds that. Using the Leiningen the user
-already has means it tracks their JDK and their project rather than a 2015
-snapshot of both, and it is what CIDER, Calva and Conjure all do. The cost is
-that Leiningen has to be installed; the plugin says so, with a link, rather
-than failing silently the way the jar did.
+Two versions in `lt.plugins.clojure` and nothing else. cider-nrepl injects its
+own middleware list as a Leiningen plugin, so Light Table does not have to know
+what that list is or keep up with it.
 
-The Clojars copy of `lein-light-nrepl` 0.3.3 is byte-identical to what is
-vendored here, so nothing was lost by no longer fetching it.
-`lein-light-nrepl-instarepl` is dropped — it is one file backing the instarepl,
-which is a separate feature and was never vendored.
+**This is strictly better than what it replaced**, not merely cheaper to own.
+The stacktrace is orchard's structured frame list rather than a formatted
+string, and because `:file`, `:line` and `:column` go out with every form, the
+frames name the file in the editor at the line in the editor. Completion is
+compliment, which understands locals and context. `info` returns the defining
+file and line, which is jump-to-definition for free the moment there is
+somewhere to put it.
 
-## The middleware, ported
+## What stayed Light Table's
 
-`lein-light-nrepl/` is a decade newer than it was. It had to be: the nREPL it
-was written against no longer exists under that name.
+Buying the intelligence is not the same as buying the editor. Two things were
+built here, and they are the reason this feels like Light Table rather than
+like a REPL in a pane.
 
-| | was | now |
-|---|---|---|
-| nREPL | `org.clojure/tools.nrepl` 0.2.10 | `nrepl/nrepl` 1.x |
-| Clojure | 1.7.0 | 1.12.3 |
-| ClojureScript | 0.0-3308 | 1.12.42 |
-| reader, json, complete, commons-io | 2013-2015 | current |
+**A result beside each form.** `lt.plugins.clojure/forms-in` splits the buffer
+into top-level forms and evaluates each on its own, so every form gets its own
+inline result at its own line. That used to be the middleware's job — which
+meant inline results needed a bespoke server per language, only worked with a
+REPL attached, and only after a round trip. It is `lt.objs.editor.treesitter/
+top-level-forms` now: the parse tree is already there, already current on every
+keystroke, and knows where the forms are whether or not anything is connected.
+`form-at` does the same for evaluating the form under the cursor.
 
-The only part that was more than a rename is `lighttable.nrepl.core/queued`.
-It reached into two **private** vars — `queue-eval` and `configure-executor` —
-to put Light Table's operations on the same serialised queue as `eval`. Neither
-exists in nrepl 1.x: a session owns a thread and publishes `:exec` in its own
-metadata, which is public and does more, so `queued` came out shorter than it
-went in. It calls the three-argument form, because Leiningen still ships nREPL
-1.0 and the fourth argument arrived in 1.1.
+**Watches.** `lighttable.nrepl.eval/watch` sent values back over a bespoke
+operation. A watch now wraps the expression so it prints one tagged line, and
+`lt.plugins.clojure.nrepl/split-watches` takes the tag off the `:out` the
+client is already receiving. No server-side code at all, so watches work
+against any nREPL — cider-nrepl or otherwise.
 
-The 487 lines driving the ClojureScript compiler needed nothing at all, which
-was the outcome I would have bet against.
+## What is not wired up yet
 
-**Verified** on JDK 26 against a real project: evaluation returning a value,
-`println` streaming to the inline result, an exception with a stacktrace,
-`editor.clj.doc`, and `editor.clj.hints` returning 59kB of completions — first
-by driving the wire protocol directly, then through Light Table itself.
-
-**Still to answer:** whether this middleware should exist at all.
-`cider-nrepl` and `orchard` are what every other editor uses, are maintained,
-and do all of this better — `compliment` for completion rather than
-clojure-complete from 2013, orchard for docs, piggieback or shadow-cljs for
-ClojureScript rather than 487 lines driving the compiler by hand. Adopting them
-would delete most of `lein-light-nrepl/` and rewrite the plugin's client half,
-which is a bigger job than this one and a separate decision.
+| | |
+|---|---|
+| ClojureScript evaluation | `cljs.clj` drove the compiler by hand. The bought answer is **piggieback** or shadow-cljs's own nREPL, and neither is wired. `:editor.eval.cljs` against a browser client is unaffected — that path never went through this middleware. |
+| the instarepl | `lein-light-nrepl-instarepl`, one file, fetched from Clojars at runtime. Not vendored and not replaced. |
+| jump to definition | `info` already returns `:file` and `:line`; nothing consumes them yet. |
 
 ## Changes to the source
 

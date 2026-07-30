@@ -8,6 +8,7 @@
             [lt.objs.console :as console]
             [lt.objs.editor :as ed]
             [lt.objs.editor.pool :as pool]
+            [lt.objs.editor.treesitter :as treesitter]
             [lt.objs.jump-stack :as jump-stack]
             [lt.objs.popup :as popup]
             [lt.objs.platform :as platform]
@@ -35,14 +36,16 @@
 ;; something to read.
 (def local-project-clj (files/join plugins/*plugin-dir* "local-project/project.clj"))
 
-;; The nREPL middleware, as source. Leiningen is pointed at this directory and
-;; puts it on the REPL's source path — see [[lein-args]].
+;; What the REPL loads so Light Table can ask it things. Bought, not built:
+;; cider-nrepl is what CIDER, Calva, Conjure and vim-iced all sit on, it is
+;; maintained, and it does more than the 1,192 lines of bespoke middleware this
+;; plugin used to vendor ever did. plugins/Clojure/VENDORED.md has that story.
 ;;
-;; This used to be `runner/target/lein-light-standalone.jar`, a 15MB uberjar
-;; that was Leiningen 2.5.2 packaged, downloaded at build time, and which
-;; contained none of the code below: it pulled the middleware off Clojars when
-;; a REPL started. plugins/Clojure/VENDORED.md has the whole story.
-(def middleware-src (files/join plugins/*plugin-dir* "lein-light-nrepl/src"))
+;; As a Leiningen plugin rather than a dependency, which is how cider-nrepl
+;; asks to be used: it injects its own middleware list, so nothing here has to
+;; know what that list is or keep up with it.
+(def cider-nrepl-version "0.62.2")
+(def nrepl-version "1.7.0")
 
 ;; Forward references. This namespace is written in call order rather than
 ;; definition order throughout, which the ClojureScript compiler reports as an
@@ -84,13 +87,51 @@
       (or (clients/by-name local-name)
           (run-local-server (clients/client! :nrepl.client))))))
 
+(defn ->form
+  "One top-level form, as the evaluator and the renderers both want it.
+
+  `:meta` is 1-based, because that is what `::clj-result.inline` and the rest
+  subtract from to find the line to draw beside."
+  [editor {:keys [start end]}]
+  {:code (ed/range editor start end)
+   :pos start
+   :meta {:line (inc (:line start))
+          :end-line (inc (:line end))
+          :end-column (:ch end)}})
+
+(defn forms-in
+  "The top-level forms of `editor`, from its parse tree.
+
+  This is the whole reason a result can sit beside the form that produced it
+  rather than one result arriving for a file. It used to be answered by Light
+  Table's own nREPL middleware, which meant inline results needed a bespoke
+  server per language and a round trip before the editor knew where anything
+  was. tree-sitter already parses this buffer on every keystroke and knows.
+
+  Nil when there is no parse tree — a grammar that has not loaded, or a
+  language without one — and the caller falls back to the whole region rather
+  than guessing."
+  [editor]
+  (when-let [forms (seq (treesitter/top-level-forms editor))]
+    (mapv #(->form editor %) forms)))
+
+(defn whole-region
+  "The editor's text as a single form, for when there is no parse tree."
+  [editor]
+  [{:code (ed/->val editor)
+    :pos {:line 0 :ch 0}
+    :meta {:line 1
+           :end-line (inc (ed/last-line editor))
+           :end-column 0}}])
+
 (behavior ::on-eval.clj
           :triggers #{:eval}
           :reaction (fn [editor]
                       (object/raise clj-lang :eval! {:origin editor
                                                      :info (assoc (@editor :info)
                                                              :print-length (object/raise-reduce editor :clojure.print-length+ nil)
-                                                             :code (watches/watched-range editor nil nil nil))})))
+                                                             :forms (or (forms-in editor)
+                                                                        (whole-region editor)))})))
 (behavior ::on-eval.cljs
           :triggers #{:eval}
           :reaction (fn [editor]
@@ -106,18 +147,29 @@
 (behavior ::on-eval.one
           :triggers #{:eval.one}
           :reaction (fn [editor]
-                      (let [code (watches/watched-range editor nil nil nil)
-                            pos (ed/->cursor editor)
+                      (let [pos (ed/->cursor editor)
                             info (:info @editor)
-                            info (if (ed/selection? editor)
-                                   (assoc info
-                                     :code (ed/selection editor)
-                                     :meta {:start (-> (ed/->cursor editor "start") :line)
-                                            :end (-> (ed/->cursor editor "end") :line)})
-                                   (assoc info :pos pos :code code))
-                            info (assoc info :print-length (object/raise-reduce editor :clojure.print-length+ nil))]
-                        (object/raise clj-lang :eval! {:origin editor
-                                                       :info info}))))
+                            forms (if (ed/selection? editor)
+                                    (let [start (ed/->cursor editor "start")
+                                          end (ed/->cursor editor "end")]
+                                      [{:code (ed/selection editor)
+                                        :pos start
+                                        :meta {:line (inc (:line start))
+                                               :end-line (inc (:line end))
+                                               :end-column (:ch end)}}])
+                                    ;; The form the cursor is in, from the parse
+                                    ;; tree. Nothing is evaluated when the cursor
+                                    ;; is between forms, which is the honest
+                                    ;; answer — the old middleware guessed at the
+                                    ;; nearest one.
+                                    (when-let [form (treesitter/form-at editor pos)]
+                                      [(->form editor form)]))
+                            info (assoc info
+                                        :forms forms
+                                        :print-length (object/raise-reduce editor :clojure.print-length+ nil))]
+                        (if (seq forms)
+                          (object/raise clj-lang :eval! {:origin editor :info info})
+                          (notifos/set-msg! "No form under the cursor")))))
 
 
 (defn fill-placeholders [editor exp]
@@ -544,10 +596,32 @@
                       (let [meta (assoc meta :ev :editor.eval.cljs.watch)]
                         (str "(js/lttools.watch " src " (clj->js " (pr-str meta) "))"))))
 
+(def watch-sentinel
+  "The marker a watch prints its value behind.
+
+  Watches are Light Table's, and they survived losing the middleware that used
+  to carry them. `lighttable.nrepl.eval/watch` sent the value back over a
+  bespoke nREPL operation; there is no such operation on a standard server and
+  none is needed — the watch prints one tagged line and the client picks it out
+  of the `:out` it is already receiving. No server-side code at all, so this
+  works against any nREPL, cider-nrepl or otherwise.
+
+  A control character rather than a word, because the marker has to be
+  something a program would not print by accident."
+  "\u0001LT-WATCH ")
+
+(defn watch-src
+  "`src`, wrapped so that evaluating it also reports its value to the editor."
+  [src meta]
+  (str "(let [v# " src "]"
+       " (println (str " (pr-str watch-sentinel)
+       " (pr-str {:meta " (pr-str meta) " :result (pr-str v#)})))"
+       " v#)"))
+
 (behavior ::clj-watch-src
           :triggers #{:watch.src+}
           :reaction (fn [editor cur meta src]
-                      (str "(lighttable.nrepl.eval/watch " src " " (pr-str meta) ")")))
+                      (watch-src src meta)))
 
 (defn fill-watch-placeholders [exp src meta watch]
   (-> exp
@@ -569,7 +643,9 @@
                       (let [wrapped (if (:verbatim opts)
                                       "$1"
                                       "(pr-str $1)")
-                            watch (str "(lighttable.nrepl.core/safe-respond-to " (:obj meta) " :editor.eval.clj.watch {:meta " (pr-str (merge (dissoc opts :exp) meta)) " :result " wrapped "})")]
+                            watch (str "(println (str " (pr-str watch-sentinel)
+                                       " (pr-str {:meta " (pr-str (merge (dissoc opts :exp) meta))
+                                       " :result " wrapped "})))")]
                         (fill-watch-placeholders (:exp opts) src meta watch))))
 
 (behavior ::cljs-watch-result
@@ -601,6 +677,16 @@
 ;; doc
 ;;****************************************************
 
+(defn buffer-ns
+  "The namespace this buffer declares, or nil.
+
+  `info` and `complete` resolve a symbol relative to a namespace, and the
+  buffer says which one in its first form. Read here rather than asked of the
+  server, because the file on disk and the buffer disagree constantly and it is
+  the buffer the cursor is in."
+  [editor]
+  (second (re-find #"\(ns\s+([\w\.\-\*\+\!\?<>=]+)" (ed/->val editor))))
+
 (behavior ::clj-doc
           :triggers #{:editor.doc}
           :reaction (fn [editor]
@@ -610,8 +696,8 @@
                                    :result-type :doc
                                    :loc (:loc token)
                                    :sym (:string token)
-                                   :print-length (object/raise-reduce editor :clojure.print-length+ nil)
-                                   :code (watches/watched-range editor nil nil nil))]
+                                   :ns (buffer-ns editor)
+                                   :print-length (object/raise-reduce editor :clojure.print-length+ nil))]
                         (when token
                           (clients/send (eval/get-client! {:command command
                                                            :info info
@@ -649,8 +735,8 @@
                                    :result-type :doc
                                    :loc (:loc token)
                                    :sym (:string token)
-                                   :print-length (object/raise-reduce editor :clojure.print-length+ nil)
-                                   :code (watches/watched-range editor nil nil nil))]
+                                   :ns (buffer-ns editor)
+                                   :print-length (object/raise-reduce editor :clojure.print-length+ nil))]
                         (when token
                           (clients/send (eval/get-client! {:command command
                                                            :info info
@@ -809,42 +895,21 @@
 ;; command line assembled as a string. Nothing assembles one now — proc/exec
 ;; takes an argument vector and no shell sees it.
 
-(def middleware-dependencies
-  "What `lighttable.nrepl` needs on the REPL's classpath.
-
-  Kept in step with lein-light-nrepl/project.clj. nREPL itself is not here:
-  the REPL Leiningen is starting already has one, and two on a classpath is
-  the kind of problem that presents as a session that will not clone."
-  ["[org.clojure/data.json \"2.5.1\"]"
-   "[org.clojure/tools.reader \"1.5.2\"]"
-   "[clj-stacktrace \"0.2.8\"]"
-   "[commons-io/commons-io \"2.20.0\"]"
-   "[clojure-complete \"0.2.5\"]"
-   ;; lighttable.nrepl.cljs drives the ClojureScript compiler directly and the
-   ;; handler requires that namespace, so without this nothing loads at all —
-   ;; not even Clojure evaluation. A project with its own ClojureScript wins on
-   ;; Leiningen's normal resolution.
-   "[org.clojure/clojurescript \"1.12.42\"]"])
-
 (defn lein-args
   "The `lein` command line that starts a headless nREPL Light Table can talk to.
 
   Leiningen's `update-in` task edits the project map before the next task
-  runs, and `--` separates one from the next. So this adds the middleware's
-  sources and dependencies to the project, names the middleware, and then
-  starts the REPL — without the project having to know anything about Light
-  Table.
+  runs, and `--` separates one from the next. This is the same jack-in every
+  other Clojure editor performs, and deliberately so — a project does not have
+  to know anything about Light Table to be opened in it.
 
-  Each value is read by the Clojure reader, which is why a path arrives as a
-  quoted string rather than bare. Nothing here goes through a shell, so the
-  quotes have to be in the argument itself."
-  [middleware-src]
-  (concat ["update-in" ":source-paths" "conj" (pr-str middleware-src) "--"]
-          (mapcat (fn [dep] ["update-in" ":dependencies" "conj" dep "--"])
-                  middleware-dependencies)
-          ["update-in" ":repl-options:nrepl-middleware" "conj"
-           (pr-str "lighttable.nrepl.handler/lighttable-ops") "--"
-           "repl" ":headless"]))
+  Each value is read by the Clojure reader, which is why the coordinates
+  arrive with their brackets. Nothing goes through a shell, so the quoting has
+  to be in the argument itself."
+  []
+  ["update-in" ":dependencies" "conj" (str "[nrepl/nrepl \"" nrepl-version "\"]") "--"
+   "update-in" ":plugins" "conj" (str "[cider/cider-nrepl \"" cider-nrepl-version "\"]") "--"
+   "repl" ":headless"])
 
 (defn run-lein
   "Start the REPL for this project, through the user's own Leiningen.
@@ -859,7 +924,7 @@
   ;; always arrived undefined, and nothing reads `:notifier` back out. nil says
   ;; so rather than relying on an undefined property lookup.
   (let [obj (object/create ::connecting-notifier nil (clients/->id client))
-        args (vec (lein-args middleware-src))]
+        args (vec (lein-args))]
     (notifos/working "Connecting..")
     ;; console/core-log is a path in this fork, not a write stream — see
     ;; lt.objs.console. Calling .write on it threw, and two of the three call
@@ -870,7 +935,10 @@
                 :args args
                 :cwd project-path
                 :obj obj})
-    (object/merge! client {:dir project-path :name name})
+    ;; A project client had no name, so the Connect bar showed "null". The
+    ;; directory it is rooted at is what a user would call it.
+    (object/merge! client {:dir project-path
+                           :name (or name (last (string/split project-path #"/")))})
     (object/raise client :try-connect!)))
 
 (defn run-local-server [client]
@@ -882,16 +950,13 @@
   (assoc obj :lein (or (:lein-exe @clj-lang)
                        (.which shell "lein"))))
 
-(defn check-middleware [obj]
-  (assoc obj :middleware (files/exists? middleware-src)))
-
 (defn find-project [obj]
   (if-let [path (files/walk-up-find (:path obj) "project.clj")]
     (assoc obj :project-path (files/parent path))
     (assoc obj :project-path nil)))
 
 (defn notify [obj]
-  (let [{:keys [lein project-path path middleware]} obj]
+  (let [{:keys [lein project-path path]} obj]
     (cond
      (or (not lein) (empty? lein))
      (popup/popup! {:header "We couldn't find Leiningen."
@@ -900,10 +965,6 @@
                                :action (fn []
                                          (platform/open "https://leiningen.org/#install"))}
                               {:label "ok"}]})
-
-     (not middleware)
-     (console/error (str "The Light Table nREPL middleware is missing at " middleware-src
-                         ". This plugin is built from source; reinstall or rebuild it."))
 
      (not project-path)
      (console/error (str "Couldn't find a project.clj in any parent of " path))
@@ -914,7 +975,6 @@
 (defn check-all [obj]
   (-> obj
       (check-lein)
-      (check-middleware)
       (find-project)
       (notify))
   (:client obj))

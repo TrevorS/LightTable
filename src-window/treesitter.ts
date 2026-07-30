@@ -41,6 +41,16 @@ export interface Span {
     style: string;
 }
 
+/** One top-level form, in editor coordinates. */
+export interface FormRange {
+    startLine: number;
+    startCh: number;
+    endLine: number;
+    endCh: number;
+    /** The grammar's name for the node — `list_lit`, `comment`, and so on. */
+    type: string;
+}
+
 /** Reads a file as bytes. Supplied by the caller so this module needs no bridge. */
 export type ByteReader = (path: string) => Uint8Array;
 
@@ -262,6 +272,34 @@ export class Highlighter {
 
     spansForLine(line: number): Span[] | undefined {
         return this.spans.get(line);
+    }
+
+    /**
+     * The top-level forms of the document, in order, as editor positions.
+     *
+     * This is what makes a result appear beside each form rather than one
+     * result for a whole file. Light Table used to ask its nREPL middleware
+     * where the forms were, which meant only a language with a bespoke server
+     * could have inline results and only when a REPL was running. The parse
+     * tree is already here, already current on every keystroke, and knows.
+     *
+     * Named children only: a comment between two forms is a child of the root
+     * but is not something to evaluate.
+     */
+    topLevelForms(): FormRange[] {
+        if (!this.tree) return [];
+        const out: FormRange[] = [];
+        for (const node of this.tree.rootNode.namedChildren) {
+            if (!node) continue;
+            out.push({
+                startLine: node.startPosition.row,
+                startCh: node.startPosition.column,
+                endLine: node.endPosition.row,
+                endCh: node.endPosition.column,
+                type: node.type
+            });
+        }
+        return out;
     }
 
     dispose(): void {

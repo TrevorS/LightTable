@@ -254,6 +254,42 @@
                         (object/merge! this {::highlighter nil}))))
 
 ;;*********************************************************
+;; The parse tree, for things other than colour
+;;*********************************************************
+
+(defn top-level-forms
+  "The top-level forms of `ed`, in order, as `{:start {:line :ch} :end {…}}`.
+
+  Nil when this editor has no grammar or has not parsed yet, which is a real
+  answer and not a failure — a caller wanting to evaluate form by form should
+  fall back to the whole region rather than guess where the forms are.
+
+  Highlighting is what a parse tree gets used for first, and it is not what a
+  parse tree is *for*. This is the second use: it is how a result can appear
+  beside each form rather than one result for a whole file, which is the thing
+  Light Table exists to do. That used to be answered by a language's own nREPL
+  middleware, so it worked for one language, only with a REPL attached, and
+  only after the round trip. Here it is a property of the buffer."
+  [ed]
+  (when-let [^js hl (::highlighter @ed)]
+    (when-let [forms (.topLevelForms hl)]
+      (vec (for [^js f forms]
+             {:start {:line (.-startLine f) :ch (.-startCh f)}
+              :end {:line (.-endLine f) :ch (.-endCh f)}
+              :type (.-type f)})))))
+
+(defn form-at
+  "The top-level form of `ed` containing `loc`, or nil.
+
+  `loc` is `{:line :ch}`. A cursor resting after the last form — on a blank
+  line at the end of a file — is inside none of them, and nil says so."
+  [ed loc]
+  (let [line (:line loc)]
+    (first (filter (fn [{:keys [start end]}]
+                     (and (<= (:line start) line) (<= line (:line end))))
+                   (top-level-forms ed)))))
+
+;;*********************************************************
 ;; Commands
 ;;*********************************************************
 
