@@ -1,0 +1,19 @@
+[
+ ;; Upstream shipped codemirror/htmlmixed.js and htmlembedded.js and loaded
+ ;; them ahead of the plugin. Core bundles current ones now — see
+ ;; plugins/HTML/VENDORED.md.
+ [:app :lt.objs.plugins/load-js "html_compiled.js"]
+ [:app :lt.objs.editor/load-addon "edit/closetag.js"]
+ [:app :lt.objs.editor/load-addon "edit/matchtags.js"]
+ [:app :lt.objs.plugins/load-keymap "html.keymap"]
+
+ [:editor.html :lt.plugins.html/eval-on-save]
+ [:editor.html :lt.plugins.html/on-eval]
+ ;; Apply globally because any xml-based inner mode benefits from this
+ [:editor :lt.objs.editor/set-codemirror-flags {:autoCloseTags true
+                                                :matchTags #js {:bothTags true}}]
+
+ [:files :lt.objs.files/file-types [{:exts [:html :htm :shtml], :mime "htmlmixed", :tags [:editor.html], :name "HTML"}]]
+
+ [:html.lang :lt.plugins.html/eval!]
+]

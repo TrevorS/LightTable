@@ -1,0 +1,15 @@
+{:name "Python"
+ :version "0.0.7"
+ :author "Kodowa"
+ :source "https://github.com/LightTable/Python"
+ :desc "Python language plugin for Light Table"
+ :behaviors "python.behaviors"
+
+ ;; What this plugin needs, declared rather than discovered — see
+ ;; plugins/README.md.
+ ;;
+ ;; :processes  runs python for the client in py-src/
+ ;; :files      resolves py-src/ beside itself, and finds the interpreter
+ ;; :network    speaks to that client over tcp
+ ;; :desktop    opens the pyzmq and ipython install pages when they are missing
+ :capabilities #{:processes :files :network :desktop}}

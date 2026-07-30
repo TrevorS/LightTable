@@ -9,7 +9,8 @@
 ;; discovers at startup.
 {:source-paths ["src" "src-gen" "test" "deploy/core/User/src"
                 "plugins/Paredit/src" "plugins/Clojure/src"
-                "plugins/Javascript/src"]
+                "plugins/Javascript/src" "plugins/CSS/src" "plugins/HTML/src"
+                "plugins/Python/src"]
 
  :dependencies []
 
@@ -34,7 +35,10 @@
                                    lt.plugins.clojure.collapsible-exception]
                          :depends-on #{:bootstrap}}
              :javascript {:entries [lt.plugins.js lt.plugins.js.node]
-                          :depends-on #{:bootstrap}}}
+                          :depends-on #{:bootstrap}}
+             :css        {:entries [lt.plugins.css] :depends-on #{:bootstrap}}
+             :html       {:entries [lt.plugins.html] :depends-on #{:bootstrap}}
+             :python     {:entries [lt.plugins.python] :depends-on #{:bootstrap}}}
 
    ;; npm packages are bundled rather than required at runtime. The window is
    ;; losing `require` when contextIsolation goes on, so anything it needs has

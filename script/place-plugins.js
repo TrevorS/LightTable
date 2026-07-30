@@ -34,7 +34,10 @@ const DEST = path.join(ROOT, 'deploy', 'plugins');
 const CLJS_PLUGINS = {
     Paredit: { module: 'paredit.js', as: 'paredit_compiled.js' },
     Clojure: { module: 'clojure.js', as: 'clojure_compiled.js' },
-    Javascript: { module: 'javascript.js', as: 'javascript_compiled.js' }
+    Javascript: { module: 'javascript.js', as: 'javascript_compiled.js' },
+    CSS: { module: 'css.js', as: 'css_compiled.js' },
+    HTML: { module: 'html.js', as: 'html_compiled.js' },
+    Python: { module: 'python.js', as: 'python_compiled.js' }
 };
 
 function main() {

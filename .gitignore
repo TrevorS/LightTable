@@ -18,6 +18,9 @@
 /deploy/core/lighttable/paredit.js
 /deploy/core/lighttable/clojure.js
 /deploy/core/lighttable/javascript.js
+/deploy/core/lighttable/css.js
+/deploy/core/lighttable/html.js
+/deploy/core/lighttable/python.js
 .DS_Store
 .lein-deps-sum
 .lein-env

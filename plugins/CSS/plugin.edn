@@ -1,0 +1,13 @@
+{:name "CSS"
+ :version "0.0.6"
+ :author "Kodowa"
+ :source "https://github.com/LightTable/CSS"
+ :desc "CSS/SCSS language plugin for Light Table"
+ :behaviors "css.behaviors"
+
+ ;; What this plugin needs, declared rather than discovered — see
+ ;; plugins/README.md.
+ ;;
+ ;; :files    reads a stylesheet to rewrite its relative urls
+ ;; :network  pushes the result to a connected browser
+ :capabilities #{:files :network}}

@@ -1,0 +1,13 @@
+{:name "HTML"
+ :version "0.1.0"
+ :author "Kodowa"
+ :source "https://github.com/LightTable/HTML"
+ :desc "HTML language plugin for Light Table"
+ :behaviors "html.behaviors"
+
+ ;; What this plugin needs, declared rather than discovered — see
+ ;; plugins/README.md.
+ ;;
+ ;; :files    reads the page it evaluates
+ ;; :network  pushes the result to a connected browser
+ :capabilities #{:files :network}}
