@@ -1,12 +1,15 @@
 # The road to context isolation
 
-Scouted, measured, and mostly built. Light Table's own code is done; what is
-left is the build change bundling stays blocked on, and the plugin ecosystem.
+**Done.** Light Table runs with `nodeIntegration: false` and
+`contextIsolation: true`. The window has no `require`, no `process`, no
+`__dirname` and no `module` of Node's. Every filesystem call, process, socket,
+download and archive goes through the named capability list in
+`src-electron/preload.ts`, and plugins reach Node through a `require` that is
+Light Table's rather than Node's.
 
-Light Table still runs with `nodeIntegration: true` and
-`contextIsolation: false`, so `require` is still in the window — but nothing of
-Light Table's own uses it any more. Every filesystem call, process, socket and
-download goes through the named capability list in `src-electron/preload.ts`.
+This document is the record of how, kept because the reasoning is worth more
+than the outcome — particularly the measurement in the next section, which is
+what made the cheap route possible.
 
 ## The measurement that decides the design
 
@@ -42,13 +45,19 @@ in the preload, and what crosses is a set of functions over it. Verified:
 - A real child process was spawned, its stdout streamed into the window through
   a callback, and its exit code delivered.
 
-## Target configuration
+## The configuration, as shipped
+
+In `deploy/core/package.json`:
 
 ```
 nodeIntegration:  false     the window has no require
 contextIsolation: true      window and preload are separate worlds
 sandbox:          false     the preload keeps Node, so capabilities are cheap
 ```
+
+`sandbox: false` is not a leftover. Electron sandboxes renderers by default,
+and a sandboxed preload has no Node either — which would push every filesystem
+call into the 118x column below and force a redesign this configuration avoids.
 
 This is not the strongest possible configuration — `sandbox: true` would remove
 Node from the preload as well, forcing everything through ipc and back into the
@@ -67,13 +76,14 @@ run.
 | `lt.objs.files` | 32 | One for one, and still synchronous. |
 | `lt.objs.workspace` | 8 | Watching became a handle. |
 | `lt.objs.console` | 2 | The log stream became a path and an append. |
-| `lt.objs.deploy` | 11 | One capability: download a file. |
+| `lt.objs.deploy` | 12 | Two capabilities: download a file, extract an archive. |
 | `lt.objs.proc` | 3 | Handles carrying stdout, stderr, exit and error. |
 | `lt.objs.thread` | 2 | A fork handle with send and onMessage. |
 | `lt.objs.clients.tcp` | 2 | The server moved whole; connections are numbers. |
 | `lt.objs.clients.ws` | 8 | The socket.io server moved whole. |
 
-**There is no `js/require`, `js/process` or `js/__dirname` left in the window.**
+**There is no `js/require`, `js/process` or `js/__dirname` left in the window**
+— and since the flip, no Node behind those names to reach even if there were.
 `process.nextTick` became `queueMicrotask`, which is the web equivalent; `env`,
 `execPath` and `versions` are host capabilities.
 
@@ -98,75 +108,150 @@ round. They all match now.
 
 ### Two things not in that table
 
-**Local JavaScript requires.** `lt.objs.editor` loads CodeMirror's fold addons
-by path, and several namespaces require files under `deploy/core`. Those use the
-same `require` the window is about to lose. The answer is not a capability but
-the build: shadow-cljs runs with `:js-provider :require`, which leaves npm
-imports as runtime requires. Switching to `:shadow` bundles them instead, which
-is shadow's normal mode and removes the need entirely. Worth doing early — it is
-independent of everything else here and reduces the surface before any of it
-starts.
+**Local JavaScript requires.** ~~`lt.objs.editor` loads CodeMirror's fold
+addons by path, and several namespaces require files under `deploy/core`.~~
+Done. The answer was not a capability but the build: shadow-cljs ran with
+`:js-provider :require`, which left npm imports as runtime requires. It runs
+with `:shadow` now, which bundles them, and the 122 CodeMirror modes a runtime
+walk used to discover are generated into a require list at build time.
 
 **The bootstrap problem.** `lt.util.load` reads files during startup, before
 anything else exists. Whatever serves it has to be available at that point,
 which the preload is — it runs before the page. No obstacle, but it constrains
 ordering: `lt.util.load` migrates first or the rest cannot load.
 
-## Plugins are still the gate
-
-This is unchanged by any of the above, and it is the part that decides the
-schedule rather than the design.
+## Plugins — the gate, now built and running
 
 Turning on `contextIsolation` removes `require` from the window, which is where
-plugins run. The Clojure plugin calls `require("net")` at namespace load time for
-nREPL; the Javascript plugin does the same. Both ship precompiled, so nobody can
-rebuild them for users who already have them.
+plugins run. The Clojure plugin calls `require("net")` at namespace load for
+nREPL; the Javascript plugin does the same. Both ship precompiled, so nobody
+can rebuild them for users who already have them.
 
-The measurements above make the compatibility route look considerably better
-than it did. A `require` shim on the bridge — `require('fs')` returning a
-bridge-backed object rather than Node's — costs a microsecond per call and can
-return handle objects for `net` and `child_process`. It keeps published plugins
-working while still removing ambient Node from the window, because the shim
-serves a fixed list and nothing else.
+**The shim is what carried them across.** It was built and installed a step
+before the flip, while `contextIsolation` was still off — deliberately, so that
+a plugin needing something it does not serve failed where it could be fixed
+rather than on the day itself. That is how the two gaps below were found. It
+lives in three pieces:
 
-**And this is what the capability manifest is for.** A plugin's manifest already
-declares what it needs, and Light Table already infers that for plugins with no
-manifest. That is exactly the input a per-plugin `require` shim needs: a plugin
-declaring `#{:files}` gets an `fs` and nothing else; one declaring nothing
-inferred to use `:network` gets `net` too, with a warning. The work already done
-on manifests is not preparation for this step — it *is* this step's design.
+| | |
+|---|---|
+| `lt.objs.plugins.require-shim` | Deciding. Attribution and capabilities. Pure, so it is unit-tested. |
+| `lt.objs.plugins.node-modules` | The modules, bridge-backed or bundled. |
+| `lt.objs.plugins.local-modules` | CommonJS, for the JavaScript a plugin vendored. |
 
-The open question is attribution: the shim has to know which plugin is calling.
-A plugin's code is evaluated with a `sourceURL`, so its frames are identifiable
-in a stack trace, but capturing a stack per `require` call is the sort of thing
-that needs measuring before it is relied on. Requires happen at plugin load
-rather than per operation, which suggests it is affordable — but that is a guess
-until it is measured.
+**What the manifest is for.** A plugin's manifest already declares what it
+needs, and Light Table already infers that for plugins with no manifest. That
+is exactly the shim's input: a plugin declaring `#{:files}` gets `fs` and
+nothing else; one declaring nothing gets what it was inferred to use, so
+nothing breaks on the day this turns on. The manifest work was not preparation
+for this step — it *is* this step's design.
 
-## Order
+Worth being exact about what the shim is for: **compatibility, and telling an
+honest plugin what it may use.** It is not containment. A plugin runs in the
+window, so it can reach the bridge directly whatever `require` says. What
+contains a plugin is the bridge's surface, and that is true either way.
 
-1. ~~**Bundle npm imports**~~ — still to do, and now the largest remaining item.
-   See below.
-2. ~~**`lt.util.load` onto the bridge.**~~ Done.
-3. ~~**The mechanical ones.**~~ Done: `files`, `workspace`, `console`, `deploy`.
-4. ~~**The handle cases.**~~ Done: `proc`, `thread`, `tcp`, `ws`.
-5. **The plugin `require` shim**, scoped by manifest. Measure stack attribution
-   first.
-6. **Flip `contextIsolation`.**
+### Attribution works, and is cheap — measured
 
-### What is actually left
+**A plugin's frames name its directory.** Light Table loads plugin code with a
+`sourceURL`, and a stack captured from inside a running plugin looks like this:
 
-**Bundling.** The window still requires JavaScript files by path: CodeMirror's
-122 language modes are discovered by walking `node_modules` at runtime, and
-`lt.objs.editor` requires each one. `:js-provider :shadow` bundles static
-imports, but a walk cannot be static — so the modes need a generated require
-list, adding roughly 1.2MB to a 3MB bundle. That is the largest single piece of
-work left before the flip and it is entirely mechanical.
+```
+at Object.notify (/home/user/LightTable/deploy/plugins/HelloTS/hello_compiled.js:42:25)
+at exec         (/home/user/LightTable/deploy/plugins/HelloTS/hello_compiled.js:73:16)
+```
 
-**Plugins.** Unchanged, and still the gate. Every published plugin has `require`
-today. The shim below is what keeps them working.
+`deploy/plugins/HelloTS` is exactly the key `lt.objs.plugins` already stores a
+plugin under, so the path maps onto a manifest with no new bookkeeping. The
+local module loader uses the same `sourceURL`, so a frame from inside vendored
+code is attributed to the plugin that shipped it.
 
-Everything else in Light Table's own code is done.
+**A stack costs 1.3–2.7µs** on Electron 43. `require` happens at plugin load
+rather than per operation, so it is not close to mattering.
+
+### What it serves
+
+Two kinds, and the difference is the thing that made the hard case work.
+
+**Bridge-backed**, gated on a capability: `net` (`connect`, `createConnection`,
+`Server`, `createServer`), `fs`, `path`, `os`, `shelljs`.
+
+**Bundled**, reaching nothing and needing no capability: `buffer`, `events`,
+`bencode`, `util`. Plus the globals a plugin written for Node expects to find —
+`Buffer`, `global`, `setImmediate`, and a `process` with the three fields
+plugin code was actually found to read.
+
+Anything else is refused with a message naming what is missing, which is a
+denial a plugin author can act on rather than a crash.
+
+### The chain that decided the shape — tested against the Clojure plugin
+
+The open question was whether a per-module shim could serve a real client, and
+the answer turned on one thing: the nREPL client takes a socket's data, hands
+it to `Buffer.concat`, and hands that to `bencode.decode`. Three modules, one
+value passing between them.
+
+It works, and the reason it works is that **only the socket crosses the
+bridge.** Bytes arrive as a `Uint8Array` — copied, not viewed, because node
+pools small Buffers into a shared ArrayBuffer — and everything downstream is in
+the window: `Buffer` is the bundled one, `bencode` is bundled too. One world
+throughout. Had `Buffer` lived in the preload the concatenated value would have
+crossed twice and arrived as something else both times.
+
+Driven against a bencode-speaking server that splits replies mid-message and
+mid-character, the plugin's own captured modules complete the exchange:
+connect, encode, write, two chunks, concatenate, decode. `script/smoke-test.js`
+checks the pieces of this on every run.
+
+Trying it also turned up two things that had nothing to do with isolation:
+
+- **`bencode@4.0.1` cannot do what the plugin asks.** `decode(data, 'utf-8')`
+  throws on any dictionary — `decode.dictionary` decodes the key and then
+  decodes it again. Every nREPL message is a dictionary, so the plugin's client
+  could not have worked. Pinned to `^2.0.3`, which is the API it was written
+  against.
+- **Plugins vendor their own node_modules.** The Javascript plugin requires
+  `harbor` out of its own directory to find a free port. That is not a builtin
+  to serve a facade for, it is a file to read and run — hence the CommonJS
+  loader, which resolves the way Node resolves and evaluates with the same
+  `sourceURL` everything else uses.
+
+## Order, as it went
+
+1. **Bundle npm imports.** `:js-provider :shadow`, and a generated require list
+   for the 122 CodeMirror modes a runtime `node_modules` walk used to find.
+2. **`lt.util.load` onto the bridge**, first, because everything loads through
+   it.
+3. **The mechanical ones**: `files`, `workspace`, `console`, `deploy`.
+4. **The handle cases**: `proc`, `thread`, `tcp`, `ws`.
+5. **The plugin `require` shim**, scoped by manifest, installed a step early so
+   the gaps showed up while isolation was still off.
+6. **`tar`** — the last node module in Light Table's own code, and the last
+   thing before the flip. It became `files.extract`, a capability in the same
+   shape as `download`: what the window wants is a release unpacked, not a
+   stream to pipe.
+7. **Flip.** Three lines in `deploy/core/package.json`, and three window-side
+   Node references that had gone unnoticed until Node was actually gone:
+   `process.on("uncaughtException")` in the console (now `window`'s `error` and
+   `unhandledrejection` events, which cover more), `process.execPath` in the
+   cli (a host capability), and `js/global.String` / `js/global.Array` in
+   `lt.util.cljs` (the window's own `String` and `Array`, which is what they
+   always were).
+
+### What it cost, and what it did not
+
+Nothing was redesigned. `lt.objs.files` is still synchronous, self-evaluation
+still works, and 42 smoke checks pass — including the isolation itself, which is
+established by observation rather than by reading the config back: no
+`__dirname`, no `module`, a bridge that is a contextBridge proxy rather than
+the preload's own object, and a `require` that refuses a builtin Node would
+have served.
+
+One predicted degradation is real and worth knowing about: `util.inspect` runs
+in the preload, so what reaches it is a clone. Plain data is unaffected — which
+is the only thing `lt.objs.console/inspect` is ever called on, since
+`cljs-result-format` handles functions before it gets there — but a function
+prints as `[Function (anonymous)]` and a DOM node as `HTMLBodyElement {}`.
 ## Afterwards
 
 `sandbox: true` removes Node from the preload as well. Everything then has to

@@ -80,7 +80,11 @@
                :else (str e)))
          "error")))
 
-(.on js/process "uncaughtException" #(error %))
+;; Was process.on("uncaughtException"), which the window no longer has — and
+;; which only ever caught what reached node's handler anyway. These two are the
+;; window's own, and between them they cover both ways a failure escapes.
+(.addEventListener js/window "error" #(error (or (.-error %) (.-message %))))
+(.addEventListener js/window "unhandledrejection" #(error (.-reason %)))
 
 (defui console-ui [this]
   [:ul.console]

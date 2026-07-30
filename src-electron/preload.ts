@@ -1,8 +1,8 @@
 // The bridge between Light Table's window and its privileged half.
 //
-// What the window can ask for is exactly the surface below. That is the point:
-// once contextIsolation is on, code in the window — Light Table's own and every
-// plugin's — cannot reach anything that is not named here.
+// What the window can ask for is exactly the surface below. That is the point,
+// and it is now the case: contextIsolation is on, so code in the window —
+// Light Table's own and every plugin's — cannot reach anything not named here.
 //
 // Two kinds of capability live in this file, and the difference is where the
 // work happens rather than anything the window can see.
@@ -23,10 +23,10 @@
 // since by then nothing in the window can reach past this list either way.
 // doc/context-isolation.md has the reasoning and the numbers.
 //
-// Light Table still runs with contextIsolation off, so contextBridge is not
-// available yet and the API is assigned to the window instead. The shape is
-// identical either way, which is what lets the window migrate onto it before
-// isolation is turned on rather than in the same change.
+// The shape of this file is identical with isolation on or off, which is what
+// let the window migrate onto it first and flip afterwards rather than doing
+// both in one change. The fallback at the bottom is what made that possible
+// and is kept for anyone running with isolation off deliberately.
 
 import { contextBridge, ipcRenderer, webFrame } from 'electron';
 import * as fs from 'node:fs';
@@ -83,6 +83,35 @@ export interface ProcessHandle {
 export interface ForkHandle extends ProcessHandle {
     send(message: unknown): void;
     onMessage(callback: (message: unknown) => void): void;
+}
+
+/**
+ * A connection, reached by function rather than by object — the same shape as
+ * `ProcessHandle`, and for the same reason.
+ *
+ * `onData` gets bytes rather than text: what arrives on an nREPL connection is
+ * bencode, where a message boundary can fall inside a multi-byte character, so
+ * decoding per chunk would corrupt it.
+ */
+export interface SocketHandle {
+    write(data: string | Uint8Array): void;
+    end(): void;
+    destroy(): void;
+    onConnect(callback: () => void): void;
+    onData(callback: (chunk: Uint8Array) => void): void;
+    onClose(callback: () => void): void;
+    onError(callback: (message: string, code: string) => void): void;
+}
+
+/** A listening server a plugin asked for. */
+export interface ServerSocketHandle {
+    /** The port it ended up on, or 0 before it is listening. */
+    port(): number;
+    close(): void;
+    onListening(callback: (port: number) => void): void;
+    onConnection(callback: (socket: SocketHandle) => void): void;
+    onError(callback: (message: string, code: string) => void): void;
+    onClose(callback: () => void): void;
 }
 
 export interface TcpHandlers {
@@ -237,6 +266,15 @@ export interface LightTableBridge {
          */
         watch(path: string, intervalMs: number,
               onChange: (stat: FileStat | null) => void): { close(): void };
+        /**
+         * Unpack a gzipped tarball into `dest`, creating it if it is not there.
+         *
+         * A capability named after the task, like `download` next to it: what
+         * the window wants is a release unpacked, not a stream to pipe. The
+         * whole of tar stays over here, which is also the last reason Light
+         * Table's own code had to load a node module into the window.
+         */
+        extract(archive: string, dest: string): Promise<void>;
     };
     /**
      * Path arithmetic. No filesystem access of its own — it is here because the
@@ -318,6 +356,23 @@ export interface LightTableBridge {
          * at /lighttable/ws.js; socket.io dropped its static-file API in 2.0.
          */
         ws(clientShim: string, handlers: WsHandlers): ServerHandle;
+    };
+    /**
+     * Connecting out. Separate from `servers`, and deliberately: this is a
+     * client, and the thing that wants one is a plugin talking to an nREPL or a
+     * debugger rather than Light Table waiting to be talked to.
+     *
+     * The socket stays here and a handle crosses, for the reason every other
+     * stateful case has one — see `ProcessHandle`.
+     */
+    sockets: {
+        connect(port: number, host: string): SocketHandle;
+        /**
+         * Listen on `port`, or on any free one when it is 0. Plugins use this
+         * to find a free port as much as to serve on one — asking to listen
+         * and being refused is how that question is answered.
+         */
+        listen(port: number, host?: string): ServerSocketHandle;
     };
     /** Read-only facts about the host, resolved once at startup. */
     host: {
@@ -461,6 +516,44 @@ function handleFor(child: childProcess.ChildProcess): ProcessHandle {
     };
 }
 
+/** Wraps a socket in the functions the window is allowed to call. */
+function socketHandleFor(socket: net.Socket): SocketHandle {
+    return {
+        write: (data) => { socket.write(typeof data === 'string' ? data : Buffer.from(data)); },
+        end: () => { socket.end(); },
+        destroy: () => { socket.destroy(); },
+        onConnect: (callback) => { socket.on('connect', () => callback()); },
+        // Copied rather than viewed: node pools small Buffers into a shared
+        // ArrayBuffer, so a view over one would carry whatever else is in the
+        // pool across the bridge. A Uint8Array is also what survives the
+        // crossing — a Buffer would arrive with its prototype gone.
+        onData: (callback) => { socket.on('data', (d) => callback(new Uint8Array(d))); },
+        onClose: (callback) => { socket.on('close', () => callback()); },
+        onError: (callback) => {
+            socket.on('error', (e: NodeJS.ErrnoException) => callback(e.message, e.code ?? ''));
+        }
+    };
+}
+
+/** Wraps a listening server in the functions the window is allowed to call. */
+function serverSocketHandleFor(server: net.Server): ServerSocketHandle {
+    return {
+        port: () => (server.address() as net.AddressInfo | null)?.port ?? 0,
+        close: () => { server.close(); },
+        onListening: (callback) => {
+            server.on('listening',
+                      () => callback((server.address() as net.AddressInfo).port));
+        },
+        onConnection: (callback) => {
+            server.on('connection', (socket) => callback(socketHandleFor(socket)));
+        },
+        onError: (callback) => {
+            server.on('error', (e: NodeJS.ErrnoException) => callback(e.message, e.code ?? ''));
+        },
+        onClose: (callback) => { server.on('close', () => callback()); }
+    };
+}
+
 /** A stat as data, or null when the path is not there. */
 function statOf(path: string): FileStat | null {
     const s = fs.statSync(path, { throwIfNoEntry: false });
@@ -532,6 +625,14 @@ const bridge: LightTableBridge = {
             const listener = () => onChange(statOf(path));
             fs.watchFile(path, { interval: intervalMs, persistent: false }, listener);
             return { close: () => fs.unwatchFile(path, listener) };
+        },
+        extract: (archive, dest) => {
+            // tar's own replacement for the streaming Extract class this used
+            // to be will not create the target directory.
+            fs.mkdirSync(dest, { recursive: true });
+            // eslint-disable-next-line @typescript-eslint/no-require-imports
+            const tar = require(__dirname + '/node_modules/tar');
+            return tar.x({ file: archive, cwd: dest }) as Promise<void>;
         }
     },
     path: {
@@ -643,6 +744,18 @@ const bridge: LightTableBridge = {
             } as ServerHandle;
         }
     },
+    sockets: {
+        connect: (port, host) => socketHandleFor(net.connect(port, host)),
+        listen: (port, host) => {
+            const server = net.createServer();
+            const handle = serverSocketHandleFor(server);
+            // Listening is deferred by a tick so that the window can register
+            // its listeners on the handle first; net raises EADDRINUSE
+            // asynchronously but soon.
+            queueMicrotask(() => { server.listen(port, host); });
+            return handle;
+        }
+    },
     host: {
         appInfo: () => ipcRenderer.sendSync('lt:app-info'),
         cwd: () => process.cwd(),
@@ -662,7 +775,9 @@ const bridge: LightTableBridge = {
 try {
     contextBridge.exposeInMainWorld('lightTable', bridge);
 } catch (e) {
-    // contextIsolation is still off, where contextBridge refuses to run. The
-    // window has the same object either way; only how it gets there differs.
+    // contextBridge refuses to run with contextIsolation off, which is no
+    // longer how Light Table ships. Kept because the window has the same
+    // object either way — only how it gets there differs — so anyone turning
+    // isolation off to debug still gets a working editor.
     (globalThis as unknown as { lightTable: LightTableBridge }).lightTable = bridge;
 }

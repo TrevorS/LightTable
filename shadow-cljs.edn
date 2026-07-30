@@ -35,6 +35,10 @@
    :compiler-options {:optimizations  :simple
                       :pretty-print   true
                       :process-shim   false
+                      ;; lt.util.cljs extends js/String and js/Array on
+                      ;; purpose: it is what makes ("key" some-map) work, and
+                      ;; that is published API rather than an accident.
+                      :warnings {:extending-base-js-type false}
                       ;; Light Table's plugin API is the global lt.* namespaces,
                       ;; and LightTable.html calls lt.objs.app.init() directly,
                       ;; so the bundle cannot be wrapped in a closure.

@@ -73,6 +73,12 @@
   sockets — a socket cannot cross, and connections are identified by number."
   (.-servers bridge))
 
+(def ^js sockets
+  "Connecting out: connect. Returns a handle carrying write, end and destroy,
+  with the socket itself staying on the other side. Data arrives as bytes
+  rather than text — a chunk boundary can fall inside a character."
+  (.-sockets bridge))
+
 (def ^js host
   "Facts about the process this window runs in: appInfo, appDir, cwd, env,
   setEnv, execPath, inspect."

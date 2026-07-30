@@ -12,12 +12,10 @@
             [lt.objs.sidebar.command :as cmd]
             [lt.objs.console :as console]
             [lt.objs.app :as app]
-            [lt.util.load :as load]
             [lt.util.js :as js-util :refer [every]]
             [clojure.string :as string])
   (:require-macros [lt.macros :refer [behavior defui]]))
 
-(def tar (load/node-module "tar"))
 (def home-path (files/lt-home ""))
 (def strict-ssl? true)
 
@@ -81,12 +79,11 @@
   "Extract the gzipped tarball `from` into the directory `to`, calling `cb` once
   extraction has finished.
 
-  tar dropped the streaming Extract class this used to pipe into, and its
-  replacement will not create the target directory for us."
+  One bridge capability rather than a tar library in the window, for the same
+  reason downloading is one rather than an http client: what this wants is a
+  release unpacked."
   [from to cb]
-  (when-not (files/exists? to)
-    (files/mkdir to))
-  (-> (.x tar (js-obj "file" from "cwd" to))
+  (-> (.extract bridge/files from to)
       ;; .then hands the resolution value to cb, and every caller passes a
       ;; zero-arity fn, so swallow the argument rather than blowing up on arity.
       (.then (fn [_] (cb)))

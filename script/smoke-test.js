@@ -189,11 +189,39 @@ app.on('ready', function () {
                                 !!lt.objs.clients.tcp.server,
                                 !!lt.objs.clients.ws.server].join(',');
                     })(),
-                    // The window has no require, no process and no __dirname
-                    // left. This is the property the whole migration is for,
-                    // and it is worth failing loudly if any of it comes back.
+                    // The window has no Node left. This is the property the
+                    // whole migration is for, and it is worth failing loudly
+                    // if any of it comes back. require and process are present
+                    // but are Light Table's own — the isolation check below is
+                    // what distinguishes them from Node's.
                     noNodeInTheWindow: [typeof require, typeof process, typeof __dirname,
                                         typeof module].join(','),
+                    // contextIsolation itself, established three ways rather
+                    // than by reading a config file back: the window's world
+                    // is separate from the preload's, Node's own globals are
+                    // gone, and what is left came from Light Table.
+                    isolated: (function () {
+                        return {
+                            noDirname: typeof __dirname === 'undefined',
+                            noModule: typeof module === 'undefined',
+                            // With contextIsolation off the bridge is assigned
+                            // to the same global object the window sees, so
+                            // this object would be the preload's own. Through
+                            // contextBridge it is a proxy: its constructor
+                            // belongs to the window's world, not the preload's.
+                            bridgeIsProxied: window.lightTable.constructor === Object &&
+                                             Object.getPrototypeOf(window.lightTable) ===
+                                             Object.prototype,
+                            // Node's require resolves anything on disk; the
+                            // shim serves a list. Asking for a builtin Light
+                            // Table does not serve tells them apart.
+                            requireIsNotNodes: (function () {
+                                try { require('vm'); return false; } catch (e) { return true; }
+                            })(),
+                            processIsNotNodes: typeof process.binding === 'undefined' &&
+                                               process.mainModule === null
+                        };
+                    })(),
                     // Present and wired, not exercised: downloading needs the
                     // network, and a smoke test that fails when the network is
                     // down is a smoke test people learn to ignore. The real
@@ -270,6 +298,38 @@ app.on('ready', function () {
                         return { before: before, allowedByDefault: allowedByDefault,
                                  refuseMode: mode, compliantStillAllowed: stillAllowed,
                                  unknownDir: lt.objs.plugins.allowed_to_load_QMARK_('/nope') };
+                    })(),
+                    // The plugin require shim, which is what stands in for
+                    // Node's require once contextIsolation is on. Installed
+                    // now, ahead of the flip, so that a plugin needing
+                    // something it does not serve fails here rather than on
+                    // the day the window loses require.
+                    shim: (function () {
+                        var refused = null;
+                        try { require('vm'); } catch (e) { refused = e.message; }
+                        var nrepl = lt.plugins.clojure && lt.plugins.clojure.nrepl;
+                        var jsnode = lt.plugins.js && lt.plugins.js.node;
+                        return {
+                            // Node's net has dozens of exports; the shim's has four.
+                            servedNet: Object.keys(require('net')).sort().join(','),
+                            refusedUnserved: refused,
+                            bufferIsBundled: Buffer.from('hi').constructor.name !== 'Buffer',
+                            processShimmed: typeof process.nextTick === 'function' &&
+                                            process.mainModule === null,
+                            // The Clojure plugin captures these at load, so
+                            // these are what it actually got.
+                            clojureNet: !!(nrepl && nrepl.net && nrepl.net.connect),
+                            clojureBuffer: !!(nrepl && nrepl.Buffer && nrepl.Buffer.Buffer.concat),
+                            // bencode comes from the bundle, not from disk.
+                            clojureBencode: !!(nrepl && nrepl.bencode &&
+                                               nrepl.bencode.decode(nrepl.encode(
+                                                 cljs.core.clj__GT_js.call(null, {op: 'clone'})),
+                                                 'utf-8').op === 'clone'),
+                            // The Javascript plugin's vendored harbor, which is
+                            // a CommonJS package inside the plugin rather than
+                            // anything Light Table serves.
+                            vendoredModule: !!(jsnode && jsnode.harbor && jsnode.harbor.claim)
+                        };
                     })(),
                     // The preload bridge, and that the window is actually going
                     // through it rather than still reaching Electron directly.
@@ -419,6 +479,20 @@ async function main() {
         ['a plugin inside its manifest loads even when refusing',
          !!r.gate && r.gate.allowedByDefault === true && r.gate.compliantStillAllowed === true &&
          r.gate.unknownDir === true],
+        ['contextIsolation is on and the window has no Node of its own',
+         !!r.isolated && r.isolated.noDirname === true && r.isolated.noModule === true &&
+         r.isolated.bridgeIsProxied === true && r.isolated.requireIsNotNodes === true &&
+         r.isolated.processIsNotNodes === true],
+        ['require is the shim, serving a fixed list and refusing the rest',
+         !!r.shim && r.shim.servedNet === 'Server,connect,createConnection,createServer' &&
+         /neither one Light Table serves/.test(r.shim.refusedUnserved || '')],
+        ['the Node globals a plugin expects come from the bundle',
+         !!r.shim && r.shim.bufferIsBundled === true && r.shim.processShimmed === true],
+        ['the Clojure plugin got its net, Buffer and bencode from the shim',
+         !!r.shim && r.shim.clojureNet === true && r.shim.clojureBuffer === true &&
+         r.shim.clojureBencode === true],
+        ['a plugin loads the CommonJS package it vendored',
+         !!r.shim && r.shim.vendoredModule === true],
         ['capability inference matches the one declared manifest',
          !!r.capabilities && !!r.capabilities.HelloTS &&
          r.capabilities.HelloTS.declared === '#{:clipboard}' &&

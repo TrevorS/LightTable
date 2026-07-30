@@ -5,6 +5,7 @@
   directly. This namespace is the first one to migrate because it is what the
   rest of Light Table loads through — nothing else can move until it has."
   (:require [clojure.string :as string]
+            [lt.objs.plugins.node-modules :as node-modules]
             [lt.util.bridge :as bridge]))
 
 (def dir "Directory where Light Table is being executed." (str bridge/app-dir "/.."))
@@ -34,14 +35,21 @@
   (boolean (re-seq #"^\s*[\\\/]|([\w]+:[\\\/])" path)))
 
 (defn node-module
-  "Requires Light Table's bundled node modules located at `path`.
+  "A node module Light Table ships, by name.
 
-  Still a raw require, and one of the last: a node module is arbitrary code
-  that has to run in the window, so it cannot be served across the bridge. It
-  goes away by being bundled at build time instead — see
-  doc/context-isolation.md."
+  The same table [[lt.objs.plugins.require-shim]] serves plugins from, because
+  this is the other door onto it: a ClojureScript plugin calls this where a
+  JavaScript one calls `require`. Served without a capability check, and
+  deliberately — what governs the ClojureScript API is the manifest audit,
+  which reads calls like this one and reports them.
+
+  It used to read the module off disk with a real `require`. It cannot any
+  more, and neither can anything else in the window."
   [path]
-  (js/require (str dir "/core/node_modules/" path)))
+  (if-let [factory (second (get node-modules/modules path))]
+    (factory)
+    (throw (js/Error. (str "Cannot load node module '" path
+                           "': it is not one Light Table bundles.")))))
 
 (defn- abs-source-mapping-url
   "Converts source mapping to use absolute paths for URLs. Also converts `\\` to `/` in order to maintain compatibility with Windows."

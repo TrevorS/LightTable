@@ -13,7 +13,7 @@
 
 (defn open-paths [path-line-pairs add?]
   (doseq [[path line] path-line-pairs
-          :when (not= path (.-execPath js/process))]
+          :when (not= path (.execPath bridge/host))]
     (if (files/exists? path)
       (if (files/dir? path)
         (object/raise workspace/current-ws :add.folder! path)

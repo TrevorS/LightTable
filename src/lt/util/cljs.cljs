@@ -1,5 +1,15 @@
 (ns lt.util.cljs
-  "Set up cljs and provide a few misc util fns"
+  "Set up cljs and provide a few misc util fns.
+
+  Extending `js/String` and `js/Array` is what makes `(\"key\" some-map)` and
+  seq-over-array work in behaviors and plugin code, which is a great deal of
+  Light Table's published API. The compiler warns about extending a base type
+  and is right to in general; this build turns that one warning off, in
+  shadow-cljs.edn, rather than pretend it is not happening.
+
+  These read `js/String` and `js/Array` rather than the `js/global.String` they
+  read before. Same objects — the window's — but named in a way that survives
+  the window not having a `global`."
   (:refer-clojure :exclude [js->clj clj->js])
   (:require [clojure.string :as string]))
 
@@ -21,7 +31,7 @@
 ;  INext
 ;  (-next [this] (-seq (-rest this))))
 
-(extend-type js/global.String
+(extend-type js/String
   IFn
   (-invoke
     ([this coll]
@@ -33,7 +43,7 @@
     (when (and coll (not (zero? (alength coll))))
                  (IndexedSeq. (js/String. coll) 0 nil))))
 
-(set! js/global.String.prototype.apply
+(set! js/String.prototype.apply
   (fn
     [s args]
     (if (< (alength args) 2)
@@ -41,7 +51,7 @@
       (get (aget args 0) s (aget args 1)))))
 
 
-(extend-type js/global.Array
+(extend-type js/Array
   ISeqable
   (-seq [coll]
     (when (and coll (not (zero? (alength coll))))

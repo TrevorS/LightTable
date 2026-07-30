@@ -732,26 +732,121 @@ rewrote `/` inside string literals, so a path argument arrived mangled and the
 call answered about nothing. The second sent a real debugging session after a
 bug in `lt.objs.files` that did not exist.
 
-## Content isolation (not yet)
+## A `require` for plugins, so isolation can be turned on
 
-`nodeIntegration: true` and `contextIsolation: false` are still set. The bridge
-above is deliberately shaped so that the window could migrate onto it *before*
-the flip rather than in the same change, and it has.
+`contextIsolation: true` takes `require()` away from the window entirely. Light
+Table's own code stopped needing it some time ago; plugins had not, and plugins
+ship precompiled, so nobody can rebuild them for users who already have them.
+That was the last thing between here and the flip.
 
-What blocks the flip is that `contextIsolation: true` takes `require()` away
-from the window entirely:
+There is now a `require` in the window that is Light Table's rather than Node's.
+It is installed *today*, while isolation is still off, deliberately: a plugin
+needing something it does not serve fails now, where it can be fixed, rather
+than on the day of the flip. Three pieces, split so the one with judgement in
+it can be unit-tested:
 
-- **Light Table's own code**: 20 `js/require` sites across 10 renderer
-  namespaces — `fs` ×5, `child_process` ×5, `path` ×2, `net` ×2, `http` ×2, and
-  one each of `https`, `util`, `url`, `os`. Bounded, and the natural next tranche.
-- **Plugins**: not bounded, and not ours. The Clojure plugin requires `net` and
-  `buffer` at load time for nREPL; the Javascript plugin requires `net` and
-  `util`. These ship precompiled, so the host cannot rebuild them — flipping
-  isolation breaks them the moment the namespace loads, with no recourse for
-  anyone who has them installed.
+- **`lt.objs.plugins.require-shim`** decides. It reads the call stack, finds the
+  innermost frame under a plugin's directory — plugin code is evaluated with a
+  `sourceURL`, so a frame names its file — and looks that plugin's capabilities
+  up. A plugin with a manifest is held to it; one without gets what Light Table
+  infers it uses, so nothing breaks the day this turns on. A stack costs
+  1.3–2.7µs and `require` happens at load, not per call.
+- **`lt.objs.plugins.node-modules`** serves. `net`, `fs`, `path`, `os` and
+  `shelljs` are bridge-backed and gated on a capability; `buffer`, `events`,
+  `bencode` and `util` are bundled and gated on nothing, because they reach
+  nothing. Plus the globals Node code expects to find: `Buffer`, `global`,
+  `setImmediate`, and a `process` with the three fields plugin code was found
+  to read.
+- **`lt.objs.plugins.local-modules`** loads what a plugin vendored. Plugins ship
+  their own `node_modules`, and those are not builtins to serve a facade for —
+  they are files to resolve and run. Node's resolution algorithm minus the parts
+  nothing uses, evaluated through the same CommonJS wrapper and `sourceURL` as
+  everything else, so attribution still works from inside vendored code.
 
-That second point is the whole difficulty, and it is not a technical one. See
-below.
+What the shim is *for* is worth stating, because it is easy to overclaim: it is
+compatibility, and it is telling an honest plugin what it may use. It is not
+containment. A plugin runs in the window and can reach the bridge directly
+whatever `require` says. What contains a plugin is the bridge's surface.
+
+### The chain that decided the shape
+
+The open question was never attribution, it was whether a per-module shim could
+carry a value *between* modules. The Clojure plugin's nREPL client is the case:
+socket data → `Buffer.concat` → `bencode.decode`, three modules and one value
+passing through all of them.
+
+It works, and the reason is that only the socket crosses. Bytes arrive as a
+`Uint8Array` — copied rather than viewed, since node pools small Buffers into a
+shared ArrayBuffer — and everything after that is in the window, because
+`Buffer` and `bencode` are bundled rather than served from the preload. One
+world throughout. Had `Buffer` been a bridge capability the concatenated value
+would have crossed twice and arrived as something else both times.
+
+Verified end to end against a bencode server that splits replies mid-message
+and mid-character, driving the modules the plugin itself captured at load.
+
+Trying it turned up two things unrelated to isolation:
+
+- **`bencode@4.0.1` cannot do what the plugin asks.** `decode(data, 'utf-8')`
+  throws on any dictionary: `decode.dictionary` decodes the key, then decodes
+  the result again. Every nREPL message is a dictionary, so the Clojure plugin's
+  client could not have worked at all on this checkout. Pinned to `^2.0.3`,
+  the API it was written against.
+- **The Javascript plugin was not fully loading.** It requires a vendored
+  `harbor` to find a free port, which is what prompted the local module loader.
+  With it, the plugin's behaviors go from 535 to 560 registered.
+
+`script/smoke-test.js` grew four checks covering this, and is at 41.
+
+## Context isolation, on
+
+```
+nodeIntegration:  false     the window has no require
+contextIsolation: true      window and preload are separate worlds
+sandbox:          false     the preload keeps Node, so capabilities are cheap
+```
+
+The window has no `require`, no `process`, no `__dirname` and no `module` of
+Node's. Everything privileged goes through the capability list in
+`src-electron/preload.ts`; plugins reach Node through a `require` Light Table
+serves rather than Node's own.
+
+`sandbox: false` is deliberate rather than left over. Electron sandboxes
+renderers by default, and a sandboxed preload has no Node either — which would
+push every filesystem call from 2.9µs to 194µs and force exactly the coarse
+asynchronous redesign the measurements above showed was unnecessary.
+
+The last thing before the flip was **`tar`**: `lt.objs.deploy` unpacked a
+downloaded release with it, the only call in Light Table's own code still
+falling through to a real `require`. It became `files.extract`, a capability in
+the same shape as `download` — what the window wants is a release unpacked, not
+a stream to pipe, and the whole of tar stays privileged.
+
+The flip itself was three lines in `deploy/core/package.json` plus three
+window-side Node references nothing had noticed until Node was actually gone:
+
+- `process.on("uncaughtException")` in `lt.objs.console`, now `window`'s
+  `error` and `unhandledrejection` events — which catch more than the original
+  did, since the original only ever saw what reached node's handler.
+- `process.execPath` in `lt.objs.cli`, a host capability.
+- `js/global.String` and `js/global.Array` in `lt.util.cljs`, which are the
+  window's own `String` and `Array` and always were. Naming them directly made
+  the compiler able to see what it had not been able to before, so
+  `:extending-base-js-type` is now switched off for this build with a note:
+  extending them is what makes `("key" some-map)` work, and that is published
+  API rather than an accident.
+
+Nothing was redesigned. `lt.objs.files` is still synchronous, self-evaluation
+still works, and the smoke test is at 42 — including isolation itself,
+established by observation rather than by reading the config back: no
+`__dirname`, no `module`, a bridge that is a contextBridge proxy rather than the
+preload's own object, and a `require` that refuses a builtin Node would serve.
+
+One predicted degradation is real. `util.inspect` runs in the preload, so what
+reaches it is a clone: a function prints as `[Function (anonymous)]` and a DOM
+node as `HTMLBodyElement {}`. It does not bite in practice —
+`cljs-result-format` handles functions before it reaches `console/inspect`, and
+plain data crosses intact — but it is a genuine loss of fidelity.
 
 - **A CSP without `unsafe-eval`** remains separately unavailable: it cannot be
   adopted without removing self-evaluation, and self-evaluation is the feature
@@ -790,18 +885,16 @@ JavaScript that then shells out".
 The bridge is the first half of that, and it is done. What is left is the part
 that was always going to be harder, and it is not `eval`:
 
-1. **Light Table's own Node use.** 20 `js/require` sites, 10 namespaces, mostly
-   `fs` and `child_process`. Mechanical, and it should be done as capabilities
-   rather than as an `fs` passthrough — the point of moving `existsSync` behind
-   `shell.open` was to establish that pattern on something small. The hard case
-   is `lt.objs.proc`: spawning a process and streaming its output is stateful,
-   so the bridge needs handles and events, not request/response.
-2. **Plugins are the actual blocker, and it is a compatibility problem, not a
-   technical one.** They are fetched over the network, loaded into the window,
-   and inherit full Node. They also ship precompiled, so the host cannot rebuild
-   them: the Clojure plugin calls `require("net")` at namespace load time for
-   nREPL, the Javascript plugin does the same. Turning on isolation breaks both
-   instantly for everyone who has them installed.
+1. ~~**Light Table's own Node use.**~~ Done — 77 touch points across 9
+   namespaces, all as capabilities rather than as an `fs` passthrough. The hard
+   case was `lt.objs.proc`, where spawning a process and streaming its output is
+   stateful, and it settled the pattern: the object stays privileged and a set
+   of functions crosses.
+2. ~~**Plugins are the actual blocker**~~ — built, and the compatibility route
+   held. They are fetched over the network, loaded into the window, and ship
+   precompiled, so the host cannot rebuild them: the Clojure plugin calls
+   `require("net")` at namespace load for nREPL and the Javascript plugin does
+   the same.
 
    The three ways out turned out to be **three levels rather than three
    alternatives**, which is the useful reframing — see
@@ -813,7 +906,8 @@ that was always going to be harder, and it is not `eval`:
 
    The load-bearing detail is that **level two does not need
    `contextIsolation`.** That fell out of surveying the ecosystem rather than
-   reasoning about it, below.
+   reasoning about it, below. The `require` shim is what carries a level-one
+   plugin across the flip, and the manifest is what scopes it.
 3. **The bridge is the permission system**, so its surface should keep being
    designed as one. `readFile` scoped to the workspace is a different thing from
    `fs.readFile`, and the difference is worth having before a hundred plugins
@@ -825,9 +919,10 @@ that was always going to be harder, and it is not `eval`:
    with the bridge available is defensible in a way that "everything can do
    everything" is not.
 
-So the order is: finish Light Table's own Node use behind capabilities, decide
-the plugin story, then flip isolation. A CSP is the last question, and the
-honest answer may be `unsafe-eval` with a much smaller blast radius behind it.
+That order — Light Table's own Node use behind capabilities, then the plugin
+story, then flip isolation — is what happened, and points 1 and 2 are done. A
+CSP is the last question, and the honest answer may be `unsafe-eval` with a much
+smaller blast radius behind it, which is now what it has.
 
 ## Monorepo for the bundled plugins
 
@@ -852,10 +947,11 @@ plugin loader already looks, with `plugin.edn`/`plugin.json` kept so nothing
 about distribution changes for anyone else. Candidates beyond the two flagships:
 CSS, HTML, Paredit, Python, Rainbow — the set `script/build.sh` already pins.
 
-There is now a second reason, which may be the stronger one: `contextIsolation`
-cannot be turned on while the flagship plugins call `require("net")` from
-precompiled code nobody rebuilds. In-tree plugins can be moved onto the bridge
-in the same commit that flips it.
+The second reason has partly resolved itself: `contextIsolation` is on, and the
+flagship plugins still work, because the `require` shim serves them. That was
+the compatibility route rather than the fix — an in-tree plugin would call the
+bridge directly and need no shim at all, and would fail its build rather than a
+user's session when the host renames something.
 
 The directory exists — `plugins/`, with the first TypeScript plugin in it and
 the build wired into `script/build.sh` and CI. What remains is moving the seven

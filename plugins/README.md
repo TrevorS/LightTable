@@ -137,11 +137,17 @@ a chokepoint the editor controls, and ambient `require` is not.
 
 ### Three levels, not one switch
 
-`contextIsolation` cannot simply be turned on: the Clojure plugin `require`s
+`contextIsolation` could not simply be turned on: the Clojure plugin `require`s
 `net` at namespace load time for nREPL, and it ships precompiled, so nobody can
 rebuild it for the users who already have it. Breaking every installed plugin to
-gain a security property is not a trade worth making, and it is not necessary —
+gain a security property is not a trade worth making, and it was not necessary —
 the property arrives in stages.
+
+It is on now. What carries a level 1 plugin across is the `require` shim in
+`lt.objs.plugins.require-shim`: `require` in the window is Light Table's rather
+than Node's, it serves a fixed list, and what a plugin gets from that list is
+scoped by the same manifest described below. A plugin needing something not on
+the list is told so on the console rather than crashing.
 
 **Level 1 — legacy, unmanifested.** What every published plugin is today: full
 Node, full API, no declaration. It keeps working. Light Table can infer what
@@ -156,11 +162,13 @@ matter are reached through Light Table's own namespaces, and those are ours to
 gate. A plugin that declared `#{:clipboard}` and called `lt.objs.proc` is a
 plugin doing something it said it would not.
 
-**Level 3 — isolated.** `contextIsolation: true`, no `require` in the window at
-all, everything through the preload bridge, capabilities enforced by the process
-boundary rather than by Light Table's cooperation. Reachable once enough of the
-ecosystem is at level 2 — and immediately reachable for plugins built here,
-since they can be rebuilt.
+**Level 3 — isolated.** `contextIsolation: true`, no Node `require` in the
+window at all, everything through the preload bridge. This is what Light Table
+ships now. Be exact about what it buys, though: the boundary it establishes is
+between the *window* and the desktop, not between one plugin and another. A
+plugin runs in the window, so it can reach the bridge directly whatever
+`require` says — level 2 is still what holds a plugin to its own word, and a
+per-plugin boundary would need a process each.
 
 The levels are a migration, not alternatives: a plugin at level 1 today is at
 level 2 when it adds seven characters to its `plugin.edn`, and the default flips

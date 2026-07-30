@@ -76,13 +76,18 @@ window takes a window id, so a window can only act on itself.
 * [remote-debugging-port](https://www.electronjs.org/docs/latest/reference/command-line-switches)
   is how the browser eval client attaches.
 
-## Where this is going
+## Where this got to
 
-`contextIsolation` is still off, and the window still has Node. Turning
-isolation on takes `require()` away from the window, which `lt.objs.files`,
-`lt.objs.proc` and others still depend on — and so do precompiled plugins,
-which the host cannot rebuild. CHANGELOG-MODERNIZATION.md has the details and
-the staging.
+`contextIsolation` is on and the window has no Node. Everything privileged goes
+through the capability list in `src-electron/preload.ts`, and plugins reach
+Node through a `require` Light Table serves rather than Node's own — which is
+what let precompiled plugins survive a change nobody could rebuild them for.
+`doc/context-isolation.md` has the design, the measurements and the order it
+went in.
+
+What is not done is `sandbox: true`, which would take Node out of the preload
+as well. That is a different design and a much more expensive one; the same
+document explains why it buys less than the step before it.
 
 ## Additional links
 

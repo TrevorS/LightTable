@@ -16,6 +16,9 @@
             [lt.util.js :as js-util :refer [wait]]
             [lt.objs.platform :as platform]
             [lt.objs.plugins.capabilities :as caps]
+            [lt.objs.plugins.local-modules :as local-modules]
+            [lt.objs.plugins.node-modules :as node-modules]
+            [lt.objs.plugins.require-shim :as require-shim]
             [cljs.reader :as reader]
             [singultus.core :as crate]
             [singultus.binding :refer [bound]]
@@ -261,6 +264,31 @@
                                         ". Capability enforcement is set to refuse."))
                     false)))
     true))
+
+(def plugin-require
+  "What `require` means to a plugin.
+
+  Wired here because this is where the plugin registry and the audit are; what
+  it decides is in [[lt.objs.plugins.require-shim]] and what it serves is in
+  [[lt.objs.plugins.node-modules]]."
+  (require-shim/requirer node-modules/modules
+                         #(::plugins @app/app)
+                         #(:used (audit %))
+                         local-modules/require-from))
+
+(defn install-node-compatibility!
+  "Put [[plugin-require]] in the window as `require`, and Node's globals with
+  it.
+
+  Called before any plugin loads. Both shadow Node's own, deliberately: it is
+  how a plugin's Node dependencies get exercised while `contextIsolation` is
+  still off, rather than finding out on the day of the flip which ones Light
+  Table does not serve. Light Table's own code no longer calls `require` or
+  touches a Buffer, so there is nothing left for this to take away."
+  []
+  (aset js/window "require" plugin-require)
+  (doseq [[nm value] (node-modules/globals)]
+    (aset js/window nm value)))
 
 (defn set-enforcement!
   "Persist `mode`. Takes effect for plugins loaded from here on, which in
@@ -936,6 +964,10 @@
 (behavior ::init-plugins
           :triggers #{:pre-load}
           :reaction (fn [app]
+                      ;; Before anything reads a plugin, and well before one
+                      ;; runs: ::load-js is raised on :object.instant-load,
+                      ;; which comes later.
+                      (install-node-compatibility!)
                       (when-not (files/exists? user-plugins-dir)
                         (files/mkdir user-plugins-dir))
                       (object/raise app/app :create-user-plugin)
