@@ -33,7 +33,8 @@ const DEST = path.join(ROOT, 'deploy', 'plugins');
 // `npm run place:user-plugin` handles that one.
 const CLJS_PLUGINS = {
     Paredit: { module: 'paredit.js', as: 'paredit_compiled.js' },
-    Clojure: { module: 'clojure.js', as: 'clojure_compiled.js' }
+    Clojure: { module: 'clojure.js', as: 'clojure_compiled.js' },
+    Javascript: { module: 'javascript.js', as: 'javascript_compiled.js' }
 };
 
 function main() {

@@ -1,0 +1,15 @@
+{:name "Javascript"
+ :version "0.2.0"
+ :author "Kodowa"
+ :source "https://github.com/LightTable/Javascript"
+ :desc "Javascript language plugin for Light Table"
+ :behaviors "javascript.behaviors"
+
+ ;; What this plugin needs, declared rather than discovered — see
+ ;; plugins/README.md.
+ ;;
+ ;; :processes  starts `node` for the debugger client
+ ;; :files      resolves node/ltnodeclient.js beside itself
+ ;; :network    the browser and node clients, over ws and tcp
+ ;; :plugins    resolves its own node_modules
+ :capabilities #{:processes :files :network :plugins}}

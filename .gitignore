@@ -9,11 +9,15 @@
 /deploy/plugins/
 /plugins/*/*_compiled.js
 /plugins/*/*_compiled.js.map
+# Third-party npm packages a plugin depends on, installed at build time by
+# script/install-plugin-deps.js.
+/plugins/*/node_modules/
 # The nREPL server the Clojure plugin starts. A pinned, checksummed binary
 # fetched by script/fetch-clojure-jar.js, not source and not build output.
 /plugins/Clojure/runner/target/
 /deploy/core/lighttable/paredit.js
 /deploy/core/lighttable/clojure.js
+/deploy/core/lighttable/javascript.js
 .DS_Store
 .lein-deps-sum
 .lein-env
@@ -31,6 +35,7 @@
 /deploy/core/lighttable/cljs/
 /User/
 /deploy/core/lighttable/shadow/
+/deploy/core/lighttable/cljs-runtime/
 /.shadow-cljs/
 /node_modules/
 /logs/

@@ -1,0 +1,10 @@
+{
+  "name": "lighttable-plugin-javascript",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Runtime dependencies of Light Table's Javascript plugin. Installed at build time; node_modules is not committed.",
+  "dependencies": {
+    "acorn": "^8.18.0",
+    "harbor": "^0.3.0"
+  }
+}
