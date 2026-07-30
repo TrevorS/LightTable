@@ -72,7 +72,32 @@ export interface ForkOptions extends SpawnOptions {
 export interface ProcessHandle {
     readonly pid: number | undefined;
     kill(): void;
+    /**
+     * Write to the process's stdin.
+     *
+     * A compiler invoked on a path needs nothing here, which is why this was
+     * missing. A language server does: LSP over stdio is a conversation, not a
+     * command with output.
+     */
+    write(data: string): void;
+    /** Close stdin, which is how a well-behaved child learns to finish. */
+    endStdin(): void;
     onStdout(callback: (chunk: string) => void): void;
+    /**
+     * stdout as bytes rather than text, for a protocol that is framed by byte
+     * count or can split a character across two chunks.
+     *
+     * Both are true of LSP: `Content-Length` counts bytes, so a framer handed
+     * decoded text would have to re-encode to find a message boundary — and by
+     * then a multi-byte character split across two chunks has already been
+     * mangled by decoding each one on its own. `SocketHandle.onData` exists in
+     * this shape for the same reason, about bencode.
+     *
+     * Alongside `onStdout` rather than replacing it: text is the right shape
+     * for a compiler printing diagnostics, which is what `plugins/lib/lt.ts`
+     * streams today.
+     */
+    onStdoutBytes(callback: (chunk: Uint8Array) => void): void;
     onStderr(callback: (chunk: string) => void): void;
     /** The exit code, or null when the process was killed by a signal. */
     onExit(callback: (code: number | null) => void): void;
@@ -237,6 +262,20 @@ export interface LightTableBridge {
          */
         existsSync(path: string): boolean;
         readFileSync(path: string): string;
+        /**
+         * The same file as bytes.
+         *
+         * The name departs from the rule above because Node has no separate
+         * method to copy — `fs.readFileSync` returns a Buffer when no encoding
+         * is given, and an encoding cannot cross the bridge as a distinction.
+         * Naming it apart is better than one method whose return type depends
+         * on an argument.
+         *
+         * Needed by anything that is not text: a WebAssembly module read from
+         * disk is the case that turned this up, since `readFileSync` decodes
+         * as UTF-8 and quietly corrupts it.
+         */
+        readFileBytesSync(path: string): Uint8Array;
         readFile(path: string): Promise<string>;
         writeFileSync(path: string, content: string): void;
         appendFileSync(path: string, content: string): void;
@@ -507,9 +546,14 @@ function handleFor(child: childProcess.ChildProcess): ProcessHandle {
     return {
         pid: child.pid,
         kill: () => { child.kill(); },
+        write: (data) => { child.stdin?.write(data); },
+        endStdin: () => { child.stdin?.end(); },
         // Chunks arrive as Buffers; the window has no Buffer, so they are
         // decoded here rather than crossing as cloned byte arrays.
         onStdout: (callback) => { child.stdout?.on('data', (d) => callback(String(d))); },
+        // Copied rather than viewed, and a Uint8Array rather than a Buffer,
+        // for the reasons socketHandleFor's onData gives.
+        onStdoutBytes: (callback) => { child.stdout?.on('data', (d) => callback(new Uint8Array(d))); },
         onStderr: (callback) => { child.stderr?.on('data', (d) => callback(String(d))); },
         onExit: (callback) => { child.on('exit', (code) => callback(code)); },
         onError: (callback) => { child.on('error', (e) => callback(e.message)); }
@@ -611,6 +655,7 @@ const bridge: LightTableBridge = {
     files: {
         existsSync: (path) => fs.existsSync(path),
         readFileSync: (path) => fs.readFileSync(path, 'utf8'),
+        readFileBytesSync: (path) => new Uint8Array(fs.readFileSync(path)),
         readFile: (path) => fs.promises.readFile(path, 'utf8'),
         writeFileSync: (path, content) => fs.writeFileSync(path, content),
         appendFileSync: (path, content) => fs.appendFileSync(path, content),

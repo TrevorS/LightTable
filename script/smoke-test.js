@@ -59,6 +59,16 @@ const SCAN_ARGS = JSON.stringify({
 // location to search. `loc` is a plain path, which lt.objs.search/string->loc
 // turns into a single search root.
 const SEARCH_ARGS = JSON.stringify({ search: 'SMOKENEEDLE', replace: '', loc: SEARCH_DIR });
+// A file that is not text, for the byte-reading capability. A WebAssembly
+// header is the case that turned up the gap, plus one byte that is not valid
+// UTF-8 — 0xFF cannot begin a sequence.
+//
+// The header alone would not have shown anything: `\0asm\x01\0\0\0` is
+// eight bytes all below 0x80, so it survives a UTF-8 decode untouched. Real
+// modules are full of bytes that do not, which is the whole problem, so the
+// probe has to contain one for the contrast below to mean anything.
+const BINARY_PROBE = path.join(os.tmpdir(), 'lt-smoke-bytes.wasm');
+fs.writeFileSync(BINARY_PROBE, Buffer.from([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00, 0xFF]));
 
 // The harness reuses the real main.js so that ipc handlers, command line
 // parsing and window options are the ones that ship, not a copy that can drift.
@@ -137,6 +147,39 @@ app.on('ready', function () {
                     ' cljs.core.js__GT_clj.call(null, JSON.parse(' + JSON.stringify(SEARCH_ARGS) +
                     '), cljs.core.keyword.call(null,"keywordize-keys"), true))');
                 await new Promise(function (r) { setTimeout(r, 4000); });
+
+                // Process stdio, both directions. Its own step because the
+                // report is a classic script and cannot await.
+                //
+                // The child is cat, which echoes stdin, so this is a real
+                // process round trip. The payload is deliberately multi-byte
+                // and written in two
+                // pieces: a character split across two chunks is exactly what
+                // decoding each chunk on its own gets wrong, which is why the
+                // byte channel exists at all.
+                step = 'writing to and reading from a process';
+                const stdio = JSON.parse(await w.webContents.executeJavaScript(\`(async function () {
+                    var b = lt.util.bridge;
+                    var out = { wrote: false, bytesLen: 0, decoded: '', text: '' };
+                    try {
+                        var h = b.processes.spawn('cat', [], {});
+                        var chunks = [];
+                        h.onStdoutBytes(function (c) { chunks.push(c); });
+                        h.onStdout(function (c) { out.text += c; });
+                        var done = new Promise(function (r) { h.onExit(function () { r(); }); });
+                        h.write('\\u4f60\\u597d');
+                        h.write('\\u4e16\\u754c');
+                        h.endStdin();
+                        out.wrote = true;
+                        await Promise.race([done, new Promise(function (r) { setTimeout(r, 5000); })]);
+                        var joined = [];
+                        chunks.forEach(function (c) { joined.push.apply(joined, Array.from(c)); });
+                        out.bytesLen = joined.length;
+                        out.isBytes = chunks.length > 0 && chunks[0] instanceof Uint8Array;
+                        out.decoded = new TextDecoder().decode(new Uint8Array(joined));
+                    } catch (e) { out.error = String((e && e.message) || e); }
+                    return JSON.stringify(out);
+                })()\`));
 
                 step = 'collecting the report';
                 report = JSON.parse(await w.webContents.executeJavaScript(\`JSON.stringify({
@@ -387,6 +430,27 @@ app.on('ready', function () {
                     })(),
                     bridgeInUse: lt.util.bridge.shell === (window.lightTable && window.lightTable.shell),
                     zoomFactor: lt.objs.app.zoom_level(),
+                    // A .wasm header is the case that turned this up: read as
+                    // UTF-8 the magic bytes come back as replacement
+                    // characters. Any file with a high byte would do; this one
+                    // is written by the harness.
+                    readBytes: (function () {
+                        var b = lt.util.bridge;
+                        try {
+                            var bytes = b.files.readFileBytesSync(${JSON.stringify(BINARY_PROBE)});
+                            var text = b.files.readFileSync(${JSON.stringify(BINARY_PROBE)});
+                            return {
+                                length: bytes.length,
+                                magic: Array.from(bytes.slice(0, 4)).join(','),
+                                isBytes: bytes instanceof Uint8Array,
+                                // The contrast that makes the point: the same
+                                // file through the text reader loses a byte to
+                                // the replacement character.
+                                textIsLossy: text.indexOf('\uFFFD') !== -1,
+                                textLength: text.length
+                            };
+                        } catch (e) { return { error: String(e && e.message || e) }; }
+                    })(),
                     // A clipboard round trip covers both directions of the
                     // bridge: a send out and a sendSync back.
                     clipboard: (function () {
@@ -435,6 +499,7 @@ app.on('ready', function () {
                         } catch (e) { return ['could not read the console: ' + e.message]; }
                     })()
                 })\`));
+                report.stdio = stdio;
                 // The menubar is set by a behavior at startup, and it lands
                 // over here, so this is the only side it can be seen from.
                 step = 'reading the application menu';
@@ -601,6 +666,18 @@ async function main() {
             /one\.txt$/.test(r.search.firstFile) && r.search.firstLine === 2 &&
             r.search.firstText === 'SMOKENEEDLE here'],
         ['the matches were rendered into the results list', r.search.rendered === 4],
+        // The capabilities added for language servers and for WebAssembly.
+        // Twelve bytes for four three-byte characters, decoded back to what
+        // was written: that is stdin working, stdout working, and no character
+        // mangled by a chunk boundary.
+        ['a process can be written to', r.stdio.wrote === true && !r.stdio.error],
+        ['its stdout can be read as bytes', r.stdio.isBytes === true && r.stdio.bytesLen === 12],
+        ['multi-byte characters survive the chunk boundary',
+            r.stdio.decoded === '\u4f60\u597d\u4e16\u754c'],
+        ['a file can be read as bytes, not decoded text',
+            r.readBytes.isBytes === true && r.readBytes.length === 9 &&
+            r.readBytes.magic === '0,97,115,109'],
+        ['and reading the same file as text is visibly lossy', r.readBytes.textIsLossy === true],
         ['the crate compatibility shim is published', r.crateShim === true],
         ['the default user plugin loaded', r.userPlugin === true],
         ['the TypeScript plugin loaded and registered its commands', r.tsPlugin === true],
@@ -682,6 +759,8 @@ async function main() {
     console.log('worker connected: ' + r.workerConnected + ', files found by background scan: ' + r.workerFilesFound);
     console.log('workspace search: ' + r.search.count + ' results in ' + r.search.reported +
                 ' files, ' + r.search.files + ' searched, ' + r.search.seconds + 's');
+    console.log('process stdio: ' + r.stdio.bytesLen + ' bytes back, decoded "' + r.stdio.decoded +
+                '"; file bytes: [' + r.readBytes.magic + ']');
     if (r.errors && r.errors.length) {
         console.error('\nErrors reported by Light Table:');
         r.errors.forEach(function (e) { console.error('  - ' + e.split('\n')[0]); });

@@ -62,32 +62,34 @@ clients only in transport (stdio rather than tcp) and framing (JSON-RPC with
 `lt.util.bridge.processes.spawn` gives a handle with `onStdout`/`onStderr`/
 `onExit`, which is the streaming shape a JSON-RPC transport needs.
 
-### Two things the preload does not do yet
+### Two things the preload could not do — now closed
 
 This section originally said nothing new was required on the privileged side.
 That was wrong, and reading `src-electron/preload.ts` rather than trusting the
-summary is what turned it up. Both gaps are small, both are in that one file,
-and both should be closed before the first line of protocol code is written —
-they are the kind of thing that gets worked around badly if discovered halfway.
+summary is what turned it up. Both are fixed, ahead of the protocol work rather
+than during it, because they are the kind of thing that gets worked around
+badly when discovered halfway.
 
-**`ProcessHandle` cannot be written to.** It has `kill`, `onStdout`,
-`onStderr`, `onExit` and `onError`, and no `write`. A language server over
-stdio is a conversation, so stdin is not optional. `SocketHandle` already has
-`write`; the process handle needs the same.
+**`ProcessHandle` could not be written to.** It had `kill`, `onStdout`,
+`onStderr`, `onExit` and `onError`, and no `write` — enough for a compiler
+invoked on a path, and nothing like enough for a conversation. It now has
+`write` and `endStdin`.
 
-**`onStdout` decodes each chunk on its own** — `callback(String(d))` — and that
+**`onStdout` decoded each chunk on its own** — `callback(String(d))` — which
 breaks LSP framing twice over. `Content-Length` counts *bytes*, so a framer
 handed decoded text has to re-encode to know where a message ends. And a
 multi-byte character split across two chunks is corrupted before the window
-ever sees it. `SocketHandle.onData` already gets `Uint8Array` for exactly this
-reason, and its comment says so: *"what arrives on an nREPL connection is
-bencode, where a message boundary can fall inside a multi-byte character, so
-decoding per chunk would corrupt it."* The same sentence is true of LSP.
+ever sees it. `SocketHandle.onData` already got `Uint8Array` for exactly this
+reason, its comment saying so about bencode; the same sentence is true of LSP.
+There is now an `onStdoutBytes` alongside the text one rather than in place of
+it — `plugins/lib/lt.ts` streams from `onStdout`, and text is the right shape
+for a compiler printing diagnostics.
 
-The fix is to give `ProcessHandle` a byte-oriented `onStdoutBytes` alongside
-the existing text one, rather than change `onStdout` under the plugins that
-already use it — `plugins/lib/lt.ts` streams from it, and text is the right
-shape for a compiler printing diagnostics.
+Three smoke checks cover them, because a preload only exists inside a running
+Electron window and there is nowhere else they are real. The probe writes
+`你好世界` to `cat` in two pieces and reads it back: twelve bytes, decoded to
+what was written. Written in two pieces deliberately — a character split across
+a chunk boundary is precisely what the old path got wrong.
 
 ## The shape
 

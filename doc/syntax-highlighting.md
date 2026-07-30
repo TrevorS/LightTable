@@ -49,11 +49,17 @@ would not.
 
 ## What it would cost
 
-**A third preload gap.** `lt.util.bridge.files.readFileSync` returns
-`fs.readFileSync(path, 'utf8')` — text only. A `.wasm` read as UTF-8 is
-corrupted. Byte reads have to exist first. (The other two gaps, both about
-process stdio, are in [language-support.md](language-support.md); all three are
-in `src-electron/preload.ts` and all three are small.)
+**A third preload gap, since closed.** `lt.util.bridge.files.readFileSync`
+returned `fs.readFileSync(path, 'utf8')` — text only, so a `.wasm` read through
+it was corrupt. There is now a `readFileBytesSync` returning a `Uint8Array`.
+(The other two, both about process stdio, are in
+[language-support.md](language-support.md).)
+
+Worth recording how that check nearly passed for the wrong reason: the first
+probe file was the eight-byte WebAssembly header, and every one of those bytes
+is below 0x80, so it survives a UTF-8 round trip untouched. The probe now
+carries an `0xFF` as well, which is what makes the text reader visibly lose a
+byte and the comparison mean anything.
 
 **Size.** 200 KB for the runtime, plus roughly 400 KB per grammar, each a
 separate `.wasm`. Ten languages is about 4 MB. That is not fatal for a desktop
@@ -112,9 +118,9 @@ ms in-process.
 
 1. **Nothing, for now.** 130 modes work. Adding a mime for a missing language is
    a one-line change and remains the cheapest possible win.
-2. **The three preload gaps**, when either of these projects starts. They are
-   small, they are all in one file, and two of them are correctness issues
-   (byte handling) rather than missing features.
+2. **The three preload gaps are closed** — `write`, `endStdin`, `onStdoutBytes`
+   and `readFileBytesSync`, with five smoke checks over them. Neither project
+   is now blocked on the privileged side.
 3. **LSP before tree-sitter.** It reuses seams Light Table already has — see
    [language-support.md](language-support.md) — and it answers the questions
    users actually ask about first: errors, completion, jump to definition.
