@@ -4,10 +4,10 @@
             [lighttable.nrepl.core :as core]
             [lighttable.nrepl.exception :as exception]
             [clojure.string :as string]
-            [clojure.tools.nrepl.transport :as transport]
-            [clojure.tools.nrepl.middleware :refer [set-descriptor!]]
-            [clojure.tools.nrepl.middleware.interruptible-eval :refer [interruptible-eval *msg*]]
-            [clojure.tools.nrepl.misc :refer [response-for returning]]
+            [nrepl.transport :as transport]
+            [nrepl.middleware :refer [set-descriptor!]]
+            [nrepl.middleware.interruptible-eval :refer [interruptible-eval *msg*]]
+            [nrepl.misc :refer [response-for returning]]
             [clojure.tools.reader :as reader]
             [clojure.tools.reader.reader-types :as rt])
   (:import java.io.Writer))

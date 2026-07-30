@@ -1,10 +1,10 @@
 (ns lighttable.nrepl.core
-  (:require [clojure.tools.nrepl.server :refer [start-server stop-server default-handler]]
-            [clojure.tools.nrepl.transport :as transport]
-            [clojure.tools.nrepl.middleware.session :refer [session] :as sess]
-            [clojure.tools.nrepl.middleware.interruptible-eval :refer [interruptible-eval *msg*]]
-            [clojure.tools.nrepl.misc :refer [response-for returning]]
-            [clojure.tools.nrepl.middleware :refer [set-descriptor!]]
+  (:require [nrepl.server :refer [start-server stop-server default-handler]]
+            [nrepl.transport :as transport]
+            [nrepl.middleware.session :refer [session] :as sess]
+            [nrepl.middleware.interruptible-eval :refer [interruptible-eval *msg*]]
+            [nrepl.misc :refer [response-for returning]]
+            [nrepl.middleware :refer [set-descriptor!]]
             [clojure.data.json :as json]
             [lighttable.nrepl.fs :as fs]
             [clojure.repl :as repl]))
@@ -44,10 +44,15 @@
       (> (.indexOf op "cljs.") -1)
       )))
 
-(def queue-eval
-  #'clojure.tools.nrepl.middleware.interruptible-eval/queue-eval)
-(def configure-executor
-  #'clojure.tools.nrepl.middleware.interruptible-eval/configure-executor)
+;; queue-eval and configure-executor were private vars in tools.nrepl 0.2.10,
+;; and this reached into them to put Light Table's own operations on the same
+;; serialised queue as `eval`. Neither exists in nrepl 1.x: a session now owns
+;; a thread and publishes `:exec` in its own metadata, which is public and does
+;; more — it pushes the per-message bindings, merges the thread's bindings back
+;; into the session afterwards, and is what `interrupt` interrupts.
+;;
+;; So there is nothing left to reach into, and [[queued]] below is shorter for
+;; it.
 
 (defn settings! [setts]
   (swap! my-settings merge setts))
@@ -82,28 +87,40 @@
 (defn remove-client [msg]
   (swap! clients dissoc (-> msg :session meta :id)))
 
-(defn queued [{:keys [op session id transport] :as msg} executor]
-  (queue-eval session executor
-              (comp
-               (partial reset! session)
-               (fn []
-                 (try
-                 (alter-meta! session assoc
-                              :thread (Thread/currentThread)
-                              :eval-msg msg)
-                 (binding [*msg* msg
-                           *ltmsg* msg]
-                   (let [result (handle msg)
-                         ;; do not let a bad handler nuke the session and as a result kill a connection
-                         result (if-not result
-                                  @session
-                                  (dissoc result #'*msg* #'*ltmsg*))]
-                     (returning result
-                                (transport/send
-                                 transport (response-for msg :status :done))
-                                (alter-meta! session dissoc :thread :eval-msg))))
-                   (catch Exception e
-                     (.printStackTrace e)))))))
+(defn queued
+  "Run `msg`'s handler on the session's own thread, and say `:done` after.
+
+  The session serialises this against `eval`, which is the point: a Light
+  Table operation and a plain nREPL eval must not run at once in the same
+  session. `:exec` also binds `*msg*` and merges the thread's bindings back
+  into the session, both of which this used to do by hand.
+
+  `:thread` in the session metadata is Light Table's own, read by
+  `editor.eval.clj.cancel`; nREPL's `interrupt` keeps its own record."
+  [{:keys [session id transport] :as msg}]
+  (let [{:keys [exec]} (meta session)]
+    ;; Three arguments, not four. `:exec` gained a fourth taking the message
+    ;; explicitly in nrepl 1.1, and Leiningen still ships 1.0 — so the portable
+    ;; form is the one that reads `*msg*` off this thread and conveys it. Bound
+    ;; here rather than left to the session middleware because what should
+    ;; travel is this message, after `with-lt-data` has merged Light Table's
+    ;; own payload into it, not the one that arrived on the wire.
+    (binding [*msg* msg]
+      (exec id
+            (fn []
+              (try
+                (alter-meta! session assoc
+                             :thread (Thread/currentThread)
+                             :eval-msg msg)
+                (binding [*ltmsg* msg]
+                  (handle msg))
+                ;; A handler that throws must not take the session — and with
+                ;; it the connection — down with it.
+                (catch Exception e
+                  (.printStackTrace e))
+                (finally
+                  (alter-meta! session dissoc :thread :eval-msg))))
+            #(transport/send transport (response-for msg :status :done))))))
 
 
 (defn out-writer [& [ev echo?]]

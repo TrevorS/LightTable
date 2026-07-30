@@ -2,8 +2,11 @@
   (:gen-class)
   (:require [leiningen.core.project :as lp]
             [leiningen.repl :as repl]
-            [clojure.string :as string]
-            [fs.core :as fs]))
+            [clojure.java.io :as io]
+            [clojure.string :as string]))
+
+;; fs 1.3.3 was pulled in for two calls and is a decade unmaintained. Both are
+;; one line of java.io.
 
 (defn parse-version [ver]
   (assert (and ver (re-find #"^\d+\.\d+\.\d+" ver))
@@ -30,25 +33,54 @@
     (and (not (.startsWith ver "1.7.0-"))
          (at-least-version? ver {:major 1 :minor 7 :patch 0}))))
 
+(def ^:dynamic *middleware-src*
+  "Directory holding lighttable.nrepl's sources, passed in by Light Table.
+
+  Upstream pulled the middleware off Clojars instead — `lein-light-nrepl`
+  0.3.3 and `lein-light-nrepl-instarepl` 0.3.1 — which made starting a REPL a
+  network fetch of somebody else's artifact, and pinned it to a version of
+  nREPL that no longer exists. The source is vendored beside this project now
+  and is put on the project's source path directly."
+  nil)
+
+(def middleware-dependencies
+  "What lighttable.nrepl needs on the REPL's classpath.
+
+  Kept in step with ../lein-light-nrepl/project.clj. nREPL itself is not here:
+  the REPL being started already has one, and two on a classpath is the kind
+  of problem that presents as a session that will not clone."
+  '[[org.clojure/data.json "2.5.1"]
+    [org.clojure/tools.reader "1.5.2"]
+    [clj-stacktrace "0.2.8"]
+    [commons-io/commons-io "2.20.0"]
+    [clojure-complete "0.2.5"]
+    ;; lighttable.nrepl.cljs drives the ClojureScript compiler directly, so
+    ;; the namespace will not even load without it — and the handler requires
+    ;; that namespace, so neither will Clojure evaluation. A project with its
+    ;; own ClojureScript wins on Leiningen's normal resolution.
+    [org.clojure/clojurescript "1.12.42"]])
+
 (defn prep
   "Build a project map for the repl with LT middleware injected"
-  [project name clj-version]
-  (let [init `(swap! lighttable.nrepl.core/my-settings merge {:name ~(or name (str (:name project) " " (:version project))) :project (quote ~project)})
+  [project name _clj-version]
+  ;; `:project (quote ~project)` upstream, which embedded the whole Leiningen
+  ;; project map in the init form the REPL subprocess reads back. Leiningen's
+  ;; project map holds functions now — `:repositories` carries a reducer — and
+  ;; a function does not survive pr-str/read, so the subprocess died on a
+  ;; syntax error 25kB into a generated file. Nothing ever read it back:
+  ;; `client.settings` dissoc's `:project` before sending, and that was its
+  ;; only mention.
+  (let [init `(swap! lighttable.nrepl.core/my-settings merge {:name ~(or name (str (:name project) " " (:version project)))})
         init (if-let [cur-init (-> project :repl-options :init)]
                (list 'do cur-init init)
                init)
-        lein-light-version (if (maintained-clojure-version? clj-version)
-                             ;; Maintained lein-light-nrepl
-                             "0.3.3"
-                             ;; Deprecated/unmaintained lein-light-nrepl
-                             "0.1.3")
-        profile {:dependencies [['lein-light-nrepl/lein-light-nrepl lein-light-version]
-                                ['lein-light-nrepl-instarepl "0.3.1"]]
+        _ (assert *middleware-src*
+                  "No middleware source directory was given. Light Table passes it as the second argument.")
+        profile {:source-paths [*middleware-src*]
+                 :dependencies middleware-dependencies
                  :repl-options {:nrepl-middleware ['lighttable.nrepl.handler/lighttable-ops]
-                                :init (with-meta init {:replace true})}}
-        project (lp/merge-profiles project [profile])]
-    (println "final project: " project)
-    project))
+                                :init (with-meta init {:replace true})}}]
+    (lp/merge-profiles project [profile])))
 
 (defn abort-unsupported-versions [clj-version cljs-version]
   (when (and clj-version (not (at-least-version? clj-version {:major 1 :minor 5 :patch 1})))
@@ -79,9 +111,11 @@
         (.printStackTrace e)
         (System/exit 1)))))
 
-(defn -main [& [name]]
-  (let [path (str (fs/absolute-path fs/*cwd*) "/project.clj")]
-    (if (fs/exists? path)
-      (light (lp/init-project (lp/read path)) name)
+(defn -main [& [name middleware-src]]
+  (let [cwd (.getAbsolutePath (io/file (System/getProperty "user.dir")))
+        path (str cwd "/project.clj")]
+    (if (.exists (io/file path))
+      (binding [*middleware-src* (or middleware-src *middleware-src*)]
+        (light (lp/init-project (lp/read path)) name))
       (binding [*out* *err*]
         (println "Could not find project.clj file at: " path)))))

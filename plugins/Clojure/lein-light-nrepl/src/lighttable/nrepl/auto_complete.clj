@@ -1,6 +1,10 @@
 (ns lighttable.nrepl.auto-complete
   (:require [lighttable.nrepl.core :as core]
             [lighttable.nrepl.eval :as eval]
+            ;; cljs-hints below reaches lighttable.nrepl.cljs/compiler-env
+            ;; fully qualified. That worked only because the handler happened
+            ;; to require both; compiling this namespace on its own does not.
+            [lighttable.nrepl.cljs :as ltcljs]
             [complete.core]))
 
 (defn completion [string]
@@ -58,7 +62,7 @@
       (str alias "/" def)))))
 
 (defn cljs-hints [ns-name]
-  (let [nss (-> @lighttable.nrepl.cljs/compiler-env :cljs.analyzer/namespaces)]
+  (let [nss (-> @ltcljs/compiler-env :cljs.analyzer/namespaces)]
     (cljs-hints-for-ns (symbol ns-name) nss)))
 
 (defmethod core/handle "editor.clj.hints" [{:keys [session ns path] :as msg}]

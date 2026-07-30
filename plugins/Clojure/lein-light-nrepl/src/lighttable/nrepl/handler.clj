@@ -1,10 +1,10 @@
 (ns lighttable.nrepl.handler
-  (:require [clojure.tools.nrepl.server :refer [start-server stop-server default-handler]]
-            [clojure.tools.nrepl.transport :as transport]
-            [clojure.tools.nrepl.middleware.session :refer [session]]
-            [clojure.tools.nrepl.middleware.interruptible-eval :refer [interruptible-eval *msg*]]
-            [clojure.tools.nrepl.misc :refer [response-for returning]]
-            [clojure.tools.nrepl.middleware :refer [set-descriptor!]]
+  (:require [nrepl.server :refer [start-server stop-server default-handler]]
+            [nrepl.transport :as transport]
+            [nrepl.middleware.session :refer [session]]
+            [nrepl.middleware.interruptible-eval :refer [interruptible-eval *msg*]]
+            [nrepl.misc :refer [response-for returning]]
+            [nrepl.middleware :refer [set-descriptor!]]
             [lighttable.nrepl.core :as core]
             [lighttable.nrepl.eval :as eval]
             [lighttable.nrepl.cljs :as cljs]
@@ -22,7 +22,10 @@
   "Evaluation middleware that supports interrupts and tracking of source forms.
    Returns a handler that supports \"eval\" and \"interrupt\" :op-erations that
    delegates to the given handler otherwise."
-  [h & {:keys [executor] :or {executor (core/configure-executor)}}]
+  ;; The executor keyword argument is gone: nrepl 1.x gives every session its
+  ;; own thread and publishes `:exec` in the session's metadata, so there is no
+  ;; executor for a caller to supply. See lighttable.nrepl.core/queued.
+  [h & _configuration]
   (fn [{:keys [op session interrupt-id id transport] :as msg}]
     (cond
      (= op "client.close") (do
@@ -45,8 +48,7 @@
      (core/no-queue? op) (core/handle msg)
      (core/lt-op? op) (core/queued (-> msg
                                        (assoc :h h)
-                                       (with-lt-data))
-                                   executor)
+                                       (with-lt-data)))
      :else (h msg))))
 
 (set-descriptor!

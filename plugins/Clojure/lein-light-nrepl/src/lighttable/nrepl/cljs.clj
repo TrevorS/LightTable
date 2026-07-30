@@ -15,10 +15,10 @@
             [clojure.java.io :as io]
             [cljs.tagged-literals :as tags]
             [clojure.set :as set :refer [difference union intersection]]
-            [clojure.tools.nrepl.transport :as transport]
-            [clojure.tools.nrepl.middleware :refer [set-descriptor!]]
-            [clojure.tools.nrepl.middleware.interruptible-eval :refer [interruptible-eval *msg*]]
-            [clojure.tools.nrepl.misc :refer [response-for returning]]
+            [nrepl.transport :as transport]
+            [nrepl.middleware :refer [set-descriptor!]]
+            [nrepl.middleware.interruptible-eval :refer [interruptible-eval *msg*]]
+            [nrepl.misc :refer [response-for returning]]
             [clojure.tools.reader :as reader]
             [clojure.tools.reader.reader-types :as rt])
   (:import java.io.Writer))
