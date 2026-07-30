@@ -12,9 +12,14 @@
 //   script/lt-repl.sh start                  boot it, wait until it answers
 //   script/lt-repl.sh eval '1 + 1'           evaluate in the window
 //   script/lt-repl.sh eval -f probe.js       evaluate a file
+//   script/lt-repl.sh eval -t 60000 '...'    give it longer than the default 15s
 //   script/lt-repl.sh cljs 'files.cwd'       evaluate against lt.objs, munged
+//   script/lt-repl.sh shot out.png [secs]    capture the window as it is now
 //   script/lt-repl.sh boot-log [secs]        boot fresh, print what it logged
 //   script/lt-repl.sh stop
+//
+// Every evaluation gets `LT`, a few helpers that exist because doing these by
+// hand goes wrong in ways that look like application bugs. See PRELUDE.
 //
 // It attaches over the Chrome DevTools Protocol, which main.js already opens a
 // port for. Nothing is injected into the app, so what answers is exactly what
@@ -42,6 +47,74 @@ const EVAL_TIMEOUT_MS = 15000;
 
 function fail(msg) { console.error(msg); process.exit(1); }
 
+/**
+ * Helpers defined in the window before every evaluation, idempotently.
+ *
+ * Each one is here because the obvious way to do it is wrong in a way that
+ * reads as a bug in Light Table rather than in the probe:
+ *
+ * - `LT.wrap` exists because a ClojureScript function of more than one arity
+ *   compiles to a dispatcher with the real bodies hanging off it as
+ *   properties, and internal call sites go straight to those. Replacing the
+ *   function with a plain wrapper therefore breaks every caller —
+ *   `cljs$core$IFn$_invoke$arity$variadic is not a function` — and the damage
+ *   outlives the probe. This copies the arity properties across and can be
+ *   undone.
+ * - `LT.sleep` and `LT.until` exist because the interesting states are
+ *   asynchronous, and a bare `setTimeout` chain is where probes lose their
+ *   return value.
+ * - `LT.errors` exists because lt.object catches exceptions thrown inside
+ *   behavior reactions and reports them. A behavior that throws therefore
+ *   looks exactly like one that decided not to act, which has cost this
+ *   project more than one afternoon.
+ */
+const PRELUDE = `
+if (typeof window.LT === 'undefined') {
+  window.LT = {
+    _undo: [],
+    sleep: function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); },
+    until: function (test, ms, step) {
+      var deadline = Date.now() + (ms || 10000);
+      var tick = function () {
+        if (test()) return Promise.resolve(true);
+        if (Date.now() > deadline) return Promise.resolve(false);
+        return LT.sleep(step || 250).then(tick);
+      };
+      return tick();
+    },
+    wrap: function (obj, name, make) {
+      var original = obj[name];
+      var replacement = make(original);
+      for (var k in original) { replacement[k] = original[k]; }
+      obj[name] = replacement;
+      LT._undo.push(function () { obj[name] = original; });
+      return original;
+    },
+    unwrap: function () { LT._undo.splice(0).reverse().forEach(function (f) { f(); }); },
+    errors: [],
+    watchErrors: function () {
+      if (LT._watching) { return LT.errors; }
+      LT._watching = true;
+      LT.wrap(lt.object, 'safe_report_error', function (original) {
+        return function (e) {
+          LT.errors.push(String((e && e.stack) || e).slice(0, 1500));
+          return original(e);
+        };
+      });
+      return LT.errors;
+    },
+    editor: function (path) { return cljs.core.first.call(null, lt.objs.editor.pool.by_path(path)); },
+    kw: function (name) { return cljs.core.keyword.call(null, name); },
+    get: function (obj, name) {
+      return cljs.core.get.call(null, cljs.core.deref(obj), LT.kw(name));
+    },
+    open: function (path) {
+      return lt.objs.command.exec_BANG_(LT.kw('open-path'), path);
+    }
+  };
+}
+`;
+
 async function targets() {
     const res = await fetch(`http://127.0.0.1:${PORT}/json`);
     return await res.json();
@@ -66,7 +139,8 @@ async function window_(timeoutMs) {
  *
  * Promises are awaited, so an async capability can be probed directly.
  */
-async function evaluate(expression) {
+async function evaluate(expression, timeoutMs) {
+    const limit = timeoutMs || EVAL_TIMEOUT_MS;
     const page = await window_(2000);
     const ws = new WebSocket(page.webSocketDebuggerUrl);
     const send = (id, method, params) => ws.send(JSON.stringify({ id, method, params }));
@@ -74,13 +148,17 @@ async function evaluate(expression) {
     return await new Promise((resolve, reject) => {
         const timer = setTimeout(() => {
             ws.close();
-            reject(new Error(`timed out after ${EVAL_TIMEOUT_MS}ms — the expression did not return`));
-        }, EVAL_TIMEOUT_MS);
+            reject(new Error(`timed out after ${limit}ms — the expression did not return` +
+                             (timeoutMs ? '' : ' (raise it with -t)')));
+        }, limit);
 
         ws.addEventListener('error', (e) => { clearTimeout(timer); reject(new Error('devtools socket error')); });
         ws.addEventListener('open', () => {
             send(1, 'Runtime.evaluate', {
-                expression,
+                // The prelude is a closed block statement, so the completion
+                // value of the program is still whatever the expression after
+                // it evaluates to.
+                expression: PRELUDE + '\n' + expression,
                 returnByValue: true,
                 // replMode is deliberately off: it changes how the result is
                 // handled and stops awaitPromise taking effect, so an async
@@ -232,21 +310,61 @@ function stop() {
     console.log('stopped');
 }
 
+/**
+ * A PNG of the window as it stands, without booting anything.
+ *
+ * script/screenshot.js boots its own instance per run, which is right for a
+ * fixed set of files and wrong for a window you have spent several evaluations
+ * arranging. This captures whatever is on screen now.
+ */
+async function shot(out, settleSeconds) {
+    if (!out) fail('usage: script/lt-repl.sh shot <out.png> [settle-seconds]');
+    const page = await window_(2000);
+    if (settleSeconds) await new Promise((r) => setTimeout(r, settleSeconds * 1000));
+    const ws = new WebSocket(page.webSocketDebuggerUrl);
+    const data = await new Promise((resolve, reject) => {
+        const timer = setTimeout(() => { ws.close(); reject(new Error('capture timed out')); }, 30000);
+        ws.addEventListener('error', () => { clearTimeout(timer); reject(new Error('devtools socket error')); });
+        ws.addEventListener('open', () => ws.send(JSON.stringify(
+            { id: 1, method: 'Page.captureScreenshot', params: { format: 'png' } })));
+        ws.addEventListener('message', (ev) => {
+            const msg = JSON.parse(ev.data);
+            if (msg.id !== 1) return;
+            clearTimeout(timer);
+            ws.close();
+            if (msg.error) return reject(new Error(msg.error.message));
+            resolve(msg.result.data);
+        });
+    });
+    fs.mkdirSync(path.dirname(path.resolve(out)), { recursive: true });
+    fs.writeFileSync(out, Buffer.from(data, 'base64'));
+    console.log(out + '  ' + fs.statSync(out).size + ' bytes');
+}
+
 async function main() {
     const [command, ...rest] = process.argv.slice(2);
     if (command === 'start') return await start();
     if (command === 'stop') return stop();
     if (command === 'boot-log') return await bootLog(Number(rest[0]) || 20);
+    if (command === 'shot') return await shot(rest[0], Number(rest[1]) || 0);
 
     if (command !== 'eval' && command !== 'cljs') {
-        fail('usage: script/lt-repl.sh start | eval <js> | eval -f <file> | cljs <expr>\n' +
+        fail('usage: script/lt-repl.sh start | eval [-t ms] <js> | eval -f <file> | cljs <expr>\n' +
+             '                          | shot <out.png> [settle-seconds]\n' +
              '                          | boot-log [seconds] | stop');
     }
-    let expression = rest[0] === '-f' ? fs.readFileSync(rest[1], 'utf8') : rest.join(' ');
+    let args = rest;
+    let timeout = 0;
+    if (args[0] === '-t' || args[0] === '--timeout') {
+        timeout = Number(args[1]);
+        if (!timeout) fail('-t wants a number of milliseconds');
+        args = args.slice(2);
+    }
+    let expression = args[0] === '-f' ? fs.readFileSync(args[1], 'utf8') : args.join(' ');
     if (command === 'cljs') expression = cljs(expression);
 
     try {
-        const value = await evaluate(expression);
+        const value = await evaluate(expression, timeout);
         console.log(typeof value === 'string' ? value : JSON.stringify(value, null, 1));
     } catch (e) {
         fail(String(e.message).split('\n').slice(0, 12).join('\n'));

@@ -38,6 +38,19 @@
 (defn (docstring (string) @comment.doc))
 (defn (params (vector (symbol) @variable.parameter)))
 
+; An `ns` docstring, which the grammar does not give a node of its own: an ns
+; form is an ordinary list, so this is any string sitting directly inside one
+; whose head is `ns`. Position would be the obvious test and is wrong — a
+; dotted namespace name parses as an interop node followed by a symbol, so the
+; docstring is the third child of `(ns foo ...)` and the fourth of
+; `(ns foo.bar ...)`. Nesting is the reliable distinction instead: the only
+; other strings in an ns form are inside :require vectors.
+;
+; These are the namespace docstrings this codebase is largely made of, and
+; leaving them the colour of a string makes a page of prose look like data.
+((list . (symbol) @_ns (string) @comment.doc)
+ (#eq? @_ns "ns"))
+
 (anonymous_function (params (vector (symbol) @variable.parameter)))
 (shorthand_function_arg) @variable.parameter
 

@@ -125,12 +125,27 @@ To ask the running editor a question rather than boot one per question:
 script/lt-repl.sh start
 script/lt-repl.sh cljs "files/cwd"
 script/lt-repl.sh eval "cljs.core.count(cljs.core.deref(lt.object.behaviors))"
+script/lt-repl.sh eval -t 60000 "..."       # longer than the 15s default
+script/lt-repl.sh shot builds/shot.png 2    # the window as it stands
 script/lt-repl.sh stop
 ```
 
 It attaches over the DevTools protocol to the real application, evaluates with a
 timeout so a hang reports as one, and munges ClojureScript names — `files/cwd`
 reaches `lt.objs.files.cwd` — outside string literals.
+
+Every evaluation gets an `LT` object holding the things that go wrong by hand:
+
+| | |
+|---|---|
+| `LT.wrap(obj, name, f)` / `LT.unwrap()` | replace a function *without* breaking it. A ClojureScript function of several arities compiles to a dispatcher with the real bodies hanging off it as properties, and internal callers go straight to those — so a plain wrapper breaks every caller, and the damage outlives the probe |
+| `LT.watchErrors()` → `LT.errors` | what behaviors threw. `lt.object` catches exceptions inside reactions, so a behavior that throws is indistinguishable from one that decided not to act |
+| `LT.until(test, ms)`, `LT.sleep(ms)` | wait for a state rather than for a duration |
+| `LT.editor(path)`, `LT.get(obj, "ns/key")`, `LT.open(path)`, `LT.kw(name)` | the lookups every probe starts with |
+
+`script/screenshot.sh <file>...` is the other one: it boots its own instance and
+writes a PNG per file, which is right for a fixed list and wrong for a window
+you have spent a dozen evaluations arranging. That is what `shot` is for.
 
 ## Documentation
 

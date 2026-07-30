@@ -84,6 +84,76 @@ fs.writeFileSync(TS_PROBE, [
 const BINARY_PROBE = path.join(os.tmpdir(), 'lt-smoke-bytes.wasm');
 fs.writeFileSync(BINARY_PROBE, Buffer.from([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00, 0xFF]));
 
+// A project with a language server in it, for the LSP check.
+//
+// Laid out the way a real one is — a root marker, and the server under
+// node_modules/.bin — because that layout *is* the thing being tested: the
+// server is resolved relative to the project rather than to Light Table, on
+// purpose, and a check that skipped it would not be checking the rule.
+//
+// The server is script/fixtures/fake-language-server.js, which reports back
+// what it was told. That is what makes this able to assert on synchronisation
+// instead of on a message merely arriving: both bugs in the first diagnostics
+// slice produced a document version that incremented correctly while
+// `didChange` never left the process, and Light Table catches exceptions
+// inside behavior reactions, so neither said anything.
+const LSP_DIR = path.join(os.tmpdir(), 'lt-smoke-lsp');
+const LSP_PROBE = path.join(LSP_DIR, 'src', 'probe.ts');
+fs.rmSync(LSP_DIR, { recursive: true, force: true });
+fs.mkdirSync(path.join(LSP_DIR, 'src'), { recursive: true });
+fs.mkdirSync(path.join(LSP_DIR, 'node_modules', '.bin'), { recursive: true });
+fs.writeFileSync(path.join(LSP_DIR, 'tsconfig.json'), '{"compilerOptions":{"strict":true}}\n');
+fs.writeFileSync(LSP_PROBE, 'export const first = 1;\nexport const second = 2;\nexport const third = 3;\n');
+fs.copyFileSync(path.join(__dirname, 'fixtures', 'fake-language-server.js'),
+                path.join(LSP_DIR, 'node_modules', '.bin', 'fake-language-server'));
+fs.chmodSync(path.join(LSP_DIR, 'node_modules', '.bin', 'fake-language-server'), 0o755);
+
+// The three snippets the LSP check evaluates in the renderer.
+//
+// Built out here and passed in as strings rather than written inside the
+// harness template literal, because ClojureScript's munged arity names are
+// full of `$` and a `${` inside a template literal is an interpolation. That
+// has already cost this file twice.
+const LSP_START = `(function () {
+    var kw = function (n) { return cljs.core.keyword.call(null, n); };
+    var assoc = cljs.core.assoc.cljs$core$IFn$_invoke$arity$3;
+    var tag = kw('editor.typescript');
+    var table = cljs.core.deref(lt.objs.editor.lsp.servers);
+    var entry = cljs.core.get.call(null, table, tag);
+    entry = assoc(entry, kw('command'), 'node_modules/.bin/fake-language-server');
+    entry = assoc(entry, kw('args'), cljs.core.PersistentVector.EMPTY);
+    cljs.core.reset_BANG_(lt.objs.editor.lsp.servers, assoc(table, tag, entry));
+    lt.objs.command.exec_BANG_(kw('open-path'), ${JSON.stringify(LSP_PROBE)});
+})()`;
+
+const LSP_EDIT = `(function () {
+    var ed = cljs.core.first.call(null, lt.objs.editor.pool.by_path(${JSON.stringify(LSP_PROBE)}));
+    lt.objs.editor.__GT_cm_ed(ed).replaceRange('X', { line: 0, ch: 0 });
+})()`;
+
+const LSP_REPORT = `JSON.stringify((function () {
+    var kw = function (n) { return cljs.core.keyword.call(null, n); };
+    var out = {};
+    try {
+        var ed = cljs.core.first.call(null, lt.objs.editor.pool.by_path(${JSON.stringify(LSP_PROBE)}));
+        if (!ed) return { error: 'no editor' };
+        var st = cljs.core.deref(ed);
+        var doc = cljs.core.get.call(null, st, kw('lt.objs.editor.lsp/doc'));
+        var widgets = cljs.core.get.call(null, st, kw('lt.objs.editor.lsp/widgets'));
+        out.connected = !!cljs.core.get.call(null, st, kw('lt.objs.editor.lsp/conn'));
+        out.version = doc ? cljs.core.get.call(null, doc, kw('version')) : null;
+        out.uri = doc ? String(cljs.core.get.call(null, doc, kw('uri'))) : null;
+        // One widget per line with a diagnostic, not one per diagnostic.
+        out.widgets = widgets ? cljs.core.count(widgets) : -1;
+        var el = lt.object.__GT_content(ed);
+        out.messages = Array.from(el.querySelectorAll('.inline-diagnostic')).map(function (n) {
+            return n.className.replace('inline-diagnostic ', '') + ': ' +
+                   ((n.querySelector('.message') || {}).textContent || '');
+        });
+    } catch (e) { out.error = String((e && e.message) || e); }
+    return out;
+})())`;
+
 // The harness reuses the real main.js so that ipc handlers, command line
 // parsing and window options are the ones that ship, not a copy that can drift.
 const HARNESS = `
@@ -244,6 +314,36 @@ app.on('ready', function () {
                     } catch (e) { out.error = String((e && e.message) || e); }
                     return JSON.stringify(out);
                 })()\`));
+
+                // A language server, end to end: spawn, frame, handshake,
+                // synchronise, and render.
+                //
+                // The server table is repointed at the fixture rather than the
+                // check installing typescript-language-server, because what is
+                // being tested is Light Table's half. A real server would make
+                // this slow, network-dependent, and — since it reports only
+                // about the code — unable to say whether the edit reached it.
+                step = 'starting a language server';
+                await w.webContents.executeJavaScript(${JSON.stringify(LSP_START)});
+                await new Promise(function (r) { setTimeout(r, 4000); });
+
+                // Then an edit, which is the half that has actually broken.
+                // Made through CodeMirror rather than through a command so it
+                // travels the same path a keystroke does — the :change event,
+                // whose arguments are the editor instance and *then* the
+                // change.
+                step = 'editing a file a language server is watching';
+                const lspBeforeEdit = JSON.parse(
+                    await w.webContents.executeJavaScript(${JSON.stringify(LSP_REPORT)}));
+                await w.webContents.executeJavaScript(${JSON.stringify(LSP_EDIT)});
+                await new Promise(function (r) { setTimeout(r, 3000); });
+                // Held aside rather than put straight on the report, which the
+                // collecting step below replaces wholesale.
+                const lsp = {
+                    before: lspBeforeEdit,
+                    after: JSON.parse(
+                        await w.webContents.executeJavaScript(${JSON.stringify(LSP_REPORT)}))
+                };
 
                 // Back to the sample, so the checks that read the visible
                 // editor still see what every other step set up.
@@ -624,6 +724,7 @@ app.on('ready', function () {
                 })\`));
                 report.stdio = stdio;
                 report.treesitter = treesitter;
+                report.lsp = lsp;
                 // The menubar is set by a behavior at startup, and it lands
                 // over here, so this is the only side it can be seen from.
                 step = 'reading the application menu';
@@ -772,6 +873,11 @@ async function main() {
     const unstyledCaptures = (r.treesitter.classes || []).filter(
         (c) => !new RegExp('\\.' + c + '\\s*[,{]').test(themeCss));
 
+    // The fixture server states what it has been told in its first diagnostic,
+    // so this one string carries the whole synchronisation answer.
+    const lsp = r.lsp || {};
+    const lspFirst = (lsp.after && lsp.after.messages && lsp.after.messages[0]) || '';
+
     const checks = [
         ['lt.objs.app initialized', r.appInitialized === true],
         ['platform resolved over ipc', r.platform === ':linux' || r.platform === ':mac' || r.platform === ':windows'],
@@ -898,6 +1004,29 @@ async function main() {
         // Only meaningful when the published flagships were cloned, which
         // build.sh does and CI does not.
         ['bundled plugins loaded', !r.pluginsPresent || r.behaviors > 500],
+        // The language server spine. `before` is after didOpen, `after` is
+        // after one keystroke.
+        ['a language server starts for a project that provides one',
+         !!lsp.before && lsp.before.connected === true],
+        ['its file is addressed as a uri', !!lsp.before &&
+         String(lsp.before.uri || '').startsWith('file:///')],
+        ['diagnostics are drawn inline, grouped by line',
+         !!lsp.before && lsp.before.widgets === 2 && lsp.before.messages.length === 3],
+        ['severities reach the markup',
+         !!lsp.before && /^error: /.test(lsp.before.messages[0] || '') &&
+         /^warning: /.test(lsp.before.messages[1] || '') &&
+         /^info: /.test(lsp.before.messages[2] || '')],
+        // Everything above passes when didOpen works and didChange does not,
+        // which is exactly the state two separate bugs produced. These are the
+        // ones that noticed.
+        ['a keystroke reaches the server', !!lsp.after && /changes=1 /.test(lspFirst)],
+        ['as the incremental change the server asked for, not the whole file',
+         !!lsp.after && /last="X"/.test(lspFirst)],
+        ['carrying the version the document is now at',
+         !!lsp.before && !!lsp.after &&
+         lsp.after.version === lsp.before.version + 1 && /version=2 /.test(lspFirst)],
+        ['and redrawing rather than accumulating',
+         !!lsp.after && lsp.after.widgets === 2 && lsp.after.messages.length === 3],
         ['nothing logged to the console', Array.isArray(r.errors) && r.errors.length === 0]
     ];
 
@@ -926,6 +1055,9 @@ async function main() {
                 (unstyledCaptures.length ? ' UNSTYLED: ' + unstyledCaptures.join(', ') : ''));
     console.log('process stdio: ' + r.stdio.bytesLen + ' bytes back, decoded "' + r.stdio.decoded +
                 '"; file bytes: [' + r.readBytes.magic + ']');
+    console.log('language server: ' + (lsp.after ? lsp.after.widgets + ' widgets, ' +
+                lsp.after.messages.length + ' diagnostics, said "' + lspFirst + '"'
+                : 'no report' + (lsp.before && lsp.before.error ? ' — ' + lsp.before.error : '')));
     if (r.errors && r.errors.length) {
         console.error('\nErrors reported by Light Table:');
         r.errors.forEach(function (e) { console.error('  - ' + e.split('\n')[0]); });
