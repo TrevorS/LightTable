@@ -52,7 +52,14 @@
   lt.objs.context    {:linters {:unresolved-symbol {:level :off}}}
   lt.objs.document   {:linters {:unresolved-symbol {:level :off}}}
   lt.objs.opener     {:linters {:unresolved-symbol {:level :off}}}
-  lt.objs.search     {:linters {:unresolved-symbol {:level :off}}}}
+  lt.objs.search     {:linters {:unresolved-symbol {:level :off}}}
+
+  ;; This namespace exists to prove that `("key" some-map)` works, which is
+  ;; published Light Table API — `lt.util.cljs` extends js/String with IFn to
+  ;; make it so. clj-kondo is right in general that a string is not a function,
+  ;; and wrong about this one file, which is testing the exception on purpose.
+  lt.util.cljs-test  {:linters {:not-a-function {:level :off}
+                                :type-mismatch {:level :off}}}}
 
  ;; Vendored under its own licence and deliberately kept close to upstream, so
  ;; linting it would only generate findings nobody should act on.

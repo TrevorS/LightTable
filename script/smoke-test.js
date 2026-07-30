@@ -451,6 +451,58 @@ app.on('ready', function () {
                             };
                         } catch (e) { return { error: String(e && e.message || e) }; }
                     })(),
+                    // Every mime the file-type table maps: does it produce a
+                    // working mode?
+                    //
+                    // Rust did not. CodeMirror's simple-mode addon decides
+                    // whether a rule's token is a function by asking it for
+                    // an apply method, and extending js/String with IFn puts
+                    // one on every string — so the addon called a string
+                    // and threw, and opening a .rs file threw with it. Six
+                    // modes are built on that addon. Nothing noticed, because
+                    // counting bundled modes says 130 either way.
+                    //
+                    // Instantiating each one is the only check that would have
+                    // caught it: a mode that registers and then throws on the
+                    // first token is indistinguishable from a working one
+                    // until something tokenizes.
+                    modes: (function () {
+                        var types = cljs.core.get.call(null, cljs.core.deref(lt.objs.files.files_obj),
+                                                       cljs.core.keyword.call(null, 'types'));
+                        var mimes = {};
+                        cljs.core.doall.call(null, cljs.core.map.call(null, function (kv) {
+                            var v = cljs.core.nth.call(null, kv, 1);
+                            var mime = cljs.core.get.call(null, v, cljs.core.keyword.call(null, 'mime'));
+                            var name = cljs.core.get.call(null, v, cljs.core.keyword.call(null, 'name'));
+                            if (mime) mimes[mime] = String(name);
+                            return null;
+                        }, types));
+                        var broken = [], noMode = [], ok = 0;
+                        Object.keys(mimes).forEach(function (mime) {
+                            var host = document.createElement('div');
+                            document.body.appendChild(host);
+                            try {
+                                // Content that reaches a keyword, a string, a
+                                // number and a comment in most languages, so a
+                                // mode has to actually tokenize rather than
+                                // return null for an empty document.
+                                // Built rather than written as a literal: this
+                                // string passes through two template literals
+                                // on its way here, and each one would eat a
+                                // backslash escape.
+                                var probeSrc = ['let x = 42;', '"a string"',
+                                                '// a comment', ''].join(String.fromCharCode(10));
+                                var ed = CodeMirror(host, { value: probeSrc, mode: mime });
+                                var m = ed.getMode();
+                                if (!m || m.name === 'null') noMode.push(mime);
+                                else ok++;
+                            } catch (e) {
+                                broken.push(mime + ' (' + mimes[mime] + '): ' + String(e.message).slice(0, 40));
+                            }
+                            host.remove();
+                        });
+                        return { total: Object.keys(mimes).length, ok: ok, noMode: noMode, broken: broken };
+                    })(),
                     // A clipboard round trip covers both directions of the
                     // bridge: a send out and a sendSync back.
                     clipboard: (function () {
@@ -666,6 +718,12 @@ async function main() {
             /one\.txt$/.test(r.search.firstFile) && r.search.firstLine === 2 &&
             r.search.firstText === 'SMOKENEEDLE here'],
         ['the matches were rendered into the results list', r.search.rendered === 4],
+        // plaintext is the one deliberate no-mode: it exists so a file can be
+        // opened with no highlighting at all.
+        ['every mapped file type has a mode that tokenizes', r.modes.broken.length === 0],
+        ['only plaintext resolves to no mode',
+            r.modes.noMode.length === 1 && r.modes.noMode[0] === 'plaintext'],
+        ['the file-type table still covers what it used to', r.modes.total >= 100],
         // The capabilities added for language servers and for WebAssembly.
         // Twelve bytes for four three-byte characters, decoded back to what
         // was written: that is stdin working, stdout working, and no character
@@ -759,6 +817,9 @@ async function main() {
     console.log('worker connected: ' + r.workerConnected + ', files found by background scan: ' + r.workerFilesFound);
     console.log('workspace search: ' + r.search.count + ' results in ' + r.search.reported +
                 ' files, ' + r.search.files + ' searched, ' + r.search.seconds + 's');
+    console.log('file types: ' + r.modes.total + ' mimes, ' + r.modes.ok + ' tokenizing, ' +
+                r.modes.broken.length + ' broken' +
+                (r.modes.broken.length ? ': ' + r.modes.broken.join('; ') : ''));
     console.log('process stdio: ' + r.stdio.bytesLen + ' bytes back, decoded "' + r.stdio.decoded +
                 '"; file bytes: [' + r.readBytes.magic + ']');
     if (r.errors && r.errors.length) {

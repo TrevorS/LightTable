@@ -43,13 +43,29 @@
     (when (and coll (not (zero? (alength coll))))
                  (IndexedSeq. (js/String. coll) 0 nil))))
 
-(set! js/String.prototype.apply
-  (fn
-    [s args]
-    (if (< (alength args) 2)
-      (get (aget args 0) s)
-      (get (aget args 0) s (aget args 1)))))
-
+;; Extending a type with `IFn` makes ClojureScript emit `call` and `apply` onto
+;; its prototype, so the extension above silently gave every string in the
+;; window an `apply` method. (There was also an explicit
+;; `(set! js/String.prototype.apply ...)` here doing the same job a second time
+;; with a different signature. It is gone; this is the part that was not
+;; obvious.)
+;;
+;; That breaks CodeMirror's simple-mode addon, which asks
+;; `if (token && token.apply)` to decide whether a rule's token is a function
+;; it should call. Every plain string token answered yes, the addon called a
+;; string, and it threw — taking six language modes with it: dockerfile,
+;; factor, handlebars, nsis, rust and wast. Rust is the one reachable from the
+;; file-type table, so opening a `.rs` file threw instead of highlighting.
+;;
+;; Deleting it costs nothing. `("key" m)`, `(apply "key" [m])` and
+;; `(map "key" ms)` all still work, because they dispatch through the protocol's
+;; `-invoke` rather than through JS's `apply` — measured against the running
+;; editor before removing it, and guarded by lt.util.cljs-test.
+;;
+;; `call` is left alone. Nothing has been observed to trip over it, and
+;; removing a method nobody has complained about is how the next mystery gets
+;; made.
+(js-delete js/String.prototype "apply")
 
 (extend-type js/Array
   ISeqable

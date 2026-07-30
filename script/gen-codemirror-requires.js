@@ -69,12 +69,36 @@ function foldAddons() {
         .map((f) => `codemirror/addon/fold/${f.replace(/\.js$/, '')}`);
 }
 
+/**
+ * The addons under addon/mode, which are not optional: several modes are
+ * written against them and throw on load without them.
+ *
+ * `simple` defines defineSimpleMode, which dockerfile, factor, handlebars,
+ * nsis, rust and wast are all built on; `overlay` and `multiplex` combine
+ * modes and back another eight between them. Missing, the mode file loads and
+ * calls a function that is not there, so the language does not merely look
+ * plain — opening the file throws.
+ *
+ * Rust was doing exactly that, silently, and the mime audit that found it is
+ * now `script/smoke-test.js`'s job.
+ *
+ * Listed rather than globbed, and emitted before the modes, because the order
+ * is the point: an addon has to have registered before a mode reaches for it.
+ */
+function modeAddons() {
+    const dir = path.join(CM, 'addon', 'mode');
+    if (!fs.existsSync(dir)) return [];
+    return ['simple', 'overlay', 'multiplex']
+        .filter((name) => fs.existsSync(path.join(dir, `${name}.js`)))
+        .map((name) => `codemirror/addon/mode/${name}`);
+}
+
 function main() {
     if (!fs.existsSync(CM)) {
         console.error(`CodeMirror is missing at ${CM}. Run npm ci in deploy/core first.`);
         process.exit(1);
     }
-    const requires = [...foldAddons(), ...modes()];
+    const requires = [...foldAddons(), ...modeAddons(), ...modes()];
     if (requires.length === 0) {
         console.error('Found no CodeMirror modes to require, which cannot be right.');
         process.exit(1);
@@ -92,7 +116,8 @@ function main() {
   node_modules registers against the copy it finds there rather than the one the
   editor uses — and it cannot survive contextIsolation at all.
 
-  ${requires.length} files: ${foldAddons().length} fold addons, ${modes().length} modes."
+  ${requires.length} files: ${foldAddons().length} fold addons, ${modeAddons().length} mode
+  addons, ${modes().length} modes."
   (:require
 ${body}))
 
@@ -104,7 +129,7 @@ ${body}))
     // Only rewrite when it changed, so shadow-cljs does not recompile the
     // world on every build.
     if (previous !== source) fs.writeFileSync(OUT, source);
-    console.log(`codemirror requires: ${foldAddons().length} fold addons, ${modes().length} modes` +
+    console.log(`codemirror requires: ${foldAddons().length} fold addons, ${modeAddons().length} mode addons, ${modes().length} modes` +
                 (previous === source ? ' (unchanged)' : ''));
 }
 
