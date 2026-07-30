@@ -1,5 +1,22 @@
 #Changes
 
+## Unreleased
+
+Every plugin Light Table ships with now lives in this repository and is built
+from source against the editor it extends. Nothing is cloned at build time.
+Compiling five plugins that had shipped as decade-old artifacts turned up
+eleven bugs in them, several of which had made the plugin silently useless.
+
+* CHANGED: The Clojure, CSS, HTML, Javascript and Python plugins are vendored under `plugins/`, beside TypeScript and Paredit, and built as modules of the editor's own ClojureScript build. `script/build.sh` no longer clones anything, and CI no longer fetches anything. Each plugin's `VENDORED.md` records where it came from, what was left behind, and every change to its source
+* CHANGED: Every one of them declares `:capabilities` now, so the capability report has something to check. Widening the smoke test's probe from two plugins to all seven immediately found four manifests that disagreed with what inference reads out of the plugin's own JavaScript; declared and used agree exactly for all seven
+* CHANGED: Language servers are declared as data — `:lt.objs.editor.lsp/language-servers`, a non-exclusive `:user` behavior shaped like `:lt.objs.files/file-types`. A `user.behaviors` entry beats a plugin's and a plugin's beats Light Table's own, so pointing at a particular binary, adding arguments or turning a server off is configuration rather than a source edit. `typescript-language-server` is declared by `plugins/TypeScript` and `clojure-lsp` by `plugins/Clojure`, because the plugin that spawns a process is the one accountable for it
+* CHANGED: Five smoke checks were gated on whether the published plugins had been cloned, which meant the plugin require shim, the CommonJS module loader and the capability report were exercised on a developer's machine and skipped in CI. They run unconditionally. 76 checks, up from 72
+* REMOVED: The Rainbow plugin is not vendored. It re-tokenizes through `CodeMirror.overlayMode` to colour brackets by nesting depth, on exactly the languages tree-sitter highlighting already owns. Colouring by depth from the parse tree is the replacement
+* REMOVED: The CodeMirror modes five plugins shipped. Light Table bundles all 131 of CodeMirror's own, so each of those was an old mode overwriting a current one at load
+* FIXED: The Clojure plugin's nREPL message pump called `setImmediate` on `global`, neither of which exists in the window — it threw on the second message from inside a socket callback, where nothing reported it. `recur` inside a `try` no longer compiles; `console/util-inspect` and `lt.objs.deploy/deploy` no longer exist; `string/lower_case` is not a function, so building a ClojureScript plugin from the editor threw; and a notifier argument was never bound
+* FIXED: The Javascript plugin printed a script tag naming port `undefined` for connecting a browser, told the node client to call back on port `undefined`, and passed two of three arguments when editing a live script. The Python plugin told its client to call back on port `undefined` too — all four are the same rename, `tcp/port` to `(tcp/->port)`, that an unrebuilt artifact could not have noticed
+* FIXED: `script/lt-repl.sh start` could not start Light Table on macOS. It asked for `xvfb` whenever `DISPLAY` was unset, which on a Mac is always
+
 ## 0.10.0
 
 Syntax highlighting is now driven by a parser rather than a per-line

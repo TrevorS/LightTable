@@ -105,19 +105,24 @@ language:
 **In a plugin**, a description rather than an implementation:
 
 ```clojure
-{:name "TypeScript"
- :capabilities #{:processes :files}
- :language-servers
- [{:tags     #{:editor.typescript :editor.tsx}
-   :root     ["tsconfig.json" "jsconfig.json" "package.json"]
-   :command  ["node_modules/.bin/typescript-language-server" "--stdio"]
-   :fallback :none}]}
+;; plugins/TypeScript/typescript.behaviors
+[:lsp.client :lt.objs.editor.lsp/language-servers
+ [{:tags [:editor.typescript]
+   :language-id "typescript"
+   :root ["tsconfig.json" "jsconfig.json" "package.json"]
+   :command "typescript-language-server"
+   :args ["--stdio"]}]]
 ```
 
+> This page sketched that as a `:language-servers` key in `plugin.edn`. It is a
+> `.behaviors` entry instead, for the reason
+> [lsp-architecture.md](lsp-architecture.md) gives: a manifest is a fact about
+> a plugin rather than a setting, so a user could not have overridden it.
+
 `:root` is the marker list `LT.projectRoot` already takes, and `:command` is
-resolved relative to the project root — the same rule the type-check command
-uses, and for the same reason: checking against a different compiler than the
-project builds with reports differences that are not the code's.
+looked for under the project root before `PATH` — the same rule the type-check
+command uses, and for the same reason: checking against a different compiler
+than the project builds with reports differences that are not the code's.
 
 **Capabilities fall out of it.** A language server is a spawned process reading
 the project, so a plugin declaring one needs `:processes` and `:files` — which

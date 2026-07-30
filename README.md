@@ -39,7 +39,7 @@ all go through the same scripts.
 
 ```sh
 make deps                  # dependencies, including the Electron binary
-make build                 # fetches plugins, builds, packages
+make build                 # builds everything, packages
 make run                   # run what you just built, from the tree
 ```
 
@@ -81,17 +81,25 @@ code runs, because each has a different set of globals:
 need them. See [doc/javascript-remaining.md](doc/javascript-remaining.md) for
 why they are separate.
 
-Plugins that live in this repository are built separately:
+Plugins are built separately:
 
 ```sh
 make build-plugins
 ```
 
+**Every plugin Light Table ships with lives in this repository**, in
+[`plugins/`](plugins/README.md), and is built from source against the editor it
+extends. Nothing is cloned at build time. That command also installs each
+plugin's own npm dependencies and fetches the one binary in the tree — the
+Clojure plugin's nREPL server, pinned to a tag and checksummed.
+
 `plugins/TypeScript` is the worked example, and does something real: it finds
 the tsconfig governing the open file, runs that project's own compiler, and
 reports the diagnostics to Light Table's console. See
 [doc/language-support.md](doc/language-support.md) for what language support
-looks like beyond that, and where a language server would fit.
+looks like beyond that, and
+[doc/lsp-architecture.md](doc/lsp-architecture.md) for the language server
+client that grew out of it.
 
 The window does not use Electron's modules directly. Everything it can ask the
 desktop for is a named capability exposed by the preload script, and
@@ -192,9 +200,12 @@ currently shimmed and what has broken.
 
 Plugins in [`plugins/`](plugins/README.md) do not have that problem: they are
 built from source against the editor, in TypeScript or ClojureScript, so a
-rename is a compile error. That directory also documents the capability
-manifest — what a plugin declares it needs — and the three levels of
-enforcement it is a path towards.
+rename is a compile error. Compiling the five that used to be fetched as
+published artifacts found eleven bugs in them, several of which had made part
+of the plugin silently useless — each one's `VENDORED.md` has the list.
+
+That directory also documents the capability manifest — what a plugin declares
+it needs — and the three levels of enforcement it is a path towards.
 
 ## Contributing
 

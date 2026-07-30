@@ -6,6 +6,9 @@ at startup — which is not hypothetical: `crate` → `singultus` broke both
 flagship plugins and the default user plugin silently, and stayed broken until
 someone ran them.
 
+**Every plugin Light Table ships with is here.** Nothing is cloned at build
+time and no compiled output, jar or `node_modules` is committed.
+
 ```
 plugins/
 ├── types/lighttable.d.ts   the Light Table API, for TypeScript plugins
@@ -15,11 +18,16 @@ plugins/
 │   ├── typescript.behaviors   what the plugin contributes
 │   ├── tsconfig.json
 │   └── src/typescript.ts
-└── Paredit/                a plugin, in ClojureScript
-    ├── plugin.edn
-    ├── paredit.behaviors
-    ├── VENDORED.md         where it came from, and what changed
-    └── src/lt/plugins/paredit.cljs
+├── Paredit/                a plugin, in ClojureScript
+│   ├── plugin.edn
+│   ├── paredit.behaviors
+│   ├── VENDORED.md         where it came from, and what changed
+│   └── src/lt/plugins/paredit.cljs
+├── Clojure/                and five more, all vendored the same way
+├── CSS/
+├── HTML/
+├── Javascript/
+└── Python/
 ```
 
 `npm run build:plugins` places everything in `deploy/plugins/`, where the loader
@@ -28,9 +36,30 @@ into the plugin's directory, while ClojureScript is a module of the `:app` build
 — so shadow writes it beside the bundle and `script/place-plugins.js` moves it
 next to its `plugin.edn`. Run `npm run build:cljs` first, or it will say so.
 
+A directory is a plugin when it has a `plugin.edn`. A ClojureScript one also
+needs its `src` on `:source-paths` and a `:modules` entry in
+`shadow-cljs.edn` — every namespace its `.behaviors` file names has to be an
+entry, because behaviors are resolved by name at load and a namespace nothing
+requires is one the module would not contain — plus a line in `CLJS_PLUGINS` in
+`script/place-plugins.js` saying which module file its `plugin.edn` expects.
+
+### What a plugin may bring with it
+
+| | |
+|---|---|
+| its own source | committed, and compiled here |
+| a third-party npm package | a dependency in the plugin's `package.json`, installed at build time by `script/install-plugin-deps.js` into a gitignored `node_modules`. The lockfile is committed |
+| compiled output | never. `.gitignore` covers `/plugins/*/*_compiled.js` and its map |
+| a binary | fetched at build time, pinned and checksummed. There is exactly one: the Clojure plugin's 15MB nREPL uberjar, by `script/fetch-clojure-jar.js` |
+
+The binary is the escape hatch and is meant to stay a small one.
+`plugins/Clojure/VENDORED.md` records what it would take to build that jar here
+instead — both halves' Clojure sources are vendored beside it — and why that is
+future work rather than done.
+
 ### Bringing a published plugin in
 
-Paredit is the worked example: 683 lines of ClojureScript from
+Paredit was the worked example: 683 lines of ClojureScript from
 [LightTable/Paredit](https://github.com/LightTable/Paredit), under its own MIT
 licence. Upstream ships `paredit_compiled.js` as a checked-in artifact that
 nothing rebuilds.
@@ -40,11 +69,32 @@ Compiling it against the editor found a warning on the first attempt —
 ClojureScript reports an undeclared var. Upstream ships with it, which is
 exactly the sort of thing an unrebuilt artifact hides.
 
+The five that followed made that argument rather better than one warning did.
+Between them, compiling turned up eleven things, most of which had made part of
+the plugin silently useless:
+
+| plugin | what the artifact was hiding |
+|---|---|
+| Clojure | `recur` inside a `try`; `setImmediate` on a `global` the window does not have, which killed the nREPL message pump on its second message from inside a socket callback; `string/lower_case`, which is not a function; a notifier argument bound nowhere; `console/util-inspect` and `lt.objs.deploy/deploy`, which core no longer has; two namespaces reached fully qualified without a require |
+| Javascript | `ws/port` and `tcp/port`, both now `->port` functions — the script tag it printed for connecting a browser named port `undefined`, and so did the callback address it handed the node client; `send` called with two of its three arguments; a `catch` on `js/global.Error` |
+| Python | the same `tcp/port`, so its client was told to call back on `undefined` |
+| CSS, HTML | forward references, and `lt.objs.editor` required twice under two aliases with both in use |
+
+Each plugin's `VENDORED.md` has the full list and what was dropped. All five
+are marked **provisional**: they predate the modernization by a decade, and the
+point of vendoring them was to be able to see this at all — not to commit to
+maintaining them as they stand.
+
 Not every plugin is worth bringing in. Emmet needs no capabilities and would
 otherwise be a good candidate, but its 13,931 lines are vendored third-party
 JavaScript that bundles Underscore 1.3.3 from 2012 — moving it here means owning
 that. The test is whether the plugin's own source is what you would be
 maintaining.
+
+Rainbow was evaluated and deliberately left out. It colours nested brackets by
+re-tokenizing through `CodeMirror.overlayMode`, on exactly the tags tree-sitter
+highlighting already owns, and `deploy/core/css/treesitter.css` argues against
+the result by name. Colouring by depth from the parse tree is the replacement.
 
 ## What a plugin is
 
@@ -195,10 +245,25 @@ JavaScript a plugin actually loads.
 what it declared and what it uses. On a stock install:
 
 ```
-Clojure: no manifest, uses :desktop :files :network :plugins :processes
-Emmet: no manifest, uses nothing
+Clojure: declares :desktop :files :network :plugins :processes, uses the same
+CSS: declares :files, uses :files
+HTML: declares nothing, uses nothing
+Javascript: declares :desktop :files :network :plugins :processes, uses the same
+Paredit: declares nothing, uses nothing
+Python: declares :desktop :files :network :plugins :processes, uses the same
 TypeScript: declares :files :processes, uses :files :processes
 ```
+
+Every plugin that ships with Light Table now declares one, so what the report
+is for has changed: it no longer answers "what would this plugin have to
+declare" but "does what it declared cover what it does". The answer was no four
+times over on the first attempt — Javascript opens a page outside the window,
+Python resolves its own directory, and CSS and HTML both claimed a `:network`
+they reach only through `lt.objs.clients`. The smoke test checks all seven
+agree, which is why those were caught in a build rather than by a user.
+
+An installed third-party plugin still has no manifest, and that is what the
+rest of this section is about.
 
 Inference reads only JavaScript, because a plugin's ClojureScript sources are
 not what runs, and it matches member access rather than a bare mention — every
@@ -217,8 +282,9 @@ inference existed would have meant every published plugin breaking on the day it
 shipped. What is missing is the enforcement gate itself, which is the point at
 which `:undeclared` stops being a report and starts being a refusal.
 
-`TypeScript` is the first plugin to carry a manifest, and the smoke test checks
-that what it declares and what it uses agree. It is also the case that made
+`TypeScript` was the first plugin to carry a manifest; every plugin in this
+repository carries one now, and the smoke test checks that what each declares
+and what each uses agree. It is also the case that made
 inference cover the third route to a capability: it reaches `lt.util.bridge`
 directly rather than through `require` or `lt.objs`, and until it existed the
 scanner did not look there.
