@@ -102,6 +102,86 @@ app.on('ready', function () {
                         return !!(lt.plugins.user && lt.plugins.user.hello) &&
                                cljs.core.contains_QMARK_(cmds, cljs.core.keyword.call(null, 'user.say-hello'));
                     })(),
+                    // The TypeScript plugin: loaded, and its commands really
+                    // reached the command manager through the cljs interop.
+                    tsPlugin: (function () {
+                        var cmds = cljs.core.get.call(null, cljs.core.deref(lt.objs.command.manager),
+                                                      cljs.core.keyword.call(null, 'commands'));
+                        return !!(lt.plugins['hello-ts']) &&
+                               cljs.core.contains_QMARK_(cmds, cljs.core.keyword.call(null, 'hello-ts.say-hello')) &&
+                               cljs.core.contains_QMARK_(cmds, cljs.core.keyword.call(null, 'hello-ts.copy-greeting'));
+                    })(),
+                    // Keyboard handling, end to end: a real key event reaching
+                    // Light Table's handler through the forked Mousetrap. The
+                    // fork exists precisely to route keydown/keypress/keyup
+                    // differently, and nothing else here would notice if that
+                    // routing broke.
+                    keyboard: (function () {
+                        if (typeof Mousetrap !== 'function') return 'no Mousetrap';
+                        if (typeof Mousetrap.prototype.handleKeyUp !== 'function') return 'no handleKeyUp';
+                        var seen = null;
+                        var original = Mousetrap.prototype.handleKey;
+                        Mousetrap.prototype.handleKey = function (key) {
+                            seen = String(key);
+                            return original.apply(this, arguments);
+                        };
+                        try {
+                            document.dispatchEvent(new KeyboardEvent('keydown', {
+                                key: 'a', code: 'KeyA', keyCode: 65, which: 65,
+                                ctrlKey: true, bubbles: true
+                            }));
+                        } finally {
+                            Mousetrap.prototype.handleKey = original;
+                        }
+                        return seen === null ? 'not reached' : seen;
+                    })(),
+                    // Paredit, built here from ClojureScript as a module of
+                    // the app build. It declares no capabilities, so this also
+                    // exercises the case where a manifest asserts nothing.
+                    paredit: (function () {
+                        var cmds = cljs.core.get.call(null, cljs.core.deref(lt.objs.command.manager),
+                                                      cljs.core.keyword.call(null, 'commands'));
+                        return !!lt.plugins.paredit &&
+                               cljs.core.contains_QMARK_(cmds, cljs.core.keyword.call(null, 'paredit.select.parent'));
+                    })(),
+                    // Capability inference, against the real installed plugins.
+                    // HelloTS is the interesting case: it is the only plugin
+                    // carrying a manifest, so what it declared and what it uses
+                    // should agree.
+                    capabilities: (function () {
+                        var plugins = lt.objs.plugins.available_plugins();
+                        var out = {};
+                        ['HelloTS', 'Clojure'].forEach(function (name) {
+                            var p = cljs.core.get.call(null, plugins, name);
+                            if (!p) return;
+                            var r = lt.objs.plugins.capability_report(p);
+                            out[name] = {
+                                declared: cljs.core.pr_str(cljs.core.get.call(null, r, cljs.core.keyword.call(null,'declared'))),
+                                used: cljs.core.pr_str(cljs.core.get.call(null, r, cljs.core.keyword.call(null,'used'))),
+                                undeclared: cljs.core.pr_str(cljs.core.get.call(null, r, cljs.core.keyword.call(null,'undeclared')))
+                            };
+                        });
+                        return out;
+                    })(),
+                    // The enforcement gate, driven directly: default mode,
+                    // then refuse against the plugin that carries a manifest.
+                    // HelloTS is inside its manifest, so it stays allowed —
+                    // an under-declaring plugin is what refusal is for, and
+                    // that case is covered by unit tests.
+                    gate: (function () {
+                        var dir = cljs.core.get.call(null,
+                                    cljs.core.get.call(null, lt.objs.plugins.available_plugins(), 'HelloTS'),
+                                    cljs.core.keyword.call(null, 'dir'));
+                        var before = String(lt.objs.plugins.enforcement());
+                        var allowedByDefault = lt.objs.plugins.allowed_to_load_QMARK_(dir);
+                        lt.objs.plugins.set_enforcement_BANG_(cljs.core.keyword.call(null, 'refuse'));
+                        var mode = String(lt.objs.plugins.enforcement());
+                        var stillAllowed = lt.objs.plugins.allowed_to_load_QMARK_(dir);
+                        lt.objs.plugins.set_enforcement_BANG_(cljs.core.keyword.call(null, 'warn'));
+                        return { before: before, allowedByDefault: allowedByDefault,
+                                 refuseMode: mode, compliantStillAllowed: stillAllowed,
+                                 unknownDir: lt.objs.plugins.allowed_to_load_QMARK_('/nope') };
+                    })(),
                     // The preload bridge, and that the window is actually going
                     // through it rather than still reaching Electron directly.
                     bridge: (function () {
@@ -178,10 +258,16 @@ async function main() {
 
     // Plugins are cloned by build.sh. Without the directory the plugin loader
     // reports an error that has nothing to do with what is being tested.
+    //
+    // In-tree plugins are placed here too, so presence of the directory no
+    // longer means the published ones were fetched — the behavior count check
+    // below only makes sense when the flagships are there, so look for them by
+    // name rather than counting entries.
     const pluginDir = path.join(ROOT, 'deploy', 'plugins');
     const madePluginDir = !fs.existsSync(pluginDir);
-    const pluginsPresent = !madePluginDir && fs.readdirSync(pluginDir).length > 0;
-    if (pluginsPresent) console.log('plugins present: ' + fs.readdirSync(pluginDir).join(', '));
+    const installed = madePluginDir ? [] : fs.readdirSync(pluginDir);
+    const pluginsPresent = installed.includes('Clojure') && installed.includes('Javascript');
+    if (installed.length) console.log('plugins present: ' + installed.join(', '));
     if (madePluginDir) fs.mkdirSync(pluginDir, { recursive: true });
 
     const appDir = fs.mkdtempSync(path.join(os.tmpdir(), 'lt-smoke-'));
@@ -225,6 +311,24 @@ async function main() {
         ['a background job round-tripped', r.workerFilesFound >= 5],
         ['the crate compatibility shim is published', r.crateShim === true],
         ['the default user plugin loaded', r.userPlugin === true],
+        ['the TypeScript plugin loaded and registered its commands', r.tsPlugin === true],
+        ['Paredit, built here from ClojureScript, loaded', r.paredit === true],
+        ['a key event reaches Light Table through the forked Mousetrap', r.keyboard === 'a'],
+        ['the enforcement gate defaults to warn and persists a change',
+         !!r.gate && r.gate.before === ':warn' && r.gate.refuseMode === ':refuse'],
+        ['a plugin inside its manifest loads even when refusing',
+         !!r.gate && r.gate.allowedByDefault === true && r.gate.compliantStillAllowed === true &&
+         r.gate.unknownDir === true],
+        ['capability inference matches the one declared manifest',
+         !!r.capabilities && !!r.capabilities.HelloTS &&
+         r.capabilities.HelloTS.declared === '#{:clipboard}' &&
+         r.capabilities.HelloTS.used === '#{:clipboard}' &&
+         r.capabilities.HelloTS.undeclared === '#{}'],
+        // Only meaningful when the flagships were cloned.
+        ['capability inference reads an unmanifested plugin',
+         !r.pluginsPresent || (!!r.capabilities.Clojure &&
+                               r.capabilities.Clojure.declared === 'nil' &&
+                               r.capabilities.Clojure.used.indexOf(':processes') !== -1)],
         ['the preload bridge is exposed', r.bridge === true],
         ['the window reaches the desktop through the bridge', r.bridgeInUse === true],
         ['zoom is served by the bridge', typeof r.zoomFactor === 'number' && r.zoomFactor > 0],
@@ -232,7 +336,8 @@ async function main() {
         ['the application menu was built over the bridge', r.appMenu === true],
         ['the browser tab has a real webview', r.webviewUpgraded === true],
         ['the browser injection reached the guest page', r.guestInjection === 'object'],
-        // Only meaningful when deploy/plugins is populated, which build.sh does.
+        // Only meaningful when the published flagships were cloned, which
+        // build.sh does and CI does not.
         ['bundled plugins loaded', !r.pluginsPresent || r.behaviors > 500],
         ['nothing logged to the console', Array.isArray(r.errors) && r.errors.length === 0]
     ];
@@ -242,7 +347,8 @@ async function main() {
         console.log((passed ? 'ok    ' : 'FAIL  ') + name);
         if (!passed) failed++;
     }
-    console.log('\nbehaviors registered: ' + r.behaviors);
+    console.log('\ncapability reports: ' + JSON.stringify(r.capabilities));
+    console.log('behaviors registered: ' + r.behaviors);
     console.log('CodeMirror modes registered: ' + r.codeMirrorModes);
     console.log('worker connected: ' + r.workerConnected + ', files found by background scan: ' + r.workerFilesFound);
     if (r.errors && r.errors.length) {

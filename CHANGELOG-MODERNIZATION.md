@@ -469,6 +469,141 @@ Table calls it, but with no handler set Electron's default creates a
 included — pointed at whatever url it was given. It is denied; an `http(s)`
 url goes to the desktop's browser instead.
 
+## Every JavaScript file in the tree, and where it came from
+
+Thirteen files, 2,400 lines. Auditing them for the monorepo question — what can
+this repository actually build from source? — the answer sorted into four
+groups, and only one file was a compiler artifact.
+
+**Compiler output that nothing rebuilt.** `deploy/core/User/user_compiled.js`,
+the default user plugin: 68 lines emitted by a ClojureScript old enough to still
+produce `goog.provide` and `.call(null, ...)`, from a source file sitting in the
+same directory. It had drifted — still calling `crate.core/html` years after
+that rename, so it threw on every startup until it was hand-patched earlier in
+this branch. It is a module of the `:app` build now, compiled against the editor
+it extends, and gitignored. A rename in the host is a build error.
+
+That is the shape the monorepo wants: **a module, not a second build.** It
+shares the bundle's `cljs.core`, references its hoisted constants, and comes out
+as a plain script the existing plugin loader loads with no format of its own.
+Nothing about it is special to the User plugin — the same applies to the seven
+bundled plugins `script/build.sh` currently clones as prebuilt artifacts.
+
+**Vendored third-party code.** Lifted, so per the standing rule it gets ported
+rather than carried:
+
+| | lines | origin | status |
+|---|---|---|---|
+| `util/keyevents.js` | 1,086 | Mousetrap 1.6.0, Apache 2.0 | **A real fork.** Diffed against upstream 1.6.0: four Light Table deviations, all comment-marked — a `handleKeyUp` hook, a `keyDownOnly` helper, a rewrite of the keydown/keypress/keyup dispatch so a keypress character can be paired with its keydown keycode, and a backported numpad fix (upstream PR #258). Not replaceable with the npm package: deviation three is inside a private function. Port. |
+| `util/throttle.js` | 9 | jQuery throttle/debounce 1.1, Ben Alman, 2010 | **Gone.** Minified, reached through a global called `Cowboy`, and twenty lines of standard behaviour. Now `lt.util.js/throttle` and `/debounce`, with tests. |
+| `util/fuzzy.js` | 110 | `string_score` (minified) plus Light Table's own `wrapMatch` | Patches `String.prototype.score`. Port; the monkey patch should not survive it. |
+| forked CodeMirror addons | 281 | CodeMirror | Vendored forks. Leave them — typing them means diverging further from upstream. |
+
+**Light Table's own hand-written JavaScript**: `ws.js` (175, the socket.io shim
+served to connected browsers), `ui/dragdrop.js` (100), `background/behaviorsParser.js`
+(121), `background/walkdir2.js` (74). All portable, none large.
+
+**This project's own tooling**: `script/smoke-test.js` and `script/screenshot.js`.
+
+Two of these are loaded by `load/js`, which evaluates them into global scope —
+`fuzzy.js` and `dragdrop.js`. Porting them to modules that declare their exports
+retires those eval sites as a side effect, which is the prerequisite for any CSP
+conversation.
+
+## What plugins actually need, measured
+
+Before designing a manifest it was worth knowing what plugins do, so 20
+published ones were cloned and read — the most-released across languages, tools
+and themes, which is the closest thing to a popularity signal the metadata
+repository offers.
+
+The naive measurement says the ecosystem is nearly ready to be sandboxed.
+Counting direct `require()` calls, **10 of 20 plugins need nothing from Node**:
+
+| module | plugins |
+|---|---|
+| `child_process` | 7/20 |
+| `path` | 4/20 |
+| `fs` | 3/20 |
+| `net`, `os` | 2/20 each |
+| `buffer`, `http` | 1/20 each |
+
+That measurement is wrong, and the way it is wrong is the finding. The Terminal
+plugin `require`s nothing at all — and spawns processes, through
+`lt.objs.proc`. Counting Light Table's *own* privileged namespaces, only **3 of
+20** need nothing (Emmet, Paredit, and a theme):
+
+| namespace | plugins |
+|---|---|
+| `lt.objs.files` — the filesystem | 15/20 |
+| `lt.objs.plugins` — plugin management | 9/20 |
+| `lt.objs.proc` — spawning processes | 8/20 |
+| `lt.objs.platform` — shell and clipboard | 6/20 |
+| `lt.objs.thread` — the background worker | 4/20 |
+| `lt.objs.clients.tcp` / `.ws` — sockets | 4/20 |
+
+**A manifest covering only `require` would have been security theatre.** It
+would have called Terminal safe.
+
+Two things follow. Capabilities have to be named after what a plugin *does*, so
+that both routes to a thing — Node directly, or Light Table's API — map onto one
+name. And since the dominant route is Light Table's own API, which is a
+chokepoint the editor controls, **a manifest can be enforced without
+`contextIsolation` at all**. That is what turns the plugin blocker from a wall
+into a migration.
+
+The vocabulary that came out of it — `:files`, `:processes`, `:network`,
+`:desktop`, `:clipboard`, `:worker`, `:plugins` — and the three levels of
+enforcement are documented in [plugins/README.md](plugins/README.md).
+
+`lt.objs.plugins.capabilities` implements the inference, and **Plugins: Report
+what each plugin can do** runs it over everything installed. Running the shipped
+version over the same 20 plugins refines the numbers above: counting both routes
+to a thing as one capability, **4 of 20 need nothing** — `:files` 15,
+`:processes` 10, `:plugins` 8, `:network` and `:desktop` 5 each, `:worker` 3,
+`:clipboard` 1.
+
+Inference matters as much as the vocabulary. Almost no published plugin declares
+anything, because they all predate the idea, so enforcement built on
+declarations alone would have applied to nothing. Inferring the same evidence
+means an author can see what they would have to declare before declaring it and
+a user can see what they are installing — while every existing plugin keeps
+working. Nothing is denied yet; that gate is the next step, and it is the point
+where `:undeclared` stops being a report and becomes a refusal.
+
+## The first plugin built in this repository
+
+Worth settling first, because it decides whether TypeScript is a new mechanism
+or an existing one: **Light Table never required plugins to be ClojureScript.**
+`:lt.objs.plugins/load-js` evaluates JavaScript and does not care what produced
+it. Of the 20 surveyed, Emmet and Claire are plain hand-written JavaScript with
+no ClojureScript at all — Emmet by Light Table's own author. So a TypeScript
+plugin is a third source language for an unchanged loader, and nothing in the
+editor had to change to accept one.
+
+`plugins/HelloTS` is a Light Table plugin written in TypeScript, built from
+source against the editor it extends, carrying a capability manifest. It is
+small on purpose: what it demonstrates is the shape.
+
+- Plugins load as global-scope scripts, so the build is `module: none` plus
+  `outFile`, with `plugins/lib/lt.ts` concatenated ahead of the plugin's
+  sources. That helper is a `namespace` rather than a module because namespaces
+  compile to idempotent globals.
+- `plugins/types/lighttable.d.ts` describes the editor's API. It is
+  hand-written, because that API has no machine-readable schema, so it describes
+  rather than guarantees — but it catches the mistakes that actually happen, and
+  everything in it is exercised against the running editor by the smoke test.
+- `tsconfig.json` sets `"types": []`. A plugin that declares no filesystem
+  capability should not be able to see `fs`'s signatures either.
+- The output is strict-mode and `load/js` runs it through `window.eval`, so a
+  plugin's top-level bindings stay inside that eval rather than becoming
+  globals. Two plugins can carry their own copy of the helpers without
+  colliding; the cost is that anything published has to be assigned somewhere
+  deliberately.
+
+Verified by the smoke test with and without the cloned flagship plugins, since
+`deploy/plugins` is no longer empty in CI.
+
 ## Content isolation (not yet)
 
 `nodeIntegration: true` and `contextIsolation: false` are still set. The bridge
@@ -538,22 +673,19 @@ that was always going to be harder, and it is not `eval`:
    and inherit full Node. They also ship precompiled, so the host cannot rebuild
    them: the Clojure plugin calls `require("net")` at namespace load time for
    nREPL, the Javascript plugin does the same. Turning on isolation breaks both
-   instantly for everyone who has them installed. Three ways out, none free:
-   - **Compatibility `require` on the bridge.** A `window.require` backed by an
-     allowlist proxied through main. Keeps plugins working and still gives a
-     chokepoint — an audited set of modules with a place to log, scope or
-     refuse. But `net` is stateful and callback-driven, so proxying it means
-     modelling socket handles across the boundary. Real work, and it hands back
-     much of what isolation was for.
-   - **Rebuild the bundled plugins.** Fine for the seven that ship with Light
-     Table (see the monorepo section — this is a second reason to want it), and
-     no help at all for anything third-party.
-   - **Isolate per plugin.** The interesting one. Plugins do not all need the
-     same things: a syntax mode needs nothing, an nREPL client needs a socket.
-     A manifest declaring what a plugin uses, enforced by which capabilities its
-     load gets, is the design the bridge is already shaped for. It is also a
-     migration: unmanifested plugins get everything, manifested plugins get less,
-     and the default flips later.
+   instantly for everyone who has them installed.
+
+   The three ways out turned out to be **three levels rather than three
+   alternatives**, which is the useful reframing — see
+   [plugins/README.md](plugins/README.md) for the full design. Briefly: legacy
+   plugins keep working unmanifested and can have a manifest inferred by
+   scanning them; a manifested plugin is held to what it declared; an isolated
+   plugin is held by the process boundary. A plugin moves from the first level
+   to the second by adding a line to its `plugin.edn`.
+
+   The load-bearing detail is that **level two does not need
+   `contextIsolation`.** That fell out of surveying the ecosystem rather than
+   reasoning about it, below.
 3. **The bridge is the permission system**, so its surface should keep being
    designed as one. `readFile` scoped to the workspace is a different thing from
    `fs.readFile`, and the difference is worth having before a hundred plugins
@@ -597,6 +729,11 @@ cannot be turned on while the flagship plugins call `require("net")` from
 precompiled code nobody rebuilds. In-tree plugins can be moved onto the bridge
 in the same commit that flips it.
 
+The directory exists — `plugins/`, with the first TypeScript plugin in it and
+the build wired into `script/build.sh` and CI. What remains is moving the seven
+published ones in, which is the payload-and-coupling problem above rather than a
+question of mechanism.
+
 ## Hand-written JavaScript to TypeScript
 
 The privileged half is done — `src-electron/`, compiled to `deploy/core` by a
@@ -616,14 +753,38 @@ What is left is 1,832 lines, and it does not all deserve the same answer.
 
 | | lines | notes |
 |---|---|---|
-| `script/smoke-test.js` | 243 | Test harness. Types would have caught the probe mistakes made while writing it, twice. |
-| `ws.js`, `dragdrop.js`, `fuzzy.js`, `throttle.js`, `behaviorsParser.js`, `walkdir2.js` | 589 | Light Table's own runtime scripts. Worth porting; none are large. |
-| `util/keyevents.js` | 1,086 | A vendored keyboard library. Should be replaced rather than ported. |
+| `script/smoke-test.js`, `script/screenshot.js` | 376 | This project's tooling. Types would have caught the probe mistakes made while writing them. |
+| `ws.js`, `dragdrop.js`, `fuzzy.js`, `behaviorsParser.js`, `walkdir2.js` | 580 | Light Table's own runtime scripts, plus one vendored scorer inside `fuzzy.js`. Worth porting; none are large. |
+| `util/keyevents.js` | 1,097 | Mousetrap 1.6.5, forked. Deliberately **not** ported — see below. |
 | forked CodeMirror addons | 281 | Vendored forks; typing them means diverging further from upstream. Leave them. |
 
-The window's own scripts are loaded as global-scope `<script>` tags, so porting
-them is also the remaining half of the eval question below — a module that
-declares its exports can be `require`d instead of evaluated.
+`throttle.js` is no longer on this list: it was nine lines of minified 2010
+jQuery plugin, and it is ClojureScript with tests now.
+
+**Mousetrap came off it for the opposite reason.** The rule elsewhere is that
+lifted code gets ported, but this file is not edited, and typing it would
+destroy the only thing that keeps it maintainable: a mechanical diff against
+upstream. So it was upgraded instead — 1.6.0 to 1.6.5, by re-applying its four
+marked deviation blocks onto the newer upstream.
+
+That turned out to be the cheaper and better trade by some distance. Upstream
+1.6.0 → 1.6.5 is 28 lines, and one of its two substantive changes is a numpad
+fix Light Table had already backported as an unmarked inline edit — so the
+upgrade *removed* a deviation. The fork is now exactly its four marked blocks,
+46 lines, with no unmarked drift at all, which means the next upgrade is the
+same mechanical operation. `deploy/core/lighttable/util/VENDORED.md` records the
+procedure and the diff command.
+
+Before touching it, `script/smoke-test.sh` gained a check that dispatches a real
+`KeyboardEvent` and asserts it reaches Light Table's handler. Nothing tested the
+keyboard, and the fork exists specifically to route `keydown`/`keypress`/`keyup`
+differently — if that routing broke, every other check would still have passed.
+
+The same reasoning keeps the forked CodeMirror addons as they are.
+
+The window's own scripts are loaded as global-scope `<script>` tags or through
+`load/js`, so porting them is also the remaining half of the eval question — a
+module that declares its exports can be `require`d instead of evaluated.
 
 ## CodeMirror
 

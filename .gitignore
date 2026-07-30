@@ -2,6 +2,8 @@
 /deploy/core/node_modules/clojurescript/cljsDeps/
 /target/
 /deploy/plugins/
+/plugins/*/*_compiled.js
+/deploy/core/lighttable/paredit.js
 .DS_Store
 .lein-deps-sum
 .lein-env

@@ -1,6 +1,6 @@
 /*global define:false */
 /**
- * Copyright 2016 Craig Campbell
+ * Copyright 2012-2017 Craig Campbell
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,7 @@
  * Mousetrap is a simple keyboard shortcut library for Javascript with
  * no external dependencies
  *
- * @version 1.6.0
+ * @version 1.6.5
  * @url craig.is/killing/mice
  */
 (function(window, document, undefined) {
@@ -165,6 +165,16 @@
         _MAP[i + 96] = i.toString();
     }
 
+    /** START LIGHT TABLE ADDED FUNCTION **/
+    function keyDownOnly(e) {
+      if (_MAP[e.which]) {
+          return _MAP[e.which];
+      }
+
+      return false;
+    }
+    /** END LIGHT TABLE ADDED FUNCTION **/
+
     /**
      * cross browser add event method
      *
@@ -226,16 +236,6 @@
         // or not.  we should make sure it is always lowercase for comparisons
         return String.fromCharCode(e.which).toLowerCase();
     }
-
-    /** START LIGHT TABLE ADDED FUNCTION **/
-    function keyDownOnly(e) {
-      if (_MAP[e.which]) {
-          return _MAP[e.which];
-      }
-
-      return false;
-    }
-    /** END LIGHT TABLE ADDED FUNCTION **/
 
     /**
      * checks if two arrays are equal
@@ -1012,6 +1012,20 @@
 
         if (_belongsTo(element, self.target)) {
             return false;
+        }
+
+        // Events originating from a shadow DOM are re-targetted and `e.target` is the shadow host,
+        // not the initial event target in the shadow tree. Note that not all events cross the
+        // shadow boundary.
+        // For shadow trees with `mode: 'open'`, the initial event target is the first element in
+        // the event’s composed path. For shadow trees with `mode: 'closed'`, the initial event
+        // target cannot be obtained.
+        if ('composedPath' in e && typeof e.composedPath === 'function') {
+            // For open shadow trees, update `element` so that the following check works.
+            var initialEventTarget = e.composedPath()[0];
+            if (initialEventTarget !== e.target) {
+                element = initialEventTarget;
+            }
         }
 
         // stop for input, select, and textarea

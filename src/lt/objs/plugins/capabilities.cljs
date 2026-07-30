@@ -1,0 +1,178 @@
+(ns lt.objs.plugins.capabilities
+  "What a plugin needs, named after what it does.
+
+  A plugin can reach a capability two ways: through Node directly, or through
+  Light Table's own privileged namespaces. Surveying twenty published plugins
+  showed why that distinction cannot be a manifest's organising principle —
+  ten of the twenty require nothing from Node at all, and the Terminal plugin
+  is one of them while still spawning processes, because it goes through
+  `lt.objs.proc`. A manifest that only covered `require` would have called it
+  safe.
+
+  So both routes map onto one name, and the names describe behaviour. That is
+  also the more useful boundary: Light Table's API is a chokepoint the editor
+  controls, and an ambient `require` is not — which is what lets a manifest be
+  enforced before `contextIsolation` is ever turned on.
+
+  This namespace is deliberately dependency-free so it can be tested without an
+  editor around it. Walking a plugin lives in [[lt.objs.plugins]]."
+  (:require [clojure.string :as string]))
+
+(def capabilities
+  "The capability vocabulary, each with the evidence that implies it.
+
+  Patterns match compiled JavaScript, because that is what a plugin actually
+  loads — ClojureScript sources in a plugin's repository do not run. They match
+  member access rather than a bare mention, so `goog.require('lt.objs.plugins')`
+  on its own is not treated as use of it."
+  [{:capability :files
+    :desc "Read and write the filesystem"
+    :patterns [#"lt\.objs\.files\.[a-zA-Z_]"
+               #"require\(\s*['\"](?:fs|path)['\"]"]}
+
+   {:capability :processes
+    :desc "Start and talk to other programs"
+    :patterns [#"lt\.objs\.proc\.[a-zA-Z_]"
+               #"require\(\s*['\"]child_process['\"]"]}
+
+   {:capability :network
+    :desc "Open sockets and make network requests"
+    :patterns [#"lt\.objs\.clients\.(?:tcp|ws)\.[a-zA-Z_]"
+               #"lt\.objs\.deploy\.[a-zA-Z_]"
+               #"require\(\s*['\"](?:net|http|https|tls|dns)['\"]"]}
+
+   {:capability :desktop
+    :desc "Open files and links outside Light Table"
+    :patterns [#"lt\.objs\.platform\.(?:open|show_item)"
+               #"lt\.util\.bridge\.shell"]}
+
+   {:capability :clipboard
+    :desc "Read and write the clipboard"
+    :patterns [#"lt\.objs\.platform\.(?:copy|paste)"
+               #"lt\.util\.bridge\.clipboard"]}
+
+   {:capability :worker
+    :desc "Run work on the background thread"
+    :patterns [#"lt\.objs\.thread\.[a-zA-Z_]"]}
+
+   {:capability :plugins
+    :desc "Install, update or inspect other plugins"
+    :patterns [#"lt\.objs\.plugins\.[a-zA-Z_]"]}])
+
+(def known
+  "Every capability name a manifest may declare."
+  (into #{} (map :capability) capabilities))
+
+(defn describe
+  "Human-readable description of `capability`, or nil if it is not one."
+  [capability]
+  (some #(when (= capability (:capability %)) (:desc %)) capabilities))
+
+(defn scan
+  "The capabilities `text` shows evidence of, as a set."
+  [text]
+  (if-not (string? text)
+    #{}
+    (into #{}
+          (comp (filter (fn [{:keys [patterns]}]
+                          (boolean (some #(re-find % text) patterns))))
+                (map :capability))
+          capabilities)))
+
+(defn evidence
+  "Like [[scan]], but a map of capability to the matched text that implied it.
+
+  Reporting `lt.objs.proc.exec` rather than `:processes` is the difference
+  between a plugin's author being able to check a finding and having to take it
+  on faith."
+  [text]
+  (if-not (string? text)
+    {}
+    (reduce (fn [acc {:keys [capability patterns]}]
+              (if-let [hits (seq (distinct (keep #(re-find % text) patterns)))]
+                (assoc acc capability (vec hits))
+                acc))
+            {}
+            capabilities)))
+
+(defn declared
+  "The capability set a plugin declares, or nil when it declares nothing.
+
+  Nil and the empty set mean different things: nil is a plugin that predates
+  manifests, and `#{}` is one that asserts it needs nothing."
+  [plugin]
+  (when-let [caps (:capabilities plugin)]
+    (set caps)))
+
+(defn undeclared
+  "Capabilities a plugin uses without declaring them.
+
+  Empty for an unmanifested plugin: it claimed nothing, so it broke no claim.
+  Judging those is [[declared]]'s caller's problem, not this function's."
+  [plugin used]
+  (if-let [caps (declared plugin)]
+    (into (sorted-set) (remove caps) used)
+    (sorted-set)))
+
+(def modes
+  "What Light Table does when a plugin uses more than it declared.
+
+  `:report` — say nothing at load; the report command still tells you.
+  `:warn`   — say so on the console, and load the plugin anyway.
+  `:refuse` — do not load the plugin's code.
+
+  `:warn` is the default, and the reason is worth stating: inference reads
+  JavaScript with regular expressions, so it can be wrong, and a false positive
+  that refuses to load a working plugin is a worse failure than a warning
+  nobody reads. `:refuse` is there for anyone who wants it, and it is what
+  level 3 does by construction rather than by cooperation."
+  #{:report :warn :refuse})
+
+(defn violation?
+  "True when `report` shows a plugin exceeding or misstating its manifest."
+  [report]
+  (boolean (or (seq (:undeclared report)) (seq (:unknown report)))))
+
+(defn verdict
+  "What to do about `report` under `mode`: `:allow`, `:warn` or `:refuse`.
+
+  Note what this can and cannot do. It checks a plugin against its own
+  declaration by reading its code, which catches drift, mistakes, and a
+  manifest that stopped being true — the things that actually go wrong. It is
+  not a sandbox: nothing stops a plugin reaching `lt.objs` through a computed
+  name, and a plugin that wanted to hide would. Enforcement that holds against
+  someone trying is the process boundary, which is level 3."
+  [mode report]
+  (cond
+    (not (violation? report)) :allow
+    (= mode :refuse) :refuse
+    (= mode :report) :allow
+    :else :warn))
+
+(defn- names
+  "Capability names as prose: `clipboard files`, not `:clipboard :files`."
+  [caps]
+  (string/join " " (map name (sort caps))))
+
+(defn describe-violation
+  "One line explaining why `report` is a violation, or nil when it is not."
+  [report]
+  (when (violation? report)
+    (let [parts (cond-> []
+                  (seq (:undeclared report))
+                  (conj (str "declares "
+                             (if (seq (:declared report)) (names (:declared report)) "nothing")
+                             " but uses " (names (:undeclared report))))
+
+                  (seq (:unknown report))
+                  (conj (str "declares " (names (:unknown report)) ", which "
+                             (if (= 1 (count (:unknown report)))
+                               "is not a capability"
+                               "are not capabilities"))))]
+      (str (:name report) " " (string/join ", and " parts)))))
+
+(defn unknown
+  "Names a plugin declared that are not capabilities — typos, or a manifest
+  written against a newer Light Table."
+  [plugin]
+  (into (sorted-set) (remove known) (declared plugin)))

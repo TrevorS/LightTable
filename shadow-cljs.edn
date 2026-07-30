@@ -6,7 +6,7 @@
 ;; was still calling crate.core/html years after that rename. Compiling it here
 ;; makes a rename in the host a build error rather than something a user
 ;; discovers at startup.
-{:source-paths ["src" "test" "deploy/core/User/src"]
+{:source-paths ["src" "test" "deploy/core/User/src" "plugins/Paredit/src"]
 
  :dependencies []
 
@@ -21,7 +21,8 @@
    ;; plain script the plugin loader can load. `npm run build:cljs` copies it
    ;; into the plugin's own directory, which is where load-js resolves from.
    :modules {:bootstrap {:entries [lt.core]}
-             :user      {:entries [lt.plugins.user] :depends-on #{:bootstrap}}}
+             :user      {:entries [lt.plugins.user] :depends-on #{:bootstrap}}
+             :paredit   {:entries [lt.plugins.paredit] :depends-on #{:bootstrap}}}
 
    ;; Node builtins and npm packages stay runtime requires, as they are today.
    ;; Bundling them is only possible once the renderer stops reaching for node

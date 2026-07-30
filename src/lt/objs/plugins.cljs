@@ -15,6 +15,7 @@
             [lt.objs.tabs :as tabs]
             [lt.util.js :as js-util :refer [wait]]
             [lt.objs.platform :as platform]
+            [lt.objs.plugins.capabilities :as caps]
             [cljs.reader :as reader]
             [singultus.core :as crate]
             [singultus.binding :refer [bound]]
@@ -32,6 +33,7 @@
 (def ^:dynamic *plugin-dir* nil)
 
 (declare manager)
+(declare available-plugins)
 
 (defn EOF-read [s]
   (when (and s
@@ -115,6 +117,192 @@
 
 (defn plugin-info [dir]
   (or (plugin-json dir) (plugin-edn dir)))
+
+;;*********************************************************
+;; Capabilities
+;;
+;; A plugin can declare what it needs in plugin.edn. Almost none do, because
+;; almost all of them predate the idea — so the same evidence is inferred by
+;; reading what a plugin actually loads. That makes the question "what does
+;; this plugin want?" answerable for the whole ecosystem today, rather than
+;; only for plugins that have been updated.
+;;
+;; Nothing here denies anything yet. Enforcement without inference would mean
+;; every existing plugin breaking on the day it shipped; inference first means
+;; authors can see what they would have to declare, and users can see what they
+;; are installing, while everything keeps working.
+;;*********************************************************
+
+(def ^:private scan-limits
+  "Reading a plugin has to stay cheap enough to do on demand. The Clojure
+  plugin is about 15MB, nearly all of it a vendored nREPL runner, so the walk
+  skips dependency trees and stops rather than growing without bound."
+  {:max-files 200
+   :max-bytes (* 4 1024 1024)
+   :skip-dirs #{"node_modules" ".git" "target" "test" "tests"}})
+
+(defn- plugin-js-files
+  "JavaScript under `dir` that could be loaded, bounded by [[scan-limits]].
+
+  Only JavaScript: a plugin's ClojureScript sources are not what runs, and
+  judging a plugin by code it does not load would be judging the wrong thing."
+  [dir]
+  (let [{:keys [max-files skip-dirs]} scan-limits]
+    (loop [pending [dir]
+           found []]
+      (if (or (empty? pending) (>= (count found) max-files))
+        (vec (take max-files found))
+        (let [cur (first pending)
+              entries (or (files/full-path-ls cur) [])
+              subdirs (->> entries
+                           (filter files/dir?)
+                           (remove #(skip-dirs (files/basename %))))
+              js (filter #(= "js" (files/ext %)) entries)]
+          (recur (concat (rest pending) subdirs) (concat found js)))))))
+
+(defn inferred-capabilities
+  "What the plugin in `dir` looks like it needs, with the evidence for each.
+
+  Returns `{:capabilities #{..} :evidence {cap [matched ..]} :files n
+            :truncated? bool}`."
+  [dir]
+  (let [{:keys [max-bytes]} scan-limits
+        js (plugin-js-files dir)]
+    (loop [remaining js
+           read-bytes 0
+           found {}
+           n 0]
+      (if (or (empty? remaining) (> read-bytes max-bytes))
+        {:capabilities (set (keys found))
+         :evidence found
+         :files n
+         :truncated? (boolean (seq remaining))}
+        (let [file (first remaining)
+              content (:content (files/open-sync file))
+              hits (caps/evidence content)]
+          (recur (rest remaining)
+                 (+ read-bytes (count (or content "")))
+                 (merge-with #(vec (distinct (concat %1 %2))) found hits)
+                 (inc n)))))))
+
+(defn capability-report
+  "Declared and inferred capabilities for `plugin`, and where they disagree."
+  [plugin]
+  (let [{:keys [capabilities evidence truncated?]} (inferred-capabilities (:dir plugin))]
+    {:name (:name plugin)
+     :declared (caps/declared plugin)
+     :used capabilities
+     :evidence evidence
+     ;; Used but not declared. Empty for a plugin with no manifest: it made no
+     ;; claim, so it broke none.
+     :undeclared (caps/undeclared plugin capabilities)
+     :unknown (caps/unknown plugin)
+     :truncated? truncated?}))
+
+(defn- report-line [{:keys [name declared used undeclared unknown]}]
+  (str name ": "
+       (if declared
+         (str "declares " (if (seq declared) (string/join " " (sort declared)) "nothing"))
+         "no manifest")
+       ", uses " (if (seq used) (string/join " " (sort used)) "nothing")
+       (when (seq undeclared)
+         (str "  [undeclared: " (string/join " " undeclared) "]"))
+       (when (seq unknown)
+         (str "  [not a capability: " (string/join " " unknown) "]"))))
+
+(def ^:private enforcement-key :plugins.capability-enforcement)
+
+(defn enforcement
+  "How to treat a plugin that uses more than it declared.
+
+  Stored rather than set by a behavior, and the reason is ordering:
+  `:object.instant-load` is raised before `:object.instant`, deliberately, so
+  that loading a plugin's JavaScript can define the behaviors about to be
+  captured. A behavior therefore cannot configure anything the load path
+  consults — it would be read after the plugins it was meant to govern had
+  already loaded. See [[lt.objs.plugins.capabilities/modes]] for the values."
+  []
+  (or (caps/modes (keyword (app/fetch enforcement-key))) :warn))
+
+(def ^:private audited
+  "Capability reports by plugin directory. Reading a plugin costs a walk and a
+  few file reads, and the answer only changes when the plugin does."
+  (atom {}))
+
+(defn audit
+  "Capability report for `plugin`, computed once per directory."
+  [plugin]
+  (or (@audited (:dir plugin))
+      (let [report (capability-report plugin)]
+        (swap! audited assoc (:dir plugin) report)
+        report)))
+
+(defn plugin-for-dir
+  "The installed plugin whose directory is `dir`."
+  [dir]
+  (when dir
+    (first (filter #(= dir (:dir %)) (vals (::plugins @app/app))))))
+
+(defn allowed-to-load?
+  "Whether the plugin in `dir` may load its code, saying so when it may not.
+
+  Unmanifested plugins always pass: they made no claim, so they broke none.
+  This is the whole of level 2 — a plugin held to its own word — and it is
+  worth being clear that it is not more than that. It reads code with regular
+  expressions, so it catches drift and mistakes rather than concealment."
+  [dir]
+  (if-let [plugin (plugin-for-dir dir)]
+    (let [report (audit plugin)]
+      (case (caps/verdict (enforcement) report)
+        :allow true
+        :warn (do (console/error (str "Plugin capabilities: " (caps/describe-violation report)))
+                  true)
+        :refuse (do (console/error (str "Plugin not loaded: " (caps/describe-violation report)
+                                        ". Capability enforcement is set to refuse."))
+                    false)))
+    true))
+
+(defn set-enforcement!
+  "Persist `mode`. Takes effect for plugins loaded from here on, which in
+  practice means the next start."
+  [mode]
+  (app/store! enforcement-key (name mode))
+  (notifos/set-msg! (str "Plugin capability enforcement: " (name mode))))
+
+(cmd/command {:command :plugins.set-capability-enforcement
+              :desc "Plugins: Set what happens when a plugin exceeds its manifest"
+              :exec (fn []
+                      (popup/popup!
+                       {:header "Plugin capability enforcement"
+                        :body [:div
+                               [:p "A plugin may declare what it needs. Light Table can check that against what the plugin's code actually does."]
+                               [:p (str "Currently: " (name (enforcement)) ".")]
+                               [:p "Checking reads JavaScript and can be wrong, so refusing is not the default."]]
+                        :buttons [{:label "Report only"
+                                   :action #(set-enforcement! :report)}
+                                  {:label "Warn (default)"
+                                   :action #(set-enforcement! :warn)}
+                                  {:label "Refuse to load"
+                                   :action #(set-enforcement! :refuse)}
+                                  {:label "Cancel"}]}))})
+
+(cmd/command {:command :plugins.capabilities
+              :desc "Plugins: Report what each plugin can do"
+              :exec (fn []
+                      ;; available-plugins rather than the cached ::plugins on
+                      ;; app, which the uninstall path notes can be stale. A
+                      ;; report is worth a re-read.
+                      (let [reports (->> (vals (available-plugins))
+                                         (filter :dir)
+                                         (mapv capability-report)
+                                         (sort-by :name))]
+                        (console/log
+                         (string/join "\n"
+                                      (concat ["Plugin capabilities. Declared comes from :capabilities in"
+                                               "plugin.edn; used is inferred from the JavaScript each plugin loads."
+                                               ""]
+                                              (map report-line reports))))
+                        (notifos/set-msg! (str "Reported on " (count reports) " plugins"))))})
 
 (defn missing-deps [all]
   (let [deps (->> (vals all)
@@ -804,8 +992,12 @@
                                       [path])]
                           (doseq [path paths]
                             (let [path (adjust-path path)]
-                              (when (or load/*force-reload*
-                                        (not (get (::loaded-files @this) path)))
+                              (when (and (or load/*force-reload*
+                                             (not (get (::loaded-files @this) path)))
+                                         ;; The only point where refusing means
+                                         ;; anything: after this the plugin's
+                                         ;; code is in the window.
+                                         (allowed-to-load? *plugin-dir*))
                                 (try
                                   (load/js path true)
                                   (object/update! this [::loaded-files] #(conj (or % #{}) path))

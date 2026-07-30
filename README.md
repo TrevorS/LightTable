@@ -50,6 +50,12 @@ The main process and the preload script are TypeScript, in `src-electron/`:
 npm run build:main
 ```
 
+Plugins that live in this repository are built separately:
+
+```sh
+npm run build:plugins
+```
+
 The window does not use Electron's modules directly. Everything it can ask the
 desktop for is a named capability exposed by the preload script, and
 `lt.util.bridge` is the only namespace that reaches it — see
@@ -101,11 +107,17 @@ and the community has published [over a hundred](https://github.com/LightTable/p
 in ClojureScript see
 [LightTable-Declassifier](https://github.com/LightTable/LightTable-Declassifier).
 
-Plugins ship as precompiled JavaScript and are not rebuilt when Light Table
-changes, so a renamed namespace in the editor surfaces as an error in a user's
-session rather than as a failing build. `lt.compat` keeps published plugins
-working across such renames; see the modernization changelog for what is
+Published plugins ship as precompiled JavaScript and are not rebuilt when Light
+Table changes, so a renamed namespace in the editor surfaces as an error in a
+user's session rather than as a failing build. `lt.compat` keeps published
+plugins working across such renames; see the modernization changelog for what is
 currently shimmed and what has broken.
+
+Plugins in [`plugins/`](plugins/README.md) do not have that problem: they are
+built from source against the editor, in TypeScript or ClojureScript, so a
+rename is a compile error. That directory also documents the capability
+manifest — what a plugin declares it needs — and the three levels of
+enforcement it is a path towards.
 
 ## Contributing
 

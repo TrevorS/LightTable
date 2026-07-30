@@ -37,9 +37,14 @@ npm run build:main
 rm -f deploy/core/lighttable/bootstrap.js
 npm run build:cljs
 
+# Plugins that live in this repository, built from source against the editor
+# they extend rather than fetched as prebuilt artifacts.
+npm run build:plugins
+
 # Fetch plugins
+# Paredit is not here: it is built from source in plugins/ instead.
 PLUGINS=("Clojure,0.3.3" "CSS,0.0.6" "HTML,0.1.0" "Javascript,0.2.0"
-         "Paredit,0.0.4" "Python,0.0.7" "Rainbow,0.0.8")
+         "Python,0.0.7" "Rainbow,0.0.8")
 
 # Plugins cache
 mkdir -p deploy/plugins

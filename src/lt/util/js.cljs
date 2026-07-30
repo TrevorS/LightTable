@@ -43,6 +43,12 @@
     op2
     op))
 
+;; These were a minified 2010 jQuery plugin loaded by a script tag, reached
+;; through a global called `Cowboy`. Twenty lines of standard behaviour is not
+;; worth a vendored file, and here they are visible to the compiler and to
+;; tests. Semantics are the ones that file implemented: debounce is trailing
+;; only, throttle leads when enough time has passed and trails when it has not.
+
 (defn debounce
   "Debounce execution of `func` with a delay of `ts` milliseconds.
 
@@ -52,8 +58,15 @@
 
   See [[throttle]]."
   [ts func]
-  ;; For js/Cowboy, see deploy/core/lighttable/throttle.js
-  (.debounce js/Cowboy ts func))
+  (let [timeout (atom nil)]
+    (fn [& args]
+      (this-as this
+        (when-let [pending @timeout]
+          (js/clearTimeout pending))
+        (reset! timeout (js/setTimeout (fn []
+                                         (reset! timeout nil)
+                                         (.apply func this (to-array args)))
+                                       ts))))))
 
 (defn throttle
   "Throttle execution of `func` with a delay of `ts` milliseconds.
@@ -63,8 +76,20 @@
 
   See [[debounce]]."
   [ts func]
-  ;; For js/Cowboy, see deploy/core/lighttable/throttle.js
-  (.throttle js/Cowboy ts func))
+  (let [last-run (atom 0)
+        timeout (atom nil)]
+    (fn [& args]
+      (this-as this
+        (let [elapsed (- (.now js/Date) @last-run)
+              run (fn []
+                    (reset! timeout nil)
+                    (reset! last-run (.now js/Date))
+                    (.apply func this (to-array args)))]
+          (when-let [pending @timeout]
+            (js/clearTimeout pending))
+          (if (> elapsed ts)
+            (run)
+            (reset! timeout (js/setTimeout run (- ts elapsed)))))))))
 
 (defn ->clj
   "Convert JSON `data` to ClojureScript with keywords enabled.

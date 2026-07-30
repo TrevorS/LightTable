@@ -63,6 +63,11 @@ jobs:
             exit 1
           fi
 
+      # Plugins that live in this repository. Built against the editor, so a
+      # rename here fails the build rather than a user's session.
+      - name: Build in-tree plugins
+        run: npm run build:plugins
+
       # The failures this project actually hits are load-time and cross-process
       # ones, which only show up in the assembled app.
       - name: Install Electron

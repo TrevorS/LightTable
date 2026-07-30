@@ -1,0 +1,32 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM"],
+
+    // Plugins are loaded as global-scope scripts, not modules, so the output
+    // is one concatenated file. `module: none` plus outFile is what produces
+    // that, and it is why plugins/lib/lt.ts is a namespace rather than a
+    // module: namespaces compile to idempotent globals.
+    "module": "none",
+    "outFile": "hello_compiled.js",
+
+    // No ambient @types at all, node's included. A plugin runs in the window,
+    // and one that declares no filesystem capability has no business seeing
+    // fs's signatures — the types a plugin gets should match what it may do.
+    "types": [],
+
+    "strict": true,
+    "noImplicitOverride": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "newLine": "lf",
+    "forceConsistentCasingInFileNames": true
+  },
+  // Order matters: tsc concatenates in this order, and the plugin body runs on
+  // load, so the helpers have to already exist.
+  "files": [
+    "../types/lighttable.d.ts",
+    "../lib/lt.ts",
+    "src/hello.ts"
+  ]
+}

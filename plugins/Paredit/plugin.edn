@@ -1,0 +1,12 @@
+{:name "Paredit"
+ :version "0.0.4"
+ :author "Kodowa"
+ :source "https://github.com/LightTable/Paredit"
+ :desc "Paredit integration for Light Table"
+ :behaviors "paredit.behaviors"
+
+ ;; Nothing. Paredit rearranges text in an editor and touches no filesystem,
+ ;; process, socket or clipboard — which the capability report confirms rather
+ ;; than takes on trust. An empty set is a claim; omitting the key would be
+ ;; declining to make one.
+ :capabilities #{}}
