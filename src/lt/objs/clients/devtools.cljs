@@ -79,11 +79,10 @@
 (defn msg->log [this m]
   (let [params (:parameters m)]
     (for [p params]
-      (do
-        [:span.log-val (cond
+      [:span.log-val (cond
                         (and (= (:type p) "object") (:value p) (not (-> p :value :value))) "null"
                         (= (:type p) "object") (object/->content (object/create ::inspector-object this {:value p}))
-                        :else (:value p (:text p)))]))))
+                        :else (:value p (:text p)))])))
 
 (defn msg->string [m]
   (let [params (:parameters m)]
@@ -317,11 +316,10 @@
 (defui props [this children]
   [:ul
    (for [c (sort-by :name i-compare children)]
-     (do
-       (if (and (= (-> c :value :type) "object")
-                (-> c :value :objectId))
-         [:li (object/->content (object/create ::inspector-object (:client @this) c))]
-         [:li [:em (:name c)] ": " (or (-> c :value :description) (str (-> c :value format-value)))])))])
+     (if (and (= (-> c :value :type) "object")
+              (-> c :value :objectId))
+       [:li (object/->content (object/create ::inspector-object (:client @this) c))]
+       [:li [:em (:name c)] ": " (or (-> c :value :description) (str (-> c :value format-value)))]))])
 
 (defn ->open [this]
   (if (:open this)

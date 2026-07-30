@@ -15,7 +15,7 @@
             (pr-str m))]
     (object/merge! statusbar/statusbar-loader (merge {:message m :class ""} opts))))
 
-(def ^:private cur-timeout)
+(def ^:private cur-timeout nil)
 
 (defn set-msg!
   "Display message in bottom statusbar. Takes map of options with following keys:

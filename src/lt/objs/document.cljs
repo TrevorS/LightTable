@@ -92,12 +92,15 @@
 
 (defn ->snapshot [doc]
   (let [d (->cm-doc doc)
-        lines (transient [])]
+        ;; A JS array rather than a transient. `conj!` returns the collection
+        ;; to use next, which a callback cannot rebind — it can only push into
+        ;; something it closed over. That is what an array is for.
+        lines (array)]
     (.eachLine d (fn [line]
-                   (conj! lines (.-text line))
+                   (.push lines (.-text line))
                    nil))
     {:version (.changeGeneration d)
-     :lines (persistent! lines)
+     :lines (vec lines)
      :doc doc}))
 
 

@@ -468,7 +468,7 @@
                                                                        (if munged-dir
                                                                          (do
                                                                            (save-cache (build-cache sha))
-                                                                           (notifos/done-working (str "Plugin metadata updated. "))
+                                                                           (notifos/done-working "Plugin metadata updated. ")
                                                                            (object/raise manager :metadata.updated))
                                                                          (install-failed "metadata")))))))))
 

@@ -81,10 +81,10 @@
 
 (defn load-skin [skin]
   (let [skins (object/raise-reduce app/app :skins+ {})
-        path (get skins skin (plugins/adjust-path "core/css/skins/new-dark.css"))]
-    (let [elem (load/css path)]
-      (dom-attr elem {:id (str "skin-" skin)})
-      elem)))
+        path (get skins skin (plugins/adjust-path "core/css/skins/new-dark.css"))
+        elem (load/css path)]
+    (dom-attr elem {:id (str "skin-" skin)})
+    elem))
 
 (defn inject-skin [skin]
   (when (:skin @styles)
@@ -124,10 +124,10 @@
 
 (defn load-theme [theme]
   (let [themes (object/raise-reduce app/app :themes+ {})
-        path (get themes theme (plugins/adjust-path "core/css/themes/default.css"))]
-    (let [elem (load/css path)]
-      (dom-attr elem {:id (str "theme-" theme)})
-      elem)))
+        path (get themes theme (plugins/adjust-path "core/css/themes/default.css"))
+        elem (load/css path)]
+    (dom-attr elem {:id (str "theme-" theme)})
+    elem))
 
 (defn inject-theme [theme]
   (when (:theme @styles)

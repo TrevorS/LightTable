@@ -263,9 +263,9 @@
                             (object/raise this :clear!)
                             (when (or (and (> (.-line loc) (.-to.line ch))
                                            (empty? (string/trim (ed/line (:ed @this) (.-line loc)))))
-                                      (or (and (>= (.-to.ch ch) (.-ch loc))
-                                               (= (.-to.line ch) (.-line loc)))
-                                          (> (.-to.line ch) (.-from.line ch))))
+                                      (and (>= (.-to.ch ch) (.-ch loc))
+                                           (= (.-to.line ch) (.-line loc)))
+                                      (> (.-to.line ch) (.-from.line ch)))
                               (object/merge! this {:mark (ed/bookmark (ed/->cm-ed (:ed @this))
                                                                       {:line cur-line}
                                                                       {:widget (object/->content this)

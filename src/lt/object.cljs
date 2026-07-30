@@ -97,8 +97,10 @@
                              (doseq [exclude (:exclusive beh)]
                                (aset (:seen res) exclude true)))
                            (aset (:seen res) (->behavior-name cur) true))
-                         (conj! (:final res) cur)
-                         res)))
+                         ;; conj! may return a different transient than it was
+                         ;; given — for a vector, once it outgrows its tail —
+                         ;; so the result has to be carried, not discarded.
+                         (assoc res :final (conj! (:final res) cur)))))
                    {:seen (ts->negations ts)
                     :final (transient [])}
                    duped)]

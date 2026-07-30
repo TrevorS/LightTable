@@ -44,7 +44,13 @@
   which reads calls like this one and reports them.
 
   It used to read the module off disk with a real `require`. It cannot any
-  more, and neither can anything else in the window."
+  more, and neither can anything else in the window.
+
+  Nothing in this repository calls it. It is kept because published plugins do
+  — `Clojure/clojure_compiled.js` reaches for `bencode` and `shelljs` through
+  it, `Javascript/javascript_compiled.js` for `shelljs` — and those ship as
+  precompiled JavaScript that no build here rebuilds. Removing it would break
+  them in a user's session with nothing failing first."
   [path]
   (if-let [factory (second (get node-modules/modules path))]
     (factory)

@@ -52,8 +52,7 @@
 (defn alert-file [path]
   (fn [stat]
     (if (.existsSync bridge/files path)
-      (do
-        (object/raise current-ws :watched.update path stat))
+      (object/raise current-ws :watched.update path stat)
       (do
         (unwatch! path)
         (object/raise current-ws :watched.delete path)))))
@@ -68,42 +67,66 @@
 
 (declare folder->watch)
 
+;; `results` is threaded through rather than mutated in place, and that is not
+;; a style preference. `assoc!` on a transient map returns a *different* object
+;; once it outgrows the array-map representation at eight entries. This walked
+;; the tree with `doseq` and dropped the return, so a folder with more than
+;; eight watchable paths — which is most projects — kept the first eight
+;; watches and silently lost the rest, along with every change notification
+;; they would have produced.
+;;
+;; The recursive call returns `results` for the same reason: the child level is
+;; where the map is most likely to cross the threshold.
 (defn watch!
   ([path] (watch! (transient {}) path nil))
   ([path recursive?] (watch! (transient {}) path recursive?))
   ([results path recursive?]
-   (doseq [path (if (coll? path)
-                  path
-                  [path])]
-     (when-not (re-seq files/ignore-pattern path)
-       (if (files/dir? path)
-         (let [recursive? (cond
-                           (not recursive?) 0
-                           (number? recursive?) (dec recursive?)
-                           :else max-depth)
-               watch (folder->watch path)]
-           (when-not (get (:watches @current-ws) path)
-             (assoc! results path watch))
-           (when (> recursive? -1)
-             (watch! results (files/full-path-ls path) recursive?)))
-         (when (and (not (get (:watches @current-ws) path))
-                    (not (get results path)))
-           (let [watch (file->watch path)]
-             (assoc! results path watch))))))
+   (let [results
+         (reduce
+          (fn [results path]
+            (cond
+              (re-seq files/ignore-pattern path)
+              results
+
+              (files/dir? path)
+              (let [depth (cond
+                            (not recursive?) 0
+                            (number? recursive?) (dec recursive?)
+                            :else max-depth)
+                    ;; Only create the watcher if it is going to be kept: this
+                    ;; used to build one unconditionally and discard it when
+                    ;; the path was already watched, leaving it running.
+                    results (if (get (:watches @current-ws) path)
+                              results
+                              (assoc! results path (folder->watch path)))]
+                (if (> depth -1)
+                  (watch! results (files/full-path-ls path) depth)
+                  results))
+
+              (or (get (:watches @current-ws) path)
+                  (get results path))
+              results
+
+              :else
+              (assoc! results path (file->watch path))))
+          results
+          (if (coll? path) path [path]))]
+     ;; A numeric `recursive?` means this is a level of someone else's walk, so
+     ;; the transient is still being filled and must not be made persistent.
      (when-not (number? recursive?)
-       (object/update! current-ws [:watches] merge (persistent! results)))))
+       (object/update! current-ws [:watches] merge (persistent! results)))
+     results)))
 
 (defn alert-folder [path]
   (fn [_stat]
     (if (.existsSync bridge/files path)
-      (do
-        (let [watches (:watches @current-ws)
-              neue (first (filter #(and (not (get watches %))
-                                        (not (re-seq files/ignore-pattern %)))
-                                  (files/full-path-ls path)))]
-          (when neue
-            (watch! neue)
-            (object/raise current-ws :watched.create neue (.statSync bridge/files neue)))))
+      (let [watches (:watches @current-ws)
+            neue (first (filter #(and (not (get watches %))
+                                      (not (re-seq files/ignore-pattern %)))
+                                (files/full-path-ls path)))]
+        (when neue
+          (watch! neue)
+          (object/raise current-ws :watched.create neue (.statSync bridge/files neue))))
       (do
         (unwatch! path :recursive)
         (object/raise current-ws :watched.delete path)))))
