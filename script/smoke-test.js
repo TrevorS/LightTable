@@ -30,6 +30,22 @@ const SAMPLE = path.join(ROOT, 'src', 'lt', 'objs', 'platform.cljs');
 // site, so the check tests Light Table rather than the network.
 const PROBE_PAGE = path.join(os.tmpdir(), 'lt-smoke-browser-probe.html');
 fs.writeFileSync(PROBE_PAGE, '<!doctype html><title>lt probe</title><body>lt-browser-probe-loaded');
+// A small tree for the workspace searcher. Its own directory rather than a
+// corner of the repository, so the expected counts are exact.
+//
+// Nothing covered project-wide search before, and that is how it came to be
+// broken for who knows how long: the `replace` package it called had no
+// `result` callback and returned a plain array, so the searcher displayed
+// nothing and reported searching `undefined` files. Every other check passed
+// throughout. This one runs the real path — searcher, worker, engine, and the
+// message back — and asserts on the numbers.
+const SEARCH_DIR = path.join(os.tmpdir(), 'lt-smoke-search');
+fs.rmSync(SEARCH_DIR, { recursive: true, force: true });
+fs.mkdirSync(path.join(SEARCH_DIR, 'nested'), { recursive: true });
+fs.writeFileSync(path.join(SEARCH_DIR, 'one.txt'), 'first\nSMOKENEEDLE here\nthird\n');
+fs.writeFileSync(path.join(SEARCH_DIR, 'two.txt'), 'SMOKENEEDLE\nand SMOKENEEDLE again\n');
+fs.writeFileSync(path.join(SEARCH_DIR, 'nested', 'three.txt'), 'deep SMOKENEEDLE\n');
+fs.writeFileSync(path.join(SEARCH_DIR, 'quiet.txt'), 'nothing to find\n');
 // Arguments for the background scan the smoke test uses to prove the worker
 // round trip. Note that walkdir's pattern is an exclusion, matching how
 // lt.objs.sidebar.navigate passes files/ignore-pattern through: this skips
@@ -39,12 +55,17 @@ const SCAN_ARGS = JSON.stringify({
     pattern: '^\\.',
     ws: { folders: [path.join(ROOT, 'src', 'lt', 'background')], files: [] }
 });
+// What the search box would hold: the term, an empty replacement, and the
+// location to search. `loc` is a plain path, which lt.objs.search/string->loc
+// turns into a single search root.
+const SEARCH_ARGS = JSON.stringify({ search: 'SMOKENEEDLE', replace: '', loc: SEARCH_DIR });
 
 // The harness reuses the real main.js so that ipc handlers, command line
 // parsing and window options are the ones that ship, not a copy that can drift.
 const HARNESS = `
 const CORE = ${JSON.stringify(CORE)};
 const SCAN_ARGS = ${JSON.stringify(SCAN_ARGS)};
+const SEARCH_ARGS = ${JSON.stringify(SEARCH_ARGS)};
 const REPORT = process.env.LT_SMOKE_REPORT;
 const fsx = require('fs');
 let report = { ok: false };
@@ -104,6 +125,19 @@ app.on('ready', function () {
                     ' cljs.core.js__GT_clj.call(null, JSON.parse(' + JSON.stringify(SCAN_ARGS) + '),' +
                     ' cljs.core.keyword.call(null,"keywordize-keys"), true))');
                 await new Promise(function (r) { setTimeout(r, 4000); });
+
+                // The workspace searcher, driven the way the search box drives
+                // it: an info map straight to the :search! behavior, so the
+                // path under test is the shipped one rather than a direct call
+                // to the engine.
+                step = 'searching the workspace';
+                await w.webContents.executeJavaScript(
+                    'lt.object.raise.call(null, lt.objs.search.searcher,' +
+                    ' cljs.core.keyword.call(null,"search!"),' +
+                    ' cljs.core.js__GT_clj.call(null, JSON.parse(' + JSON.stringify(SEARCH_ARGS) +
+                    '), cljs.core.keyword.call(null,"keywordize-keys"), true))');
+                await new Promise(function (r) { setTimeout(r, 4000); });
+
                 step = 'collecting the report';
                 report = JSON.parse(await w.webContents.executeJavaScript(\`JSON.stringify({
                     appInitialized: typeof lt.objs.app === 'object',
@@ -364,6 +398,36 @@ app.on('ready', function () {
                         var files = cljs.core.get.call(null, cljs.core.deref(lt.objs.sidebar.navigate.sidebar_navigate), cljs.core.keyword.call(null, "files"));
                         return files ? cljs.core.count(files) : 0;
                     })(),
+                    // What the searcher actually holds after a workspace
+                    // search: the counts it displays, and the first result as
+                    // the searcher stores it, so a wrong line number or a
+                    // missing file name fails here rather than in a user's
+                    // session.
+                    search: (function () {
+                        var s = cljs.core.deref(lt.objs.search.searcher);
+                        var get = function (kw) { return cljs.core.get.call(null, s, kw); };
+                        var results = get(cljs.core.keyword.call(null, 'results'));
+                        var first = results && results.length ? results[0] : null;
+                        return {
+                            count: get(cljs.core.keyword.call(null, 'result-count')),
+                            files: get(cljs.core.keyword.call(null, 'lt.objs.search/filesSearched')),
+                            seconds: get(cljs.core.keyword.call(null, 'lt.objs.search/time')),
+                            reported: results ? results.length : 0,
+                            firstFile: first ? String(first.file) : '',
+                            firstLine: first && first.results && first.results.length ? first.results[0].line : null,
+                            firstText: first && first.results && first.results.length ? String(first.results[0].text) : '',
+                            // From the searcher's own content rather than the
+                            // document: its tab was never opened here, so the
+                            // element is real but not attached. What matters is
+                            // that ->result-item built nodes from the message.
+                            rendered: (function () {
+                                try {
+                                    return lt.object.__GT_content(lt.objs.search.searcher)
+                                        .querySelectorAll('.res .entry').length;
+                                } catch (e) { return -1; }
+                            })()
+                        };
+                    })(),
                     errors: (function () {
                         try {
                             var el = lt.object.__GT_content(lt.objs.console.console);
@@ -525,6 +589,18 @@ async function main() {
         ['fold addons registered', r.codeMirrorFold === true],
         ['the worker thread connected', r.workerConnected === true],
         ['a background job round-tripped', r.workerFilesFound >= 5],
+        // Four matching lines across three files, out of four files searched.
+        // Asserted exactly: "greater than zero" would have passed for a search
+        // that found the wrong things, and "not undefined" is the bug this
+        // check exists for.
+        ['the workspace searcher found every match', r.search.count === 4],
+        ['it reported one message per matching file', r.search.reported === 3],
+        ['it counted the files it searched', r.search.files === 4],
+        ['it timed the search', typeof r.search.seconds === 'number' && r.search.seconds >= 0],
+        ['a result carries a file, a 1-based line and its text',
+            /one\.txt$/.test(r.search.firstFile) && r.search.firstLine === 2 &&
+            r.search.firstText === 'SMOKENEEDLE here'],
+        ['the matches were rendered into the results list', r.search.rendered === 4],
         ['the crate compatibility shim is published', r.crateShim === true],
         ['the default user plugin loaded', r.userPlugin === true],
         ['the TypeScript plugin loaded and registered its commands', r.tsPlugin === true],
@@ -604,6 +680,8 @@ async function main() {
     console.log('behaviors registered: ' + r.behaviors);
     console.log('CodeMirror modes registered: ' + r.codeMirrorModes);
     console.log('worker connected: ' + r.workerConnected + ', files found by background scan: ' + r.workerFilesFound);
+    console.log('workspace search: ' + r.search.count + ' results in ' + r.search.reported +
+                ' files, ' + r.search.files + ' searched, ' + r.search.seconds + 's');
     if (r.errors && r.errors.length) {
         console.error('\nErrors reported by Light Table:');
         r.errors.forEach(function (e) { console.error('  - ' + e.split('\n')[0]); });

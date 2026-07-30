@@ -137,6 +137,10 @@ Two of their npm removals were deliberately **not** taken:
   runtime and no grep for a require will find it. Removing it breaks
   find-and-replace across a project. Five more requires share that shape, in
   `langs/behaviors`, `sidebar/navigate` and `auto-complete`.
+
+  That reasoning was right about the require and wrong about the consequence:
+  find-and-replace was *already* broken against the pinned version. The package
+  is gone now — see *Project-wide search, which had stopped working*.
 - `bencode` and `jsonify` were left in place at the time, since
   `deploy/core/node_modules` is also the pool plugins draw from, so absence from
   core does not establish absence of use. Both were removed later, once the
@@ -1109,14 +1113,71 @@ Reasonable position: stay on 5, revisit if upstream signals an end.
 
 Everything is at its latest release: `codemirror` 5.65.21 (see above),
 `socket.io` 4.8.3, `tar` 7.5.22, `bencode` 4.0.1, `shelljs` 0.10.0,
-`replace` 1.2.2, Electron 43.2.0, Clojure 1.12.5, ClojureScript 1.12.145.
+Electron 43.2.0, Clojure 1.12.5, ClojureScript 1.12.145.
 
-The one that is not really finished is `replace`, which pulls an old `minimatch`
-and is the sole source of the three remaining npm advisories, all
-`brace-expansion` denial-of-service. Forcing a newer `minimatch` breaks it, since
-its export shape changed. Clearing them means either an upstream fix or replacing
-`replace` with a small in-tree file walker — worth doing, but it is the
-project-wide search implementation, so not worth rushing.
+**What Light Table ships has no npm advisories.** The last three were
+`brace-expansion` denial-of-service reports reached through `minimatch`, pulled
+in by `replace`, and they are gone with the package — see *Project-wide search,
+which had stopped working* below.
+
+The build tooling still reports some, and they are a different problem: the
+`clj-kondo` npm wrapper installs its binary through `binwrap`, which depends on
+the deprecated `request`, which depends on `form-data`, `qs`, `tough-cookie` and
+`uuid`. There is no fix available upstream, none of it is shipped to a user, and
+the way out is fetching the clj-kondo binary directly rather than through npm.
+Worth doing; not the same urgency as something in the application.
+
+## Project-wide search, which had stopped working
+
+Removing `replace` was supposed to be a dependency chore: it was the last source
+of the project's npm advisories, three `brace-expansion` denial-of-service
+reports reached through `minimatch`, and forcing a newer `minimatch` breaks it
+because its export shape changed. So the package had to go rather than be
+upgraded.
+
+Reading the call site first turned up something else. `lt.background.search`
+passed `replace` a `result` callback and read `totalFiles` and `time` off what
+it returned. The 1.x package has no `result` option and returns a plain array.
+Measured against the shipped copy: the callback fired **zero** times and both
+properties were `undefined`.
+
+So workspace search had been returning nothing at all — no results in the list,
+and a summary reading "Found 0 results searching undefined files in NaN
+seconds". Whatever version that API belonged to was several majors ago, and
+nothing in the repository noticed, because nothing tested search.
+
+`lt.background.file-search` replaces it, in ClojureScript rather than
+TypeScript so the existing test runner can exercise it directly, with
+`lt.background.search` reduced to the wiring. Four things are better than a
+like-for-like port:
+
+- **A plain search is a literal.** `replace` compiled every search as a regex,
+  so looking for `a.b` quietly matched `axb` and looking for `(` was an error.
+  `->pattern` existed specifically to mark a regex as `/like this/`; now that
+  distinction means something.
+- **Exclusions work.** The searcher passed `files/ignore-pattern`'s regex source
+  as `replace`'s `exclude`, which fed it to minimatch as a glob, where it
+  matched approximately nothing. It is now a regex matched against each entry's
+  name, with a trailing separator for directories — the same rule
+  `src-worker/walkdir.ts` uses, so the navigate bar and the searcher finally
+  agree on what is not worth looking at.
+- **Binaries are skipped**, on a NUL byte in the first 8KB, the way grep decides.
+  Searching one as UTF-8 produces matches nobody asked for, and replacing in one
+  would corrupt it.
+- **The file count is honest.** A binary or an unreadable file is not counted as
+  searched, because it was not.
+
+Long lines are truncated at 400 characters for display, an unreadable file is
+reported and skipped rather than ending the walk, and symlinks are still not
+followed — which is also what stops a cyclic link walking forever.
+
+Twenty-seven unit tests build a real directory tree in a temp directory and
+search it: literal against regex, case sensitivity holding across the walk,
+exclusions that skip `target/` but not `target.txt`, symlink loops, binaries,
+unreadable files, CRLF, two matches on one line, and replacements read back off
+disk. Six smoke checks drive the whole path through the running application —
+searcher, worker, engine, message back — and assert exact numbers rather than
+"more than zero", since zero is precisely what the bug produced.
 
 ## Smaller things
 
