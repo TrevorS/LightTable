@@ -11,8 +11,6 @@
             [lt.objs.opener :as opener])
   (:require-macros [lt.macros :refer [behavior]]))
 
-(def remote (.-remote (js/require "electron")))
-
 (defn open-paths [path-line-pairs add?]
   (doseq [[path line] path-line-pairs
           :when (not= path (.-execPath js/process))]
@@ -28,12 +26,12 @@
       (object/raise opener/opener :new! path))))
 
 (def parsed-args "Map of commandline options parsed by yargs"
-  (js->clj (.getGlobal remote "browserParsedArgs") :keywordize-keys true))
+  (:parsedArgs ipc/app-info))
 
 (def open-files "Files to open from a file manager"
-  (js->clj (.getGlobal remote "browserOpenFiles")))
+  (:openFiles ipc/app-info))
 
-(def argv "Arguments used to start LightTable" (js->clj (.-argv (.-process remote))))
+(def argv "Arguments used to start LightTable" (:argv ipc/app-info))
 
 (ipc/on "openFileAfterStartup" #(object/raise app/app :open! %))
 

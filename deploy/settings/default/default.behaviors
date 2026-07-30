@@ -52,7 +52,6 @@
  [:app :lt.objs.statusbar/init-statusbar]
  [:app :lt.objs.statusbar/show-statusbar]
  [:app :lt.objs.workspace/init-workspace-cache-dir]
- [:app :lt.objs.metrics/init-metrics]
  [:app :lt.objs.keyboard/chord-timeout 1000]
  [:app :lt.objs.files/file.ignore-pattern "^\\.|\\.class$|^target/|svn|cvs|\\.pyc$|~$|\\.swp$|\\.jar$"]
  [:app :lt.objs.style/provide-skin "dark" "core/css/skins/new-dark.css"]

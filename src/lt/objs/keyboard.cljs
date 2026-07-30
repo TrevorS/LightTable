@@ -6,7 +6,6 @@
             [lt.objs.app :as app]
             [lt.objs.command :as cmd]
             [lt.objs.platform :as platform]
-            [lt.objs.metrics :as metrics]
             [lt.objs.context :as ctx]
             [lt.util.js :refer [every wait]]
             [lt.util.events :as utev])
@@ -17,9 +16,6 @@
 (def key-map (atom {}))
 (def chords (js-obj "current" nil "chords" #{}))
 (def chord-timeout 1000)
-
-(defn activity []
-  (metrics/used!))
 
 (defn chord-variants [k]
   (let [splits (-> (string/split k " ")
@@ -105,14 +101,12 @@
           @keys))
 
 (defn trigger [cmd]
-  (activity)
   (if (coll? cmd)
     (apply cmd/exec! cmd)
     (cmd/exec! cmd))
   *capture*)
 
 (defn capture [key char ev]
-  (activity)
   (binding [*capture* true
             *stop* false]
     (when-let [cs (chord|mapping key char ev)]

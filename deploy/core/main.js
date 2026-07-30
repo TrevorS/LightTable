@@ -4,11 +4,27 @@
 const {
     app,
     BrowserWindow,
-    ipcMain
+    ipcMain,
+    dialog,
+    Menu,
+    MenuItem
 } = require('electron');
 
 
-let yargs = require('yargs');
+const { parseArgs } = require('node:util');
+
+const USAGE = [
+    "",
+    "Usage: light [options] [path ...]",
+    "",
+    "Paths are either a file or a directory.",
+    "Files can take a line number e.g. file:line.",
+    "",
+    "Options:",
+    "  -h, --help  Print help",
+    "  -a, --add   Add path(s) to workspace",
+    ""
+].join("\n");
 
 // Keep a global reference of the window object, if you don't, the window will
 // be closed automatically when the javascript object is GCed.
@@ -70,7 +86,88 @@ function createWindow() {
     return window;
 }
 
+// The renderer used to reach these through the `remote` module, which Electron
+// removed in v14. Everything it needs now goes over explicit channels.
+
+function windowFor(event) {
+    return BrowserWindow.fromWebContents(event.sender);
+}
+
+// Turn a plain menu description from the renderer into a real Menu. Renderer
+// click handlers stay in the renderer: each clickable entry carries a token,
+// and clicking sends that token back for the renderer to dispatch.
+function toMenuTemplate(sender, item) {
+    let out = Object.assign({}, item);
+    if (out.submenu) {
+        out.submenu = (out.submenu || []).filter(Boolean)
+            .map(function(child) { return toMenuTemplate(sender, child); });
+    }
+    if (out.token !== undefined && out.token !== null) {
+        let token = out.token;
+        delete out.token;
+        out.click = function() {
+            if (!sender.isDestroyed()) sender.send("lt:menu-click", token);
+        };
+    }
+    return out;
+}
+
+function buildMenu(sender, items) {
+    let menu = new Menu();
+    (items || []).filter(Boolean).forEach(function(item) {
+        menu.append(new MenuItem(toMenuTemplate(sender, item)));
+    });
+    return menu;
+}
+
+function registerRendererApi() {
+    // Read once during renderer startup, so it has to be synchronous.
+    ipcMain.on("lt:app-info", function(event) {
+        event.returnValue = {
+            appPath: app.getAppPath(),
+            parsedArgs: global.browserParsedArgs,
+            openFiles: global.browserOpenFiles,
+            argv: process.argv
+        };
+    });
+
+    ipcMain.on("lt:window-state", function(event) {
+        let window = windowFor(event);
+        event.returnValue = window ? {
+            id: window.id,
+            size: window.getSize(),
+            position: window.getPosition(),
+            fullScreen: window.isFullScreen()
+        } : null;
+    });
+
+    ipcMain.on("lt:window-call", function(event, method, args) {
+        let window = windowFor(event);
+        if (window && typeof window[method] === "function") {
+            window[method].apply(window, args || []);
+        }
+    });
+
+    ipcMain.handle("lt:dialog-open", function(event, options) {
+        return dialog.showOpenDialog(windowFor(event), options);
+    });
+
+    ipcMain.handle("lt:dialog-save", function(event, options) {
+        return dialog.showSaveDialog(windowFor(event), options);
+    });
+
+    ipcMain.on("lt:menu-popup", function(event, items) {
+        buildMenu(event.sender, items).popup({ window: windowFor(event) });
+    });
+
+    ipcMain.on("lt:menu-app", function(event, items) {
+        Menu.setApplicationMenu(buildMenu(event.sender, items));
+    });
+}
+
 function onReady() {
+    registerRendererApi();
+
     ipcMain.on("createWindow", function(event, info) {
         createWindow();
     });
@@ -91,19 +188,30 @@ function onReady() {
     createWindow();
 }
 
-function parseArgs() {
-    yargs.usage("\nLight Table " + app.getVersion() + "\n" +
-        // TODO: Use a consistent name for executables or vary executable
-        // name per platform. $0 currently gives an unwieldy name
-        "Usage: light [options] [path ...]\n\n" +
-        "Paths are either a file or a directory.\n" +
-        "Files can take a line number e.g. file:line.");
-    yargs.alias('h', 'help').boolean('h').describe('h', 'Print help');
-    yargs.alias('a', 'add').boolean('a').describe('a', 'Add path(s) to workspace');
-    global.browserParsedArgs = yargs.parse(process.argv);
+// Replaced yargs, whose only job here was two boolean flags and a usage
+// string. node:util covers that without the dependency.
+function readArgs() {
+    let parsed;
+    try {
+        parsed = parseArgs({
+            args: process.argv.slice(1),
+            options: {
+                help: { type: 'boolean', short: 'h', default: false },
+                add: { type: 'boolean', short: 'a', default: false }
+            },
+            allowPositionals: true,
+            // Paths are handed straight through, so anything unrecognised is a
+            // path rather than a mistake.
+            strict: false
+        });
+    } catch (e) {
+        parsed = { values: {}, positionals: process.argv.slice(1) };
+    }
+
+    global.browserParsedArgs = Object.assign({}, parsed.values, { _: parsed.positionals });
 
     if (global.browserParsedArgs.help) {
-        yargs.showHelp();
+        process.stdout.write("\nLight Table " + app.getVersion() + "\n" + USAGE);
         process.exit(0);
     }
 }
@@ -134,7 +242,7 @@ function start() {
             global.browserOpenFiles.push(path);
         }
     });
-    parseArgs();
+    readArgs();
 }
 
 // Set $IPC_DEBUG to debug incoming and outgoing ipcMain messages for the main process

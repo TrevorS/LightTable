@@ -11,8 +11,6 @@
 
 (def ^:private fs (js/require "fs"))
 (def ^:private fpath (js/require "path"))
-;; https://github.com/shelljs/shelljs
-(def ^:private shell (load/node-module "shelljs"))
 ;; https://github.com/electron/electron/blob/master/docs/api/shell.md
 (def ^:private electron-shell (.-shell (js/require "electron")))
 (def ^:private os (js/require "os"))
@@ -402,16 +400,17 @@
       (when cb (cb e)))))
 
 (defn trash!
-  "Move file to trash and returns boolean status."
+  "Move file to trash. Returns a promise that resolves once the move completes
+  and rejects if it fails."
   [path]
-  (.moveItemTotrash electron-shell path))
+  ;; Was .moveItemTotrash — a typo, so this never resolved to a real method even
+  ;; before Electron replaced moveItemToTrash with the promise-based trashItem.
+  (.trashItem electron-shell path))
 
 (defn delete!
   "Delete file or directory from filesystem."
   [path]
-  (if (dir? path)
-    (.rm shell "-r" path)
-    (.unlinkSync fs path)))
+  (.rmSync fs path #js {:recursive true :force true}))
 
 (defn move!
   "Move file or directory to given `path`."
@@ -419,10 +418,11 @@
   (.renameSync fs from to))
 
 (defn copy
-  "Copy file or directory to given `path`."
+  "Copy file or directory `from` to the path `to`. `to` is the destination
+  itself, not a directory to place the copy inside."
   [from to]
   (if (dir? from)
-    (.cp shell "-R" from to)
+    (.cpSync fs from to #js {:recursive true})
     (save to (:content (open-sync from)))))
 
 (defn mkdir

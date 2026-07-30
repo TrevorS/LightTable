@@ -14,20 +14,14 @@
       "webaudio": true,
       "plugins": true,
       "nodeIntegration": true,
-      "contextIsolation": false,
-      "enableRemoteModule": true
+      "contextIsolation": false
     }
   },
   "dependencies": {
-    "bencode": "^2.0.1",
-    "codemirror": "^5.61.0",
-    "jsonify": "*",
-    "replace": "^1.2.1",
-    "request": "^2.88.2",
-    "shelljs": "^0.8.4",
-    "socket.io": "^4.0.1",
-    "tar": "^6.1.0",
-    "yargs": "^16.2.0"
+    "codemirror": "^5.65.21",
+    "replace": "^1.2.2",
+    "socket.io": "^4.8.3",
+    "tar": "^7.5.22"
   },
   "forkedDependencies": {}
 }

@@ -1,6 +1,26 @@
 (ns lt.util.js
   "Provide misc Javascript related functions.")
 
+(defn fetch-text
+  "GET `url` and call `cb` with the response body as a string.
+
+  On a network failure or a non-2xx response `cb` is not called and `on-error`
+  is invoked with the error instead, defaulting to reporting it on the console.
+  Pass an explicit `on-error` for requests that are allowed to fail quietly,
+  such as background checks that simply need the network to be up."
+  ([url cb]
+   ;; console is referenced through js/ to avoid a cycle: it depends on this ns.
+   (fetch-text url cb (fn [e] (js/lt.objs.console.error e))))
+  ([url cb on-error]
+   (-> (js/fetch url)
+       (.then (fn [res]
+                (if (.-ok res)
+                  (.text res)
+                  (throw (js/Error. (str "GET " url " failed: "
+                                         (.-status res) " " (.-statusText res)))))))
+       (.then cb)
+       (.catch on-error))))
+
 (defn every
   "Execute `func` every `ms` milliseconds."
   [ms func]

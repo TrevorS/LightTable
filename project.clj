@@ -1,10 +1,9 @@
 (defproject lighttable "0.9.0"
   :description "Light Table is a next generation code editor that connects you to your creation with instant feedback. Light Table is very customizable and can display anything a Chromium browser can."
   :url "http://www.lighttable.com/"
-  :dependencies [[org.clojure/clojure "1.10.3"]
-                 [org.clojars.prertik/singultus "1.0.0"]
-                 [org.clojars.prertik/fetch "0.4.0" :exclusions [org.clojure/clojure noir]]
-                 [org.clojure/clojurescript "1.10.844"
+  :dependencies [[org.clojure/clojure "1.12.5"]
+                 ;; singultus is vendored under src/singultus; see its README
+                 [org.clojure/clojurescript "1.12.145"
                   :exclusions [org.apache.ant/ant]]
                  [javax.xml.bind/jaxb-api "2.4.0-b180830.0359"]]
 
@@ -16,7 +15,6 @@
                                    ;; clobbers Electron's real `process` in the renderer and leaves
                                    ;; js/process.platform undefined. See lt.objs.platform/platform.
                                    :process-shim false
-                                   :externs ["externs/jquery.js" "externs/throttle.js" "externs/codemirror.js"]
                                    :source-map "deploy/core/lighttable/bootstrap.js.map"
                                    :output-to "deploy/core/lighttable/bootstrap.js"
                                    :output-dir "deploy/core/lighttable/cljs/"
@@ -32,9 +30,8 @@
                                    :output-dir "deploy/core/node_modules/clojurescript/cljsDeps/"
                                    :pretty-print true}}]}
 
-  ;; TODO: Remove separate :doc :dependencies after ClojureScript upgrade
-  :profiles {:doc {:dependencies [[org.clojure/clojure "1.10.3"]
-                                  [org.clojure/clojurescript "1.10.844"
+  :profiles {:doc {:dependencies [[org.clojure/clojure "1.12.5"]
+                                  [org.clojure/clojurescript "1.12.145"
                                    :exclusions [org.apache.ant/ant]]]}}
   :plugins [[lein-cljsbuild "1.1.8"]
             [lein-codox "0.10.7"]

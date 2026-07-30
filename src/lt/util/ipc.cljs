@@ -30,3 +30,21 @@
   "Delegates to ipc.on, which defines a callback to fire for the given channel."
   [channel cb]
   (.on ipc channel cb))
+
+(defn send-sync
+  "Delegates to ipc.sendSync, blocking until the browser process replies.
+
+  Only for values the renderer needs before it can carry on booting; prefer
+  [[send]] or [[invoke]] everywhere else."
+  [channel & args]
+  (apply (.-sendSync ipc) channel (clj->js args)))
+
+(defn invoke
+  "Delegates to ipc.invoke, returning a promise of the browser process's reply."
+  [channel & args]
+  (apply (.-invoke ipc) channel (clj->js args)))
+
+(def app-info
+  "Values owned by the browser process that the renderer reads once at startup.
+  Keys are :appPath, :parsedArgs, :openFiles and :argv."
+  (js->clj (send-sync "lt:app-info") :keywordize-keys true))

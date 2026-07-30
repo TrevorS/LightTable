@@ -12,23 +12,17 @@
             [lt.objs.console :as console]
             [lt.objs.app :as app]
             [lt.util.load :as load]
-            [lt.util.js :refer [every]]
-            [lt.util.cljs :refer [str-contains?]]
-            [clojure.string :as string]
-            [fetch.core :as fetch])
-  (:require-macros [fetch.macros :refer [letrem]]
-                   [lt.macros :refer [behavior defui]]))
+            [lt.util.js :as js-util :refer [every]]
+            [clojure.string :as string])
+  (:require-macros [lt.macros :refer [behavior defui]]))
 
-(def shell (load/node-module "shelljs"))
 (def fs (js/require "fs"))
-(def zlib (js/require "zlib"))
-(def request (load/node-module "request"))
+(def ^:private https (js/require "https"))
+(def ^:private http (js/require "http"))
+(def ^:private url-mod (js/require "url"))
 (def tar (load/node-module "tar"))
 (def home-path (files/lt-home ""))
-;; TODO: get-proxy
-;; (def get-proxy (.-App.getProxyForURL (js/require "nw.gui")))
-(def get-proxy)
-(def request-strict-ssl true)
+(def strict-ssl? true)
 
 (defn tar-path [v]
   (if (cache/fetch :edge)
@@ -40,13 +34,6 @@
 (defn get-versions []
   (let [vstr (:content (files/open-sync (files/lt-home "core/version.json")))]
     (js->clj (.parse js/JSON vstr) :keywordize-keys true)))
-
-(defn proxy? []
-  (let [p (get-proxy (tar-path "0.5.0"))]
-    (when (str-contains? p "PROXY")
-      (-> p
-          (string/split " ")
-          (second)))))
 
 (def version-timeout (* 60 60 1000))
 (def version (get-versions))
@@ -72,40 +59,118 @@
   [v1 v2]
   (compare-versions (str->version v1) (str->version v2)))
 
-(defn download-file [from to cb]
-  (let [options (js-obj "url" from
-                        "headers" (js-obj "User-Agent" "Light Table")
-                        "strictSSL" request-strict-ssl)
-        out (.createWriteStream fs to)]
-    (when-let [proxy (or js/process.env.http_proxy js/process.env.https_proxy)]
-      (set! (.-proxy options) proxy))
+(def ^:private max-redirects 5)
 
-    (-> (.get request options cb)
-        (.on "response" (fn [resp]
-                          (when-not (= (.-statusCode resp) 200)
-                            (notifos/done-working)
-                            (throw (js/Error. (str "Error downloading: " from " status code: " (.-statusCode resp)))))))
-        (.pipe out))))
+(defn- proxy-for
+  "Proxy to use for `url` per the environment, or nil when none is configured."
+  [url]
+  (let [env js/process.env]
+    (if (string/starts-with? url "https:")
+      (or (.-https_proxy env) (.-HTTPS_PROXY env))
+      (or (.-http_proxy env) (.-HTTP_PROXY env)))))
+
+(defn- get-through-proxy
+  "GET an https `url` by opening a CONNECT tunnel through `proxy`."
+  [url proxy on-response on-error]
+  (let [target (.parse url-mod url)
+        p (.parse url-mod proxy)
+        req (.request http (js-obj "host" (.-hostname p)
+                                   "port" (or (.-port p) 80)
+                                   "method" "CONNECT"
+                                   "path" (str (.-hostname target) ":" (or (.-port target) 443))))]
+    (.on req "connect"
+         (fn [res socket]
+           (if-not (= 200 (.-statusCode res))
+             (on-error (js/Error. (str "Proxy CONNECT failed with status " (.-statusCode res))))
+             (-> (.get https (js-obj "host" (.-hostname target)
+                                     "path" (.-path target)
+                                     "socket" socket
+                                     "agent" false
+                                     "rejectUnauthorized" strict-ssl?
+                                     "headers" (js-obj "User-Agent" "Light Table"))
+                       on-response)
+                 (.on "error" on-error)))))
+    (.on req "error" on-error)
+    (.end req)))
+
+(defn- get-url
+  "GET `url` and hand the response to `on-response`, following up to
+  `redirects` redirects. GitHub's download endpoints redirect, so this cannot
+  be skipped."
+  [url redirects on-response on-error]
+  (let [handle (fn [resp]
+                 (let [status (.-statusCode resp)
+                       location (.. resp -headers -location)]
+                   (if (and location (<= 300 status) (< status 400))
+                     (do
+                       (.resume resp)
+                       (if (pos? redirects)
+                         (get-url (.resolve url-mod url location) (dec redirects) on-response on-error)
+                         (on-error (js/Error. (str "Too many redirects downloading: " url)))))
+                     (on-response resp))))
+        https? (string/starts-with? url "https:")]
+    (if-let [proxy (and https? (proxy-for url))]
+      (get-through-proxy url proxy handle on-error)
+      (let [opts (.parse url-mod url)]
+        (aset opts "headers" (js-obj "User-Agent" "Light Table"))
+        (aset opts "rejectUnauthorized" strict-ssl?)
+        (-> (.get (if https? https http) opts handle)
+            (.on "error" on-error))))))
+
+(defn download-file
+  "Download `from` to the path `to`, calling `cb` once the file has been fully
+  written. Follows redirects and honours the http_proxy/https_proxy
+  environment variables."
+  [from to cb]
+  (let [fail (fn [e]
+               (notifos/done-working)
+               (console/error e))]
+    (get-url from max-redirects
+             (fn [resp]
+               (if-not (= 200 (.-statusCode resp))
+                 (do
+                   (.resume resp)
+                   (fail (js/Error. (str "Error downloading: " from
+                                         " status code: " (.-statusCode resp)))))
+                 (let [out (.createWriteStream fs to)]
+                   (.on out "error" fail)
+                   (.on out "finish" cb)
+                   (.pipe resp out))))
+             fail)))
 
 (defn download-zip [ver cb]
   (let [n (notifos/working (str "Downloading version " ver " .."))]
-    (download-file (tar-path ver) (str home-path "/tmp.tar.gz") (fn [e r body]
+    (download-file (tar-path ver) (str home-path "/tmp.tar.gz") (fn []
                                                                   (notifos/done-working)
-                                                                  (cb e r body)))))
+                                                                  (cb)))))
 
-(defn untar [from to cb]
-  (let [t (.createReadStream fs from)]
-    (.. t
-        (pipe (.createGunzip zlib))
-        (pipe (.Extract tar (js-obj "path" to)))
-        (on "end" cb))))
+(defn untar
+  "Extract the gzipped tarball `from` into the directory `to`, calling `cb` once
+  extraction has finished.
+
+  tar dropped the streaming Extract class this used to pipe into, and its
+  replacement will not create the target directory for us."
+  [from to cb]
+  (when-not (files/exists? to)
+    (files/mkdir to))
+  (-> (.x tar (js-obj "file" from "cwd" to))
+      ;; .then hands the resolution value to cb, and every caller passes a
+      ;; zero-arity fn, so swallow the argument rather than blowing up on arity.
+      (.then (fn [_] (cb)))
+      (.catch (fn [e]
+                (notifos/done-working)
+                (console/error e)))))
 
 
 (defn move-tmp []
   (let [parent-dir (first (files/full-path-ls (str home-path "/tmp/")))]
     (doseq [file (files/full-path-ls (str parent-dir "/deploy/"))]
-      (.cp shell "-rf" file home-path)))
-  (.rm shell "-rf" (str home-path "/tmp*")))
+      ;; files/copy takes the destination itself, where `cp -rf` took the
+      ;; directory to drop the copy into.
+      (files/copy file (files/join home-path (files/basename file)))))
+  ;; download-zip leaves the tarball behind and untar expands it into tmp/.
+  (files/delete! (str home-path "/tmp.tar.gz"))
+  (files/delete! (str home-path "/tmp")))
 
 (defn fetch-and-deploy [ver]
   (download-zip ver (fn []
@@ -144,7 +209,7 @@
          last)))
 
 (defn check-version [& [notify?]]
-  (fetch/xhr tags-url {}
+  (js-util/fetch-text tags-url
              (fn [data]
                (let [latest-version (->latest-version data)]
                  (when (re-find version-regex latest-version)
@@ -157,7 +222,13 @@
                        (set! js/localStorage.fetchedVersion latest-version)
                        (should-update-popup latest-version))
                      (when notify?
-                       (notifos/set-msg! (str "At latest version: " (:version version))))))))))
+                       (notifos/set-msg! (str "At latest version: " (:version version))))))))
+             (fn [e]
+               ;; This also runs on a timer regardless of whether the machine is
+               ;; online, so only surface a failure the user actually asked for.
+               (if notify?
+                 (console/error e)
+                 (.log js/console "Version check failed:" e)))))
 
 (defn binary-version
   "Binary/electron version. The two versions are in sync since binaries updates
@@ -196,8 +267,6 @@
           :type :user
           :desc "App: Automatically check for updates"
           :reaction (fn [this]
-                      ;;                               (when-let [proxy (proxy?)]
-                      ;;                                 (.defaults request (clj->js {:proxy proxy})))
                       (when (app/first-window?)
                         (set! js/localStorage.fetchedVersion nil))
                       (check-version)
@@ -209,7 +278,7 @@
           :exclusive [::disable-strict-ssl]
           :desc "Enables strict SSL certificate checking when downloading LT and LT plugin repos (default setting)"
           :reaction (fn [this]
-                      (set! request-strict-ssl true)))
+                      (set! strict-ssl? true)))
 
 (behavior ::disable-strict-ssl
           :triggers #{:object.instant}
@@ -218,6 +287,6 @@
           :desc "Disables strict SSL certificate checking when downloading LT and LT plugin repos"
           :details "In some enterprise environments with SSL proxies strict certificate checking will fail due to MITM certificates used for monitoring SSL traffic. This option allows these network requests to succeed in such environments."
           :reaction (fn [this]
-                      (set! request-strict-ssl false)))
+                      (set! strict-ssl? false)))
 
 (object/tag-behaviors :app [::check-deploy])

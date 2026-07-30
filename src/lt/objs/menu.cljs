@@ -6,44 +6,74 @@
             [lt.objs.platform :as platform]
             [lt.objs.app :as app]
             [lt.util.dom :as dom]
+            [lt.util.ipc :as ipc]
             [clojure.string :as string])
   (:require-macros [lt.macros :refer [behavior]]))
 
-(def remote (.-remote (js/require "electron")))
-(def Menu (.-Menu remote))
-(def MenuItem (.-MenuItem remote))
+;; Menu and MenuItem live in the browser process, and `remote`, which used to
+;; reach them, was removed in Electron v14. Menus are therefore described as
+;; plain data and built over there.
+;;
+;; :click handlers stay here rather than crossing the boundary: each clickable
+;; item is given a token, the browser process reports the token that was
+;; clicked, and the handler runs in this process as it always did. Callers and
+;; plugins keep passing ordinary closures.
 
-(declare submenu)
+(def ^:private app-handlers
+  "Tokens for the application menubar, which lives as long as the window."
+  (atom {}))
 
-(defn menu-item [opts]
-  (let [opts (if-not (:submenu opts)
-               opts
-               (assoc opts :submenu (submenu (:submenu opts))))
-        opts2 (if (:click opts)
-               (assoc opts :click (fn []
-                                    (try
-                                      (when-let [func (:click opts)]
-                                        (func))
-                                      (catch :default e
-                                        (js/lt.objs.console.error e)))))
-               opts)]
-    (MenuItem. (clj->js opts))))
+(def ^:private popup-handlers
+  "Tokens for the context menu currently on screen, replaced each time one opens."
+  (atom {}))
 
-(defn submenu [items]
-  (let [menu (Menu.)]
-    (doseq [i items
-            :when i]
-      (.append menu (menu-item i)))
-    menu))
+(def ^:private ^:dynamic *handlers* popup-handlers)
 
-(defn menu [items]
-  (let [menu-instance (Menu.)]
-    (doseq [i items]
-      (.append menu-instance (menu-item i)))
-    menu-instance))
+(def ^:private token-seq (atom 0))
+
+(defn- register-click!
+  "Store `f` against a fresh token and return the token."
+  [f]
+  (let [token (swap! token-seq inc)]
+    (swap! *handlers* assoc token f)
+    token))
+
+(def ^:private item-keys
+  "MenuItem options worth forwarding. Callers attach their own keys too — :order,
+  for one, which is only used for sorting here — and Electron has no use for them."
+  [:label :sublabel :toolTip :role :type :accelerator :enabled :visible :checked])
+
+(defn menu-item
+  "Describe a single menu item. Returns data for the browser process to build,
+  with any :click swapped for a token."
+  [opts]
+  (when opts
+    (cond-> (select-keys opts item-keys)
+      (:click opts) (assoc :token (register-click! (:click opts)))
+      (:submenu opts) (assoc :submenu (mapv menu-item (remove nil? (:submenu opts)))))))
+
+(defn submenu
+  "Describe a list of items nested under a parent item."
+  [items]
+  (mapv menu-item (remove nil? items)))
+
+(defn menu
+  "Describe a context menu. Returns data; pass it to [[show-menu]] to display."
+  [items]
+  (binding [*handlers* popup-handlers]
+    (reset! popup-handlers {})
+    (mapv menu-item (remove nil? items))))
 
 (defn show-menu [m]
-  (.popup m (.getCurrentWindow remote)))
+  (ipc/send "lt:menu-popup" m))
+
+(ipc/on "lt:menu-click"
+        (fn [_ token]
+          (when-let [handler (or (@popup-handlers token) (@app-handlers token))]
+            (try
+              (handler)
+              (catch :default e
+                (js/lt.objs.console.error e))))))
 
 (dom/on (dom/$ :body) :contextmenu (fn [e]
                                      (dom/prevent e)
@@ -51,11 +81,9 @@
                                      false))
 
 (defn set-menubar [items]
-  (let [menubar (Menu.)]
-    (doseq [i items
-            :when i]
-      (.append menubar (menu-item i)))
-    (Menu.setApplicationMenu menubar)))
+  (binding [*handlers* app-handlers]
+    (reset! app-handlers {})
+    (ipc/send "lt:menu-app" (mapv menu-item (remove nil? items)))))
 
 (def key-mappings {"cmd" "Command"
                    "shift" "Shift"
@@ -177,9 +205,8 @@
 (behavior ::create-menu
           :triggers #{:init}
           :reaction (fn [this]
-                      (when (platform/mac?)
-                        (set! (.-Menu app/win) nil)
-                        )
+                      ;; Dropped a `(set! (.-Menu win) nil)` here: BrowserWindow has
+                      ;; no Menu property, so it was a leftover from the NW.js days.
                       (main-menu)))
 
 (behavior ::recreate-menu

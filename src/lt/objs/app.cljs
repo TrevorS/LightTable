@@ -11,9 +11,22 @@
             [lt.util.ipc :as ipc])
   (:require-macros [lt.macros :refer [behavior]]))
 
-(def remote (.-remote (js/require "electron")))
-(def win (.getCurrentWindow remote))
 (def frame (.-webFrame (js/require "electron")))
+
+;; BrowserWindow lives in the browser process. It used to be reached through
+;; `remote`, which Electron removed in v14. Mutations are fire-and-forget sends;
+;; the few reads are synchronous because they happen while the window is closing.
+
+(defn- window-call!
+  "Invoke `method` on this renderer's BrowserWindow, in the browser process."
+  [method & args]
+  (ipc/send "lt:window-call" (name method) (vec args)))
+
+(defn- window-state
+  "Current geometry of this renderer's BrowserWindow: :id, :size, :position
+  and :fullScreen."
+  []
+  (js->clj (ipc/send-sync "lt:window-state") :keywordize-keys true))
 (def closing true)
 (def default-zoom 1)
 
@@ -21,7 +34,7 @@
   (.-location.href js/window))
 
 (defn window-number []
-  (.-id win))
+  (:id (window-state)))
 
 (defn first-window? []
   (= 1 (window-number)))
@@ -38,8 +51,8 @@
      (do
        (object/raise app :closing)
        (object/raise app :closed)
-       (.destroy win))
-     (.close win))))
+       (window-call! :destroy))
+     (window-call! :close))))
 
 (defn refresh []
   (js/window.location.reload true))
@@ -111,27 +124,28 @@
 (behavior ::store-position-on-close
           :triggers #{:closed :refresh}
           :reaction (fn [this]
-                      (when-not (.isFullScreen win)
-                        (let [[width height] (.getSize win)]
-                          (store! :width width)
-                          (store! :height height))
-                        (let [[x y] (.getPosition win)]
-                          (store! :x x)
-                          (store! :y y)))
-                      (set! js/localStorage.fullscreen (.isFullScreen win))))
+                      (let [{:keys [size position fullScreen]} (window-state)]
+                        (when-not fullScreen
+                          (let [[width height] size]
+                            (store! :width width)
+                            (store! :height height))
+                          (let [[x y] position]
+                            (store! :x x)
+                            (store! :y y)))
+                        (set! js/localStorage.fullscreen fullScreen))))
 
 (behavior ::restore-fullscreen
           :triggers #{:show}
           :reaction (fn [this]
                       (when (= js/localStorage.fullscreen "true")
-                        (.setFullScreen win true))))
+                        (window-call! :setFullScreen true))))
 
 (behavior ::restore-position-on-init
           :triggers #{:show}
           :reaction (fn [this]
                       (when js/localStorage.width
-                        (.setSize win (ensure-greater js/localStorage.width 400) (ensure-greater js/localStorage.height 400))
-                        (.setPosition win (ensure-greater js/localStorage.x 0) (ensure-greater js/localStorage.y 0)))))
+                        (window-call! :setSize (ensure-greater js/localStorage.width 400) (ensure-greater js/localStorage.height 400))
+                        (window-call! :setPosition (ensure-greater js/localStorage.x 0) (ensure-greater js/localStorage.y 0)))))
 
 (behavior ::on-show-bind-navigate
           :triggers #{:show}
@@ -142,7 +156,7 @@
                                                       (dom/prevent e)
                                                       (when-let [href (.-target.href e)]
                                                         (platform/open-url href)
-                                                        (.focus win)))))))
+                                                        (window-call! :focus)))))))
 
 (behavior ::track-focus
           :triggers #{:focus :show}
@@ -263,14 +277,14 @@
 (cmd/command {:command :window.fullscreen
               :desc "Window: Toggle fullscreen"
               :exec (fn []
-                      (.setFullScreen win (not (.isFullScreen win))))})
+                      (window-call! :setFullScreen (not (:fullScreen (window-state)))))})
 
 (cmd/command {:command :window.minimize
               :desc "Window: Minimize"
               :exec (fn []
-                      (.minimize win))})
+                      (window-call! :minimize))})
 
 (cmd/command {:command :window.maximize
               :desc "Window: Maximize"
               :exec (fn []
-                      (.maximize win))})
+                      (window-call! :maximize))})

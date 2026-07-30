@@ -1,7 +1,6 @@
 (ns lt.objs.opener
   "Provide functionality around opening and saving files"
   (:require [lt.object :as object]
-            [lt.objs.metrics :as metrics]
             [lt.objs.editor :as editor]
             [lt.objs.editor.pool :as pool]
             [lt.objs.document :as doc]
@@ -106,10 +105,7 @@
   [doc-fn obj path]
   (doc-fn path
           (fn [doc]
-            (let [type (files/path->type path)
-                  ed (pool/create (merge {:doc doc :line-ending (-> @doc :line-ending)} (path->info path)))]
-              (metrics/capture! :editor.open {:type (or (:name type) (files/ext path))
-                                              :lines (editor/last-line ed)})
+            (let [ed (pool/create (merge {:doc doc :line-ending (-> @doc :line-ending)} (path->info path)))]
               (object/add-tags ed [:editor.file-backed])
               (object/raise obj :open ed)
               (lt.objs.tabs/add! ed)

@@ -8,10 +8,9 @@
             [lt.objs.console :as console]
             [lt.objs.app :as app]
             [lt.objs.clients :as clients]
-            [fetch.core :as fetch]
             [singultus.core :as crate]
             [lt.util.dom :as dom]
-            [lt.util.js :refer [every wait ->clj]]
+            [lt.util.js :as js-util :refer [every wait ->clj]]
             [lt.util.ipc :as ipc]
             [singultus.binding :refer [bound subatom]]
             [clojure.string :as string])
@@ -70,6 +69,13 @@
          (empty? val)) "null"
      :else (:value v))))
 
+(defn- ->file-name
+  "Basename of a url from a devtools protocol message. Messages about eval'd or
+  anonymous scripts carry no url, so nil has to be tolerated here."
+  [url]
+  (when url
+    (files/basename url)))
+
 (defn msg->log [this m]
   (let [params (:parameters m)]
     (for [p params]
@@ -90,7 +96,7 @@
   (str
    "ERROR: "(:text e) ": " (:url e) "\n"
    (reduce (fn [res f]
-             (str res "       " (files/basename (:url f)) " [" (:lineNumber f) "]: " (if (empty? (:functionName f))
+             (str res "       " (->file-name (:url f)) " [" (:lineNumber f) "]: " (if (empty? (:functionName f))
                                                                                        "anonymous"
                                                                                        (:functionName f))
                   "\n"))
@@ -98,48 +104,42 @@
            (:stackTrace e))))
 
 (defui frame [f]
-  [:tr [:td.url (files/basename (:url f)) " [" (:lineNumber f) "]"] [:td (if (empty? (:functionName f))
+  [:tr [:td.url (->file-name (:url f)) " [" (:lineNumber f) "]"] [:td (if (empty? (:functionName f))
                                                                            "anonymous"
                                                                            (:functionName f))]])
 
 (defmulti handle-log-msg #(:level %2))
 
-(defn valid-error? [text]
-  (let [text (.toLowerCase text)]
-    (every? #(= -1 (.indexOf text %)) ["failed to load resource: http://app.kodowa.com"])))
-
 (defmethod handle-log-msg "error" [this msg]
-  (when (valid-error? (str (:text msg) ": " (:url msg)))
-    (let [top (first (:stackTrace msg))]
-      (console/verbatim [:div [:h3 (:text msg)
-                               (when-not (:url top)
-                                 (str ": " (:url msg)))]
-                         [:table
-                          (for [f (:stackTrace msg)]
-                            (frame f))]]
-
-                        "error" (error->string msg)))))
+  (let [top (first (:stackTrace msg))]
+    (console/verbatim [:div [:h3 (:text msg)
+                             (when-not (:url top)
+                               (str ": " (:url msg)))]
+                       [:table
+                        (for [f (:stackTrace msg)]
+                          (frame f))]]
+                      "error" (error->string msg))))
 
 
 (defmethod handle-log-msg "log" [this msg]
-  (let [stack (first (filter #(not= (files/basename (:url %)) "bootstrap.js") (-> msg :stackTrace)))
+  (let [stack (first (filter #(not= (->file-name (:url %)) "bootstrap.js") (-> msg :stackTrace)))
         stack (if-not stack
                 (first (-> msg :stackTrace))
                 stack)]
-    (console/loc-log {:file (files/basename (:url stack))
+    (console/loc-log {:file (->file-name (:url stack))
                       :line (:lineNumber stack)
                       :content (msg->log this msg)
                       :str-content (msg->string msg)})))
 
 (defmethod handle-log-msg "warning" [this msg]
-  (console/loc-log {:file (files/basename (:url msg))
+  (console/loc-log {:file (->file-name (:url msg))
                     :line (:line msg)
                     :class "warning"
                     :content (:text msg)
                     :str-content (:text msg)}))
 
 (defmethod handle-log-msg :default [this msg]
-  (console/loc-log {:file (files/basename (:url msg))
+  (console/loc-log {:file (->file-name (:url msg))
                     :line (:line msg)
                     :content (:text msg)
                     :str-content (:text msg)}))
@@ -159,7 +159,7 @@
 
 (defn find-script [client path]
   (let [found? (-> (@client :scripts)
-                   (get (files/basename path)))]
+                   (get (->file-name path)))]
     found?))
 
 (defn script-exists? [this id cb]
@@ -169,7 +169,7 @@
 
 (defn remove-script! [client path id]
   (let [[k v] (first (filter #(= id (:scriptId (second %))) (find-script client path)))]
-    (object/update! client [:scripts (files/basename path)] dissoc k)))
+    (object/update! client [:scripts (->file-name path)] dissoc k)))
 
 (defn changelive! [obj path code cb else]
   (if-let [s (find-script obj path)]
@@ -236,8 +236,11 @@
 (behavior ::script-parsed
           :triggers #{:Debugger.scriptParsed}
           :reaction (fn [this s]
-                      (let [url (-> s :params :url)]
-                        (object/update! this [:scripts] assoc-in [(files/basename url) url] (:params s)))))
+                      ;; Anonymous and eval'd scripts are announced without a url;
+                      ;; there is nothing to index them under.
+                      (when-let [url (-> s :params :url seq)]
+                        (let [url (apply str url)]
+                          (object/update! this [:scripts] assoc-in [(->file-name url) url] (:params s))))))
 
 
 (behavior ::console-log
@@ -261,7 +264,7 @@
           :triggers #{:reconnect!}
           :reaction (fn [this]
                       (object/raise this :disconnect)
-                      (fetch/xhr devtools-url {}
+                      (js-util/fetch-text devtools-url
                                  (fn [d]
                                    (if-let [url (-> (js/JSON.parse d)
                                                     (js->clj :keywordize-keys true)

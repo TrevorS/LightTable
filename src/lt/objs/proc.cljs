@@ -10,7 +10,6 @@
             [clojure.string :as string])
   (:require-macros [lt.macros :refer [behavior]]))
 
-(def shell (load/node-module "shelljs"))
 (def spawn (.-spawn (js/require "child_process")))
 (def custom-env (atom {}))
 

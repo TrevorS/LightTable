@@ -13,10 +13,9 @@
             [lt.objs.deploy :as deploy]
             [lt.objs.notifos :as notifos]
             [lt.objs.tabs :as tabs]
-            [lt.util.js :refer [wait]]
+            [lt.util.js :as js-util :refer [wait]]
             [lt.objs.platform :as platform]
             [cljs.reader :as reader]
-            [fetch.core :as fetch]
             [singultus.core :as crate]
             [singultus.binding :refer [bound]]
             [lt.util.kahn :as kahn]
@@ -226,7 +225,7 @@
   (files/save metadata-cache (js/JSON.stringify (clj->js cache))))
 
 (defn latest-metadata-sha []
-  (fetch/xhr [:get metadata-commits] {}
+  (js-util/fetch-text metadata-commits
              (fn [data]
                (when-let [parsed (try (js/JSON.parse data)
                                    (catch :default e
