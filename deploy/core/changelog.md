@@ -1,5 +1,28 @@
 #Changes
 
+## 0.9.0
+
+The development branch had stopped launching. This release is the work to get
+it running again and bring its runtime, build and dependencies forward.
+[CHANGELOG-MODERNIZATION.md](https://github.com/TrevorS/LightTable/blob/develop/CHANGELOG-MODERNIZATION.md)
+records all of it in the order it happened, with the reasoning; this is the
+summary.
+
+* ADDED: Electron 13 → 43, Node 14 → 24, Clojure 1.12.5, ClojureScript 1.12.145. All npm dependencies are at their latest release
+* ADDED: Context isolation is on and the window has no Node. Everything privileged goes through a named capability list in the preload, and plugins get a `require` Light Table serves rather than Node's own — which is what lets precompiled plugins keep working
+* ADDED: Plugins declare what they reach for in `plugin.edn`, and Light Table reports what a plugin actually used. See [the capability manifest](https://github.com/TrevorS/LightTable/blob/develop/plugins/README.md)
+* ADDED: 130 CodeMirror modes, up from 27. TypeScript, TSX, JSX, ERB, EJS, ASPX and JSP among them
+* ADDED: A TypeScript plugin, built from source in this repository, with real type checking
+* ADDED: Documentation lives in [doc/](https://github.com/TrevorS/LightTable/blob/develop/doc/README.md) and is published from the repository. `docs.lighttable.com` is gone
+* CHANGED: shadow-cljs builds everything. `lein-cljsbuild`, `project.clj` and codox are gone; the API reference is generated from the source and committed
+* CHANGED: Light Table ships no hand-written JavaScript of its own — the main process, preload, browser injection, worker and window modules are TypeScript
+* CHANGED: `lt.macros/background` and `lt.util.ipc` are removed. `lt.util.bridge/app-info` replaces the one general-purpose member of the latter
+* CHANGED: Releases are built and tested on Linux and macOS by CI and published from a tag. Windows is not built
+* FIX: The window opened blank. `js/global` and ClojureScript's process shim both broke on Electron 12's defaults
+* FIX: The browser tab, which had not worked in years, and no longer lands on `about:blank`
+* FIX: Watching a folder with more than eight paths silently dropped every watch past the eighth, so most of a project stopped reporting changes. Opening a workspace with two or more root folders threw
+* FIX: 527 compiler warnings and 19 npm advisories are down to zero and three. clj-kondo reports no warnings
+
 ## 0.8.1
 
 * CHANGED: [:app :lt.objs.settings/pair-keymap-diffs] behavior is being deprecated. Use [:editor :lt.objs.editor/autoclose-brackets] in your user.behaviors instead. lt.objs.editor/autoclose-brackets should fix autoclosing characters e.g. '[{" for international users.
