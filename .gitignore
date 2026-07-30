@@ -2,6 +2,9 @@
 /deploy/core/node_modules/clojurescript/cljsDeps/
 /target/
 /.clj-kondo/.cache/
+# clojure-lsp's index. .lsp/config.edn is deliberately not ignored: that one is
+# a project's settings and belongs in the repository.
+/.lsp/.cache/
 /src-gen/
 /deploy/plugins/
 /plugins/*/*_compiled.js

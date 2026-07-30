@@ -161,6 +161,27 @@ What ships:
 Server table in `lt.objs.editor.lsp/servers`, an atom keyed by editor tag, so a
 language plugin can add one without waiting for an editor release. One
 connection per project root and server, shared by every editor under it.
+Configured out of the box:
+
+| tags | server | install |
+|---|---|---|
+| `:editor.typescript`, `:editor.tsx` | `typescript-language-server` | `npm i -D typescript-language-server` |
+| `:editor.clj`, `:editor.cljs` | `clojure-lsp` | `brew install clojure-lsp/brew/clojure-lsp-native` |
+
+clojure-lsp is worth its own note. Its diagnostics come from **clj-kondo**,
+which is what `make check` already runs on this repository — so what it says in
+the editor is what CI will say, rather than a second opinion to reconcile. It
+is a native binary and not an npm package, so `PATH` is the only place it can
+be found; wiring it up was impossible until `PATH` was looked at. It indexes
+the whole project before answering, which takes a while the first time and is
+cached in `.lsp/.cache`.
+
+Its overlap with the Clojure plugin is worth knowing about but is not yet a
+conflict: the plugin's jump-to-definition, docs and completion come from a live
+nREPL connection and know what is actually loaded, while clojure-lsp reads the
+source. Only diagnostics are implemented here, and the plugin has none, so
+today they do not meet. When navigation and completion arrive, which of the two
+answers a keystroke is a real decision and not an implementation detail.
 
 The server is looked for in the project first, then on `PATH`:
 

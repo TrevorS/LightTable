@@ -46,7 +46,23 @@
     :editor.tsx {:language-id "typescriptreact"
                  :root ["tsconfig.json" "jsconfig.json" "package.json"]
                  :command "typescript-language-server"
-                 :args ["--stdio"]}}))
+                 :args ["--stdio"]}
+    ;; clojure-lsp handles .clj, .cljc and .edn under one tag and .cljs under
+    ;; the other; the protocol has one language id for all of them. Its
+    ;; diagnostics come from clj-kondo, which is what `make check` already runs
+    ;; here — so what it says in the editor is what CI will say.
+    ;;
+    ;; It is a native binary rather than an npm package, so `PATH` is the only
+    ;; place it can be found. Wiring it up was not possible before that was
+    ;; looked at.
+    :editor.clj {:language-id "clojure"
+                 :root ["deps.edn" "project.clj" "shadow-cljs.edn" "bb.edn" ".lsp/config.edn"]
+                 :command "clojure-lsp"
+                 :args []}
+    :editor.cljs {:language-id "clojure"
+                  :root ["deps.edn" "project.clj" "shadow-cljs.edn" "bb.edn" ".lsp/config.edn"]
+                  :command "clojure-lsp"
+                  :args []}}))
 
 (defn server-for [tags]
   (some #(get @servers %) tags))
