@@ -48,7 +48,8 @@ re-litigated from scratch.
 | [Modernization changelog](https://github.com/TrevorS/LightTable/blob/develop/CHANGELOG-MODERNIZATION.md) | The whole of it, in the order it happened. |
 | [The road to context isolation](context-isolation.md) | How the window came to have no Node, what it cost, and the measurement that decided the design. |
 | [The JavaScript left](javascript-remaining.md) | There is none of Light Table's own. What the four TypeScript roots are and why they are separate. |
-| [Language support](language-support.md) | Where a language server would fit, and why it belongs in the editor rather than in each plugin. |
+| [Language support](language-support.md) | Where a language server would fit, why it belongs in the editor rather than in each plugin, and the two things the preload cannot do yet. |
+| [Syntax highlighting](syntax-highlighting.md) | Whether tree-sitter is the answer, measured rather than assumed. |
 
 ## Archived
 

@@ -60,8 +60,34 @@ clients only in transport (stdio rather than tcp) and framing (JSON-RPC with
 `Content-Length` headers rather than line-delimited JSON).
 
 `lt.util.bridge.processes.spawn` gives a handle with `onStdout`/`onStderr`/
-`onExit`, which is the streaming shape a JSON-RPC transport needs. Nothing new
-is required on the privileged side.
+`onExit`, which is the streaming shape a JSON-RPC transport needs.
+
+### Two things the preload does not do yet
+
+This section originally said nothing new was required on the privileged side.
+That was wrong, and reading `src-electron/preload.ts` rather than trusting the
+summary is what turned it up. Both gaps are small, both are in that one file,
+and both should be closed before the first line of protocol code is written —
+they are the kind of thing that gets worked around badly if discovered halfway.
+
+**`ProcessHandle` cannot be written to.** It has `kill`, `onStdout`,
+`onStderr`, `onExit` and `onError`, and no `write`. A language server over
+stdio is a conversation, so stdin is not optional. `SocketHandle` already has
+`write`; the process handle needs the same.
+
+**`onStdout` decodes each chunk on its own** — `callback(String(d))` — and that
+breaks LSP framing twice over. `Content-Length` counts *bytes*, so a framer
+handed decoded text has to re-encode to know where a message ends. And a
+multi-byte character split across two chunks is corrupted before the window
+ever sees it. `SocketHandle.onData` already gets `Uint8Array` for exactly this
+reason, and its comment says so: *"what arrives on an nREPL connection is
+bencode, where a message boundary can fall inside a multi-byte character, so
+decoding per chunk would corrupt it."* The same sentence is true of LSP.
+
+The fix is to give `ProcessHandle` a byte-oriented `onStdoutBytes` alongside
+the existing text one, rather than change `onStdout` under the plugins that
+already use it — `plugins/lib/lt.ts` streams from it, and text is the right
+shape for a compiler printing diagnostics.
 
 ## The shape
 
