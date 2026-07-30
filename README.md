@@ -19,18 +19,37 @@ feedback. It is highly customizable and can display anything a
 |---|---|
 | Runtime | Electron 43 — Chromium 150, Node 24 |
 | Language | ClojureScript 1.12, Clojure 1.12 |
-| Build | [shadow-cljs](https://github.com/thheller/shadow-cljs), plus `tsc` for the main process |
+| Build | [shadow-cljs](https://github.com/thheller/shadow-cljs), plus `tsc` for everything that is not ClojureScript |
 | Toolchain | JDK 25 (JDK 21 also works), Node 24 |
+| Window | `contextIsolation: true`, `nodeIntegration: false` — the window reaches the desktop only through the capability list in `src-electron/preload.ts` |
 
 ## Building
 
-You need a JDK, Node, and [Leiningen](https://leiningen.org) only if you want to
-regenerate the API docs.
+You need a JDK and Node. The JDK is for shadow-cljs, which is the ClojureScript
+compiler and runs on the JVM; nothing in Light Table itself does. Leiningen is
+needed only to regenerate the API docs.
+
+```sh
+brew install --cask temurin   # Eclipse Adoptium's OpenJDK build; any JDK 21+ works
+brew install node             # or fnm / nvm / volta — .node-version pins it
+```
+
+Nothing in the build is platform-specific; macOS, Linux and Windows-under-Cygwin
+all go through the same scripts.
 
 ```sh
 script/build.sh            # fetches dependencies and plugins, builds, packages
-script/build.sh --release  # the above, plus a release archive
+script/light.sh            # run what you just built, from the tree
 ```
+
+`script/build.sh --release` also produces a release archive — a `.app` on macOS,
+a directory on Linux. Packaging is the least exercised part of this repository
+and CI does not cover it, so `script/light.sh` is the path to prefer while
+developing: it launches the same editor from `deploy/core` without the bundling,
+renaming and code-signing step in between.
+
+The first build downloads Electron, which is about 300MB and takes a while.
+Subsequent builds reuse it.
 
 To rebuild just the ClojureScript after a source change:
 
@@ -44,11 +63,19 @@ defined in [shadow-cljs.edn](shadow-cljs.edn). The default user plugin is a
 module of `app`, so it compiles against the editor rather than shipping as a
 checked-in artifact; the script puts it where the plugin loader looks.
 
-The main process and the preload script are TypeScript, in `src-electron/`:
+Light Table's own JavaScript is all TypeScript, in four roots — one per place
+code runs, because each has a different set of globals:
 
-```sh
-npm run build:main
-```
+| root | runs in | built by |
+|---|---|---|
+| `src-electron/` | the main process and the preload | `npm run build:main` |
+| `src-window/` | the editor window | `npm run build:window` |
+| `src-worker/` | the worker thread | `npm run build:worker` |
+| `src-browser/` | a page Light Table has connected to | `npm run build:browser` |
+
+`build:cljs` runs the last three itself, since the window and worker bundles
+need them. See [doc/javascript-remaining.md](doc/javascript-remaining.md) for
+why they are separate.
 
 Plugins that live in this repository are built separately:
 

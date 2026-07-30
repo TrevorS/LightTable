@@ -16,8 +16,11 @@ ELECTRON_DIR="deploy/electron/node_modules/electron/dist"
 # from: http://stackoverflow.com/a/17072017/142317
 if [ "$(uname)" == "Darwin" ]; then
   OS="mac"
-  PLIST="Electron.app/Contents/Info.plist"
+  # Two names for one bundle, and the order below is what makes that work:
+  # RESOURCES is used while the app is still Electron.app, PLIST after it has
+  # been renamed.
   RESOURCES="Electron.app/Contents/Resources"
+  PLIST="LightTable.app/Contents/Info.plist"
   PLATFORM_DIR="deploy/platform/mac"
 
 elif [ "$(expr substr $(uname -s) 1 5)" == "Linux" ]; then
@@ -81,15 +84,51 @@ rm -rf "${RELEASE_RSRC}"/app/plugins/*/.git
 if [ "$OS" == "mac" ]; then
 
   cp $PLATFORM_DIR/light $RELEASE_DIR/
-  cp $PLATFORM_DIR/Info.plist $RELEASE_DIR/$PLIST
-
-  FULL_PLIST="$(pwd)/$RELEASE_DIR/$PLIST"
-  defaults write $FULL_PLIST CFBundleShortVersionString $VERSION
-
   mv $RELEASE_DIR/Electron.app $RELEASE_DIR/LightTable.app
 
-  # Sign app to avoid endless “accept incoming connections” dialogs
-  codesign --force --deep --sign - $RELEASE_DIR/LightTable.app
+  # Patch Electron's own Info.plist rather than replace it.
+  #
+  # This used to drop a 2014-era plist over the top, which silently discarded
+  # every key Electron sets deliberately: NSHighResolutionCapable (so the app
+  # rendered non-Retina), NSRequiresAquaSystemAppearance=false (so it was
+  # forced into light mode, which a dark editor notices), DTSDKName (so macOS
+  # applied the behavioural defaults of a decade-old SDK), the camera,
+  # microphone and Bluetooth usage descriptions the browser tab needs to not be
+  # killed on request, NSAppTransportSecurity, and CFBundleVersion.
+  #
+  # What Light Table actually needs to say is below. plutil ships with macOS.
+  PLIST_PATH="$RELEASE_DIR/$PLIST"
+  plutil -replace CFBundleDisplayName        -string "Light Table"           "$PLIST_PATH"
+  plutil -replace CFBundleName               -string "LightTable"            "$PLIST_PATH"
+  plutil -replace CFBundleIdentifier         -string "com.kodowa.LightTable" "$PLIST_PATH"
+  # Resolved against Contents/Resources, where deploy/core lands as app/core.
+  plutil -replace CFBundleIconFile           -string "app/core/img/app.icns" "$PLIST_PATH"
+  plutil -replace CFBundleShortVersionString -string "$VERSION"              "$PLIST_PATH"
+  plutil -replace CFBundleVersion            -string "$VERSION"              "$PLIST_PATH"
+  plutil -replace CFBundleDevelopmentRegion  -string "en"                    "$PLIST_PATH"
+  plutil -replace LSFileQuarantineEnabled    -bool   true                    "$PLIST_PATH"
+  # The file types Light Table registers as an editor for.
+  plutil -replace CFBundleDocumentTypes -json "$(cat $PLATFORM_DIR/document-types.json)" "$PLIST_PATH"
+  # Electron checks this against default_app.asar, which this build replaces
+  # with a plain directory. Leaving a hash of something no longer there is
+  # worse than saying nothing.
+  plutil -remove ElectronAsarIntegrity "$PLIST_PATH" 2>/dev/null || true
+
+  # Ad-hoc signing, so macOS stops asking to accept incoming connections and so
+  # the bundle runs at all on Apple Silicon, where an unsigned or
+  # inconsistently signed app is refused. Inner-out: --deep is deprecated and
+  # is unreliable for Electron, whose frameworks and helper apps are separate
+  # bundles that have to be signed before the one containing them.
+  # -depth so the deepest bundles are signed first: a helper inside a framework
+  # has to be sealed before the framework that contains it.
+  find "$RELEASE_DIR/LightTable.app/Contents/Frameworks" -depth \
+       \( -name '*.app' -o -name '*.framework' -o -name '*.dylib' \) -print0 2>/dev/null |
+    xargs -0 -I{} codesign --force --sign - "{}" 2>/dev/null || true
+  codesign --force --sign - "$RELEASE_DIR/LightTable.app"
+  # Say plainly whether the bundle is actually valid, rather than leaving it to
+  # be discovered by a launch that dies with no message.
+  codesign --verify --deep --strict "$RELEASE_DIR/LightTable.app" ||
+    echo "WARNING: the signature did not verify; the app may not launch." >&2
 
 elif [ "$OS" == "linux" ]; then
 

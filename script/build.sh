@@ -13,9 +13,15 @@ set -e
 # Ensure we start in project root
 cd "$(dirname "${BASH_SOURCE[0]}")"; cd ..
 
-# Ensure we have current version of electron
+# Ensure we have current version of electron.
+#
+# Two steps, because Electron 43 dropped the postinstall that used to fetch the
+# binary — `npm install` now brings down the package and nothing else, and the
+# download is an explicit `install-electron`. It is a no-op once the binary is
+# there, so re-running this is cheap.
 pushd deploy/electron
   npm install
+  npx --no-install install-electron
 popd
 
 # Ensure we have current version of core

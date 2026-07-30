@@ -1,0 +1,106 @@
+[
+  {
+    "CFBundleTypeExtensions": [
+      "clj",
+      "cljs",
+      "edn"
+    ],
+    "CFBundleTypeIconFile": "app/core/img/app.icns",
+    "CFBundleTypeName": "Clojure Source",
+    "CFBundleTypeRole": "Editor",
+    "LSIsAppleDefaultForType": true
+  },
+  {
+    "CFBundleTypeExtensions": [
+      "txt",
+      "text",
+      "utf8"
+    ],
+    "CFBundleTypeIconFile": "app/core/img/app.icns",
+    "CFBundleTypeMIMETypes": [
+      "text/plain"
+    ],
+    "CFBundleTypeName": "Plain Text File",
+    "CFBundleTypeRole": "Editor",
+    "LSIsAppleDefaultForType": true
+  },
+  {
+    "CFBundleTypeExtensions": [
+      "html",
+      "phtml",
+      "shtml",
+      "xhtml",
+      "htm",
+      "pht",
+      "sht",
+      "xht",
+      "phtm",
+      "shtm",
+      "xhtm"
+    ],
+    "CFBundleTypeIconFile": "app/core/img/app.icns",
+    "CFBundleTypeMIMETypes": [
+      "text/html"
+    ],
+    "CFBundleTypeName": "HTML Source File",
+    "CFBundleTypeRole": "Editor",
+    "LSIsAppleDefaultForType": true,
+    "LSItemContentTypes": [
+      "public.html"
+    ]
+  },
+  {
+    "CFBundleTypeExtensions": [
+      "js",
+      "htc",
+      "jscript",
+      "javascript"
+    ],
+    "CFBundleTypeIconFile": "app/core/img/app.icns",
+    "CFBundleTypeMIMETypes": [
+      "text/javascript"
+    ],
+    "CFBundleTypeName": "JavaScript Source File",
+    "CFBundleTypeRole": "Editor",
+    "LSIsAppleDefaultForType": true,
+    "LSItemContentTypes": [
+      "com.netscape.javascript-source"
+    ]
+  },
+  {
+    "CFBundleTypeExtensions": [
+      "py",
+      "rpy",
+      "cpy",
+      "python"
+    ],
+    "CFBundleTypeIconFile": "app/core/img/app.icns",
+    "CFBundleTypeMIMETypes": [
+      "text/x-python-script"
+    ],
+    "CFBundleTypeName": "Python Source File",
+    "CFBundleTypeRole": "Editor",
+    "LSItemContentTypes": [
+      "public.python-script"
+    ]
+  },
+  {
+    "CFBundleTypeExtensions": [
+      "css"
+    ],
+    "CFBundleTypeIconFile": "app/core/img/app.icns",
+    "CFBundleTypeName": "Cascading style sheet",
+    "CFBundleTypeRole": "Editor"
+  },
+  {
+    "CFBundleTypeExtensions": [
+      "markdown",
+      "markd",
+      "mdown",
+      "md"
+    ],
+    "CFBundleTypeIconFile": "app/core/img/app.icns",
+    "CFBundleTypeName": "Markdown document",
+    "CFBundleTypeRole": "Editor"
+  }
+]

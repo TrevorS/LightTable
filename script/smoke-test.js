@@ -21,7 +21,10 @@ const os = require('os');
 
 const ROOT = path.join(__dirname, '..');
 const CORE = path.join(ROOT, 'deploy', 'core');
-const ELECTRON = path.join(ROOT, 'deploy', 'electron', 'node_modules', 'electron', 'dist', 'electron');
+// The electron package reports where its own binary is, which differs by
+// platform: dist/electron on Linux, dist/Electron.app/Contents/MacOS/Electron
+// on a Mac. Hard-coding the Linux one worked here and nowhere else.
+const ELECTRON = require(path.join(ROOT, 'deploy', 'electron', 'node_modules', 'electron'));
 const SAMPLE = path.join(ROOT, 'src', 'lt', 'objs', 'platform.cljs');
 // Arguments for the background scan the smoke test uses to prove the worker
 // round trip. Note that walkdir's pattern is an exclusion, matching how
@@ -488,11 +491,16 @@ async function main() {
          /neither one Light Table serves/.test(r.shim.refusedUnserved || '')],
         ['the Node globals a plugin expects come from the bundle',
          !!r.shim && r.shim.bufferIsBundled === true && r.shim.processShimmed === true],
+        // Both only meaningful when the published flagships were cloned, which
+        // build.sh does and CI does not: the shim is exercised against the
+        // Clojure plugin's nREPL client and the Javascript plugin's vendored
+        // harbor, and neither is here otherwise.
         ['the Clojure plugin got its net, Buffer and bencode from the shim',
-         !!r.shim && r.shim.clojureNet === true && r.shim.clojureBuffer === true &&
-         r.shim.clojureBencode === true],
+         !r.pluginsPresent || (!!r.shim && r.shim.clojureNet === true &&
+                               r.shim.clojureBuffer === true &&
+                               r.shim.clojureBencode === true)],
         ['a plugin loads the CommonJS package it vendored',
-         !!r.shim && r.shim.vendoredModule === true],
+         !r.pluginsPresent || (!!r.shim && r.shim.vendoredModule === true)],
         ['capability inference matches the one declared manifest',
          !!r.capabilities && !!r.capabilities.HelloTS &&
          r.capabilities.HelloTS.declared === '#{:clipboard}' &&

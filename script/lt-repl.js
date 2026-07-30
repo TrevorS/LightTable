@@ -31,7 +31,10 @@ const os = require('os');
 
 const ROOT = path.join(__dirname, '..');
 const CORE = path.join(ROOT, 'deploy', 'core');
-const ELECTRON = path.join(ROOT, 'deploy', 'electron', 'node_modules', 'electron', 'dist', 'electron');
+// The electron package reports where its own binary is, which differs by
+// platform: dist/electron on Linux, dist/Electron.app/Contents/MacOS/Electron
+// on a Mac. Hard-coding the Linux one worked here and nowhere else.
+const ELECTRON = require(path.join(ROOT, 'deploy', 'electron', 'node_modules', 'electron'));
 // main.js appends --remote-debugging-port=8315 itself.
 const PORT = 8315;
 const STATE = path.join(os.tmpdir(), 'lt-repl.json');

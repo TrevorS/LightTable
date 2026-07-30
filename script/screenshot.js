@@ -21,7 +21,10 @@ const os = require('os');
 
 const ROOT = path.join(__dirname, '..');
 const CORE = path.join(ROOT, 'deploy', 'core');
-const ELECTRON = path.join(ROOT, 'deploy', 'electron', 'node_modules', 'electron', 'dist', 'electron');
+// The electron package reports where its own binary is, which differs by
+// platform: dist/electron on Linux, dist/Electron.app/Contents/MacOS/Electron
+// on a Mac. Hard-coding the Linux one worked here and nowhere else.
+const ELECTRON = require(path.join(ROOT, 'deploy', 'electron', 'node_modules', 'electron'));
 const OUT = path.join(ROOT, 'builds', 'screenshots');
 
 const files = process.argv.slice(2).map(function (f) { return path.resolve(f); });
