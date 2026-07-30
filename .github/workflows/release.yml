@@ -1,10 +1,16 @@
 name: release
 
-# Publishes a GitHub release from a tag.
+# Publishes a GitHub release. Two ways in, and they end in the same place:
 #
-#     git tag 0.9.0 && git push origin 0.9.0
+#   git tag 0.9.0 && git push origin 0.9.0     from a clone
+#   Actions → release → Run workflow           from a browser, version typed in
 #
-# The binaries come from the same workflow every push runs, so what is
+# The second is not a convenience shim. It means a release needs no local
+# clone, no push rights on tags specifically, and no laptop that happens to
+# have the right toolchain — and it is the only route available from an
+# environment whose credentials cover branches but not tags.
+#
+# The binaries come from app.yml, the same workflow every push runs, so what is
 # published is what has been tested, built the way it is always built. Nothing
 # here builds anything itself.
 #
@@ -20,7 +26,9 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing tag to publish a release for.
+        description: >-
+          Version to release, e.g. 0.9.0. Created as a tag on the branch this
+          is dispatched from if it does not already exist.
         required: true
         type: string
 
@@ -35,7 +43,7 @@ jobs:
       # The tag is the version. A release whose archives are named after
       # package.json while the tag says something else is a support question
       # nobody can answer.
-      version: ${{ github.event.inputs.tag || github.ref_name }}
+      version: ${{ inputs.tag || github.ref_name }}
 
   publish:
     needs: app
@@ -52,16 +60,51 @@ jobs:
       - name: Publish the release
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+          TAG: ${{ inputs.tag || github.ref_name }}
+          # The commit to tag when dispatched. On a tag push the tag already
+          # points somewhere and this is unused.
+          TARGET: ${{ github.sha }}
+          DISPATCHED: ${{ github.event_name == 'workflow_dispatch' }}
         run: |
           set -e
           ls -la artifacts/
-          # Checksums, because a partial download of a 200MB archive fails in
+
+          # Checksums, because a partial download of a 150MB archive fails in
           # ways that look like a broken build.
           (cd artifacts && shasum -a 256 *.tar.gz > SHA256SUMS.txt)
           cat artifacts/SHA256SUMS.txt
+
+          # Release notes: the changelog section for this version if there is
+          # one, because a hand-written summary beats a list of commit
+          # subjects. --generate-notes still runs, and appends the commit log
+          # underneath, so nothing is lost when the section is missing.
+          notes=$(awk -v tag="## $TAG" '
+            $0 == tag { want = 1; next }
+            want && /^## / { exit }
+            want { print }
+          ' deploy/core/changelog.md)
+          if [ -n "$notes" ]; then
+            printf '%s\n' "$notes" > notes.md
+            echo "Using the changelog section for $TAG as the release notes."
+          else
+            : > notes.md
+            echo "::warning::No '## $TAG' section in deploy/core/changelog.md; \
+          publishing with generated notes only."
+          fi
+
+          # --verify-tag on a tag push: the tag exists, and a typo should fail
+          # rather than invent one. --target when dispatched: create the tag at
+          # the commit that was actually built, not at whatever the default
+          # branch has moved to since.
+          if [ "$DISPATCHED" = "true" ]; then
+            placement=(--target "$TARGET")
+          else
+            placement=(--verify-tag)
+          fi
+
           gh release create "$TAG" \
             --title "$TAG" \
+            --notes-file notes.md \
             --generate-notes \
-            --verify-tag \
+            "${placement[@]}" \
             artifacts/*

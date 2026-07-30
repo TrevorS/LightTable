@@ -73,14 +73,23 @@ This background thread is invoked with the `background` macro.
 
 ## Release process
 
-**Pushing a tag is the release.** `.github/workflows/release.yml` builds Light
-Table on Linux and macOS, runs the checks and the smoke test on both, packages
-each one, and publishes a GitHub release with both archives and a
-`SHA256SUMS.txt`.
+`.github/workflows/release.yml` builds Light Table on Linux and macOS, runs the
+checks and the smoke test on both, packages each one, and publishes a GitHub
+release with both archives and a `SHA256SUMS.txt`. Two ways to start it, and
+they end in the same place:
 
 ```sh
-git tag 0.X.X && git push origin 0.X.X
+git tag 0.X.X && git push origin 0.X.X    # from a clone
 ```
+
+or **Actions → release → Run workflow**, typing the version in. That route
+creates the tag itself, at the commit it actually built, so a release needs no
+local clone and no laptop with the right toolchain.
+
+Release notes come from the `## 0.X.X` section of `deploy/core/changelog.md`,
+with the generated commit log appended underneath. If that section is missing
+the run still succeeds and says so in a warning, rather than publishing a
+release that quietly has nothing to say.
 
 Both platforms build the same way on every push too, through the shared
 `.github/workflows/app.yml`, so a release is not the first time a packaging
