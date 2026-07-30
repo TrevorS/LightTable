@@ -11,13 +11,13 @@
 (def port 0)
 (def net (js/require "net"))
 
-(defn send-to [sock msg]
+(defn send-to [^js sock msg]
   (if sock
     (.write sock (str (.stringify js/JSON msg) "\n"))
     ;;TODO: some system-wide error reporting
     (println (str "No such client: " sock))))
 
-(defn store-client! [socket data]
+(defn store-client! [^js socket data]
   (let [client (clients/by-name (:name data))
         data (if-not (:tags data)
                (assoc data :tags [:tcp.client])
@@ -33,7 +33,7 @@
 (defn on-message [data]
   (object/raise clients/clients :message data))
 
-(defn each-message [socket cb]
+(defn each-message [^js socket cb]
   (let [buffer (.-ltbuffer socket)
         loc (.indexOf buffer "\n")]
   (loop [loc loc
@@ -51,7 +51,7 @@
         (recur (.indexOf next "\n") next))
       (set! (.-ltbuffer socket) buf)))))
 
-(defn on-result [socket data]
+(defn on-result [^js socket data]
   ;;handle the case where two events come in at once and get joined
   ;;on a new line
   (set! (.-ltbuffer socket) (str (or (.-ltbuffer socket) "") data))
@@ -60,7 +60,7 @@
                            (store-client! socket data)
                            (on-message data)))))
 
-(defn on-connect [socket]
+(defn on-connect [^js socket]
   (set! (.-ltbuffer socket) "")
   (.on socket "data" #(on-result socket %)))
 

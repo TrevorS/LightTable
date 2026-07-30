@@ -47,7 +47,7 @@
   (when core-log
     (.write core-log thing)))
 
-(defpartial ->item [l & [class]]
+(defpartial ^js ->item [l & [class]]
   [:li {:class class} l])
 
 (defn log

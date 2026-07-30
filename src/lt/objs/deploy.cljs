@@ -126,7 +126,7 @@
                (notifos/done-working)
                (console/error e))]
     (get-url from max-redirects
-             (fn [resp]
+             (fn [^js resp]
                (if-not (= 200 (.-statusCode resp))
                  (do
                    (.resume resp)

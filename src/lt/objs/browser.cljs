@@ -23,7 +23,11 @@
   (:require-macros [lt.macros :refer [behavior defui]]))
 
 (def utils (js-obj))
-(set! js/lttools utils)
+
+;; Assigned through window rather than as js/lttools: shadow infers an extern
+;; from the bare global, and Closure then reports the assignment as writing to
+;; a constant.
+(set! (.-lttools js/window) utils)
 
 (defn check-http [url]
   (if (and (= (.indexOf url "http") -1)
@@ -174,13 +178,13 @@
 (behavior ::back!
           :triggers #{:back!}
           :reaction (fn [this]
-                      (let [frame (to-frame this)]
+                      (let [^js frame (to-frame this)]
                         (.goBack frame))))
 
 (behavior ::forward!
           :triggers #{:forward!}
           :reaction (fn [this]
-                      (let [frame (to-frame this)]
+                      (let [^js frame (to-frame this)]
                         (.goForward frame))))
 
 (behavior ::refresh!
@@ -215,11 +219,11 @@
                             {:label "copy"
                              :order 3
                              :click (fn [e]
-                                      (.copy (to-frame this)))}
+                                      (.copy ^js (to-frame this)))}
                             {:label "paste"
                              :order 4
                              :click (fn [e]
-                                      (.paste (to-frame this)))})))
+                                      (.paste ^js (to-frame this)))})))
 
 
 (behavior ::init!
@@ -227,7 +231,7 @@
           :reaction (fn [this]
                       (let [frame (dom/$ :webview (object/->content this))
                             bar (dom/$ :input (object/->content this))]
-                        (.addEventListener frame "ipc-message" (fn [e arg]
+                        (.addEventListener frame "ipc-message" (fn [^js e arg]
                                                                  (let [args (aget (.-args e) 0)]
                                                                    (condp = (.-channel e)
                                                                      "browser-event" (object/raise this (keyword (aget args 0)) (aget args 1))
@@ -238,7 +242,7 @@
                         (.addEventListener frame "contextmenu" (fn [e]
                                                                  (object/raise this :menu! e)))
                         (.addEventListener frame "did-finish-load" (fn []
-                                                                     (let [loc (.getUrl frame)]
+                                                                     (let [loc (.getUrl ^js frame)]
                                                                        (devtools/clear-scripts! (:devtools-client @this))
                                                                        (dom/val bar loc)
                                                                        (object/raise this :navigate loc))
@@ -252,7 +256,7 @@
 (behavior ::set-client-name
           :triggers #{:navigate}
           :reaction (fn [this loc]
-                      (let [title (.getTitle (to-frame this))
+                      (let [title (.getTitle ^js (to-frame this))
                             title (if-not (empty? title)
                                     title
                                     "browser")]

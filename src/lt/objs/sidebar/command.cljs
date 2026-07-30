@@ -245,14 +245,18 @@
   (- (aget y 3) (aget x 3)))
 
 (defn score-sort2 [x y]
-  (- (.-score (aget y 4)) (.-score (aget x 4))))
+  (let [^js a (aget y 4)
+        ^js b (aget x 4)]
+    (- (.-score a) (.-score b))))
 
 (defn indexed-results [{:keys [search size items key size]}]
   (let [items (apply array (->items items))
         map-func3 #(array % (key %) (js/fastScore (key %) search) nil nil)
-        map-func #(do (aset % 3 (.score (aget % 1) search)) %)
+        map-func (fn [item] (let [^js scorer (aget item 1)]
+                              (aset item 3 (.score scorer search))
+                              item))
         map-func2 #(do (aset % 4 (js/score (aget % 1) search)) %)
-        has-score #(> (.-score (aget % 4)) 0)]
+        has-score (fn [item] (let [^js scored (aget item 4)] (> (.-score scored) 0)))]
     (if-not (empty? search)
       (let [score0 (.. items (map map-func3) (filter #(aget % 2)))
             score1 (.. score0  (map map-func) (sort score-sort))

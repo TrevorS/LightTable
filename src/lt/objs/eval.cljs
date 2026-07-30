@@ -235,7 +235,7 @@
 (behavior ::changed
           :triggers #{:changed}
           :reaction (fn [this]
-                      (.changed (:mark @this))
+                      (.changed ^js (:mark @this))
                       ))
 
 (behavior ::update!
@@ -253,7 +253,7 @@
 (def new-line-change ["" ""])
 (behavior ::move-mark
           :triggers #{:move!}
-          :reaction (fn [this ch]
+          :reaction (fn [this ^js ch]
                       (when ch
                         (let [orig (:mark @this)
                               loc (.find orig)

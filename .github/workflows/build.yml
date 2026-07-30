@@ -45,16 +45,17 @@ jobs:
           node target/test.js
 
       # shadow-cljs exits non-zero when compilation fails, but warnings alone do
-      # not fail it. Externs inference warnings are expected and harmless at
-      # :simple; anything else is worth stopping for.
+      # not fail it, so the job has to read the output. The build is warning
+      # free, so the bar is simply zero — no allowance, no classes to exempt.
+      # -a because shadow colours its output, so the log is not plain text.
       - name: Compile
         run: |
           set -o pipefail
           npx shadow-cljs release app worker 2>&1 | tee build.log
-          # -a because shadow colours its output, so the log is not plain text
-          if grep -aoE 'WARNING #[0-9]+ - :[a-z-]+' build.log | grep -qv ':infer-warning'; then
-            echo "::error::Unexpected ClojureScript warnings"
-            grep -aoE 'WARNING #[0-9]+ - :[a-z-]+' build.log | grep -v ':infer-warning'
+          count=$(grep -ac 'WARNING #' build.log || true)
+          if [ "$count" -ne 0 ]; then
+            echo "::error::$count ClojureScript warning(s)"
+            grep -a -A6 'WARNING #' build.log
             exit 1
           fi
 

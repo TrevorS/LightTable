@@ -17,7 +17,7 @@
 (defn create* [info]
   (.Doc js/CodeMirror (:content info) (:mime info)))
 
-(defn ->cm-doc [doc]
+(defn ^js ->cm-doc [doc]
   (-> @doc :doc))
 
 (defn linked* [doc info]
@@ -167,7 +167,7 @@
 
 (defn check-mtime [prev updated]
   (if (and prev updated)
-    (= (.getTime (.-mtime prev)) (.getTime (.-mtime updated)))
+    (= (.getTime (.-mtime ^js prev)) (.getTime (.-mtime ^js updated)))
     true))
 
 (defui button [label & [cb]]

@@ -38,7 +38,7 @@
 
 (behavior ::message
           :triggers #{:message}
-          :reaction (fn [this m]
+          :reaction (fn [this ^js m]
                       (when-let [obj (object/by-id (.-obj m))]
                         (object/raise obj
                                       (if-not (keyword? (.-msg m))
@@ -51,7 +51,7 @@
 (behavior ::kill!
           :triggers #{:kill!}
           :reaction (fn [this]
-                      (.kill (:worker @this))))
+                      (.kill ^js (:worker @this))))
 
 (behavior ::shutdown-worker-on-close
           :triggers #{:closed}

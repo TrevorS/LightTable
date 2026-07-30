@@ -253,7 +253,7 @@
                         (open-linked-path ed opener (get-in @ed [:info :path]) {})))})
 
 
-(set! js/window.ondrop  (fn [e]
+(set! js/window.ondrop  (fn [^js e]
                           (try
                             (let [size (.-dataTransfer.files.length e)]
                               (loop [i 0]

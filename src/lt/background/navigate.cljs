@@ -8,7 +8,7 @@
   path and path relative to the folder's parent."
   [fpath walkdir pattern limit folder]
   (let [root-length (inc (count (.dirname fpath folder)))
-        walked (walkdir folder (js-obj "filter" (js/RegExp. pattern) "limit" limit))]
+        ^js walked (walkdir folder (js-obj "filter" (js/RegExp. pattern) "limit" limit))]
     (.map (.-paths walked)
           #(js-obj "full" % "rel" (subs % root-length)))))
 

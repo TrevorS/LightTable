@@ -150,7 +150,7 @@
 (behavior ::on-show-bind-navigate
           :triggers #{:show}
           :reaction (fn [this]
-                      (dom/on ($ :#canvas) :click (fn [e]
+                      (dom/on ($ :#canvas) :click (fn [^js e]
                                                     (when (and (= (.-target.nodeName e) "A")
                                                                (not (.-defaultPrevented e)))
                                                       (dom/prevent e)

@@ -89,6 +89,7 @@ app.on('ready', function () {
                     editors: document.querySelectorAll('.CodeMirror').length,
                     editorText: (function () { var e = document.querySelector('.CodeMirror-code'); return e ? e.innerText.slice(0, 40) : ''; })(),
                     behaviors: cljs.core.count(cljs.core.deref(lt.object.behaviors)),
+                    crateShim: typeof (window.crate && window.crate.core && window.crate.core.html) === 'function',
                     workerConnected: cljs.core.boolean$(new cljs.core.Keyword(null,"connected","connected",-169833045).cljs$core$IFn$_invoke$arity$1(cljs.core.deref(lt.objs.thread.worker))),
                     workerFilesFound: (function () {
                         var files = cljs.core.get.call(null, cljs.core.deref(lt.objs.sidebar.navigate.sidebar_navigate), cljs.core.keyword.call(null, "files"));
@@ -128,6 +129,8 @@ async function main() {
     // reports an error that has nothing to do with what is being tested.
     const pluginDir = path.join(ROOT, 'deploy', 'plugins');
     const madePluginDir = !fs.existsSync(pluginDir);
+    const pluginsPresent = !madePluginDir && fs.readdirSync(pluginDir).length > 0;
+    if (pluginsPresent) console.log('plugins present: ' + fs.readdirSync(pluginDir).join(', '));
     if (madePluginDir) fs.mkdirSync(pluginDir, { recursive: true });
 
     const appDir = fs.mkdtempSync(path.join(os.tmpdir(), 'lt-smoke-'));
@@ -149,6 +152,7 @@ async function main() {
 
     if (!fs.existsSync(reportPath)) fail('the app never reported back', 'It most likely failed before the window finished loading.');
     const r = JSON.parse(fs.readFileSync(reportPath, 'utf8'));
+    r.pluginsPresent = pluginsPresent;
     if (!r.ok) fail(r.failure || 'the app did not report success', JSON.stringify(r, null, 1));
 
     const checks = [
@@ -165,6 +169,9 @@ async function main() {
         ['fold addons registered', r.codeMirrorFold === true],
         ['the worker thread connected', r.workerConnected === true],
         ['a background job round-tripped', r.workerFilesFound >= 5],
+        ['the crate compatibility shim is published', r.crateShim === true],
+        // Only meaningful when deploy/plugins is populated, which build.sh does.
+        ['bundled plugins loaded', !r.pluginsPresent || r.behaviors > 500],
         ['nothing logged to the console', Array.isArray(r.errors) && r.errors.length === 0]
     ];
 

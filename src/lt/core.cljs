@@ -7,6 +7,7 @@
   on the source path into one file. A bundler only keeps what an entry point can
   reach, so the namespaces nothing else pulls in are listed here explicitly."
   (:require [lt.objs.app :as app]
+            [lt.compat]
             [lt.objs.browser]
             [lt.objs.clients.local]
             [lt.objs.connector]

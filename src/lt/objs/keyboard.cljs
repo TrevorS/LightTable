@@ -55,7 +55,7 @@
                           "cmd-"
                           "meta-"))
    (when (.-altKey ev) "alt-")
-   (when (.-altGraphKey ev) "altgr-")
+   (when (.-altGraphKey ^js ev) "altgr-")
    (when (.-shiftKey ev) "shift-")
    (. (or key "") toLowerCase)))
 

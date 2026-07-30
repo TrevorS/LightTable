@@ -23,7 +23,7 @@
   place."
   [obj-id {:keys [search exclude replacement paths] :as opts}]
   (let [replacer (bg/require-lt "core/node_modules/replace")
-        result (replacer (clj->js {:regex       (->pattern search)
+        ^js result (replacer (clj->js {:regex       (->pattern search)
                                    :exclude     (when exclude (js/RegExp. exclude))
                                    :recursive   true
                                    :ignoreCase  (not (case-sensitive? search))

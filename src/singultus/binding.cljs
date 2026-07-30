@@ -56,7 +56,7 @@
 (defn sub-reset!
   "Sets the value of atom to newval without regard for the
   current value. Returns newval."
-  [sa new-value]
+  [^js sa new-value]
   (swap! (.-atm sa) assoc-in (.-path sa) new-value)
   new-value)
 
@@ -76,7 +76,7 @@
   ([sa f x y z & more]
      (sub-reset! sa (apply f @sa x y z more))))
 
-(defn sub-destroy! [sa]
+(defn sub-destroy! [^js sa]
   (remove-watch (.-atm sa) (.-key sa))
   (set! (.-watches sa) nil)
   (set! (.-atm sa) nil))
@@ -182,17 +182,17 @@
                (fn [_ _ _ [event el v]]
                  (func event el v)))))
 
-(defn opt [bc k]
+(defn opt [^js bc k]
   ((.-opts bc) k))
 
-(defn- bc-add [bc path key]
+(defn- bc-add [^js bc path key]
   (let [sa (subatom (.-atm bc) path)
         elem ((opt bc :as) sa)]
     (set! (.-stuff bc) (assoc (.-stuff bc) key {:elem elem
                                                 :subatom sa}))
     (notify (.-notif bc) nil [:add elem @sa])))
 
-(defn- bc-remove [bc key]
+(defn- bc-remove [^js bc key]
   (let [notif (.-notif bc)
         prev  ((.-stuff bc) key)]
     (set! (.-stuff bc) (dissoc (.-stuff bc) key))
@@ -211,7 +211,7 @@
 (defn ->path [bc & segs]
   (concat (or (opt bc :path) []) segs))
 
-(defn- bc-compare [bc neue]
+(defn- bc-compare [^js bc neue]
   (let [prev (.-stuff bc)
         pset (into #{} (keys prev))
         nset (->keyed neue (opt bc :keyfn))

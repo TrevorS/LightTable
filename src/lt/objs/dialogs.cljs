@@ -14,7 +14,7 @@
   "Show an open dialog and raise `event` on `obj` once per selected path."
   [obj event properties]
   (-> (ipc/invoke "lt:dialog-open" {:properties properties})
-      (.then (fn [result]
+      (.then (fn [^js result]
                (when-not (.-canceled result)
                  (doseq [file (.-filePaths result)]
                    (object/raise obj event file)))))
@@ -28,7 +28,7 @@
 
 (defn save-as [obj event path]
   (-> (ipc/invoke "lt:dialog-save" {:defaultPath path})
-      (.then (fn [result]
+      (.then (fn [^js result]
                (when-not (.-canceled result)
                  (when-let [file (.-filePath result)]
                    (object/raise obj event file)))))

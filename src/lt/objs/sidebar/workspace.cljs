@@ -158,7 +158,7 @@
 
 (behavior ::on-drop
           :triggers #{:drop}
-          :reaction (fn [this e]
+          :reaction (fn [this ^js e]
                       (let [size (.-dataTransfer.files.length e)]
                         (loop [i 0]
                           (when (< i size)
@@ -583,7 +583,7 @@
                   (recents this (:recents sw))))
     ]]
   :dragover (fn [e]
-              (set! (.-dataTransfer.dropEffect e) "move")
+              (set! (.-dataTransfer.dropEffect ^js e) "move")
               (object/raise this :dragover e)
               (dom/prevent e)
               false)

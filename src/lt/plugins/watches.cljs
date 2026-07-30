@@ -26,8 +26,8 @@
         ;;add watch ranges
         watches (doall (filter identity
                                (for [[id watch] (:watches @ed)
-                                     :let [watch (:mark watch)
-                                           pos (.find watch)
+                                     :let [^js watch (:mark watch)
+                                           ^js pos (.find watch)
                                            mark (when pos (ed/mark doc (.-from pos) (.-to pos) {:className "watched"}))]]
                                  (when mark
                                    (set! (.-custom mark) (.-custom watch))
@@ -35,13 +35,13 @@
                                    mark))))]
     ;;replace watched ranges with code
     (doseq [watch watches
-            :let [pos (.find watch)
+            :let [^js pos (.find watch)
                   text (ed/range doc (.-from pos) (.-to pos))
                   meta {:obj (object/->id ed)
-                        :id (.-ltwatchid watch)}
-                  v (if-not (.-custom watch)
+                        :id (.-ltwatchid ^js watch)}
+                  v (if-not (.-custom ^js watch)
                       (object/raise-reduce ed :watch.src+ text meta text)
-                      (object/raise-reduce ed :watch.custom.src+ text meta (.-custom watch) text))]]
+                      (object/raise-reduce ed :watch.custom.src+ text meta (.-custom ^js watch) text))]]
       (ed/replace doc (.-from pos) (.-to pos) v))
     (if range
       (let [pos (.find range)]
@@ -80,7 +80,7 @@
           :triggers #{:unwatch!}
           :reaction (fn [this]
                       (when-let [cur (ed/->cursor this)]
-                        (doseq [mark (ed/find-marks this cur)
+                        (doseq [^js mark (ed/find-marks this cur)
                                 :when (= (.-lttype mark) :watch)]
                           (object/raise (-> @this :watches (get (.-ltwatchid mark)) :inline-result) :clear!)))))
 

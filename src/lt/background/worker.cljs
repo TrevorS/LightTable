@@ -17,7 +17,7 @@
    :workspace-files  navigate/workspace-files
    :hint-tokens      auto-complete/hint-tokens})
 
-(defn- handle-message [message]
+(defn- handle-message [^js message]
   (case (.-msg message)
     "init" (do
              (bg/set-lt-path! (.-ltpath message))

@@ -142,8 +142,8 @@
     (js/sortable item (js-obj "axis" "x" "distance" 10  "scroll" false "opacity" 0.9 "connectWith" ".list"))
     (dom/on item "contextmenu" (fn [e]
                                  (object/raise multi :menu! e)))
-    (dom/on item "moved" (fn [e] (move-tab multi (.-opts e)) ))
-    (dom/on item "sortupdate" (fn [e] (update-tab-order multi (.-opts e))))
+    (dom/on item "moved" (fn [^js e] (move-tab multi (.-opts e)) ))
+    (dom/on item "sortupdate" (fn [^js e] (update-tab-order multi (.-opts e))))
     item))
 
 (defui tabbed-item [active item]
@@ -154,7 +154,7 @@
 
 (defui vertical-grip [this]
   [:div.vertical-grip {:draggable "true"}]
-  :dragstart (fn [e]
+  :dragstart (fn [^js e]
                (set! (.-dataTransfer.dropEffect e) "move")
                (.dataTransfer.setData e "text/plain" nil)
                (object/raise this :start-drag e)
@@ -162,7 +162,7 @@
   :dragend (fn [e]
              (object/raise this :end-drag e)
              )
-  :drag (fn [e]
+  :drag (fn [^js e]
           (set! (.-dataTransfer.dropEffect e) "move")
           (object/raise this :width! e)))
 

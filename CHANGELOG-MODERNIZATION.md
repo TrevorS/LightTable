@@ -290,13 +290,28 @@ Five sites remain, none of them oversights:
 
 ### Warnings
 
-The build reports around 200 `:infer-warning`s, concentrated in interop-heavy
-namespaces (72 in `lt.objs.editor` alone). They are shadow noting it cannot infer
-a type at a JavaScript call site. Harmless under `:simple`, which does not
-rename, but they would need `^js` hints throughout before `:advanced` could be
-considered. CI gates on any warning that is *not* an infer-warning, so a real
-problem still fails the build — verified by introducing an undeclared var and
-watching it trip.
+**Zero, on both targets**, down from 527 at the start. CI gates on exactly that:
+no allowance, no exempt classes.
+
+Getting there was two different jobs. The first 527 were one root cause —
+`lt.object/behavior*` was private while the public macro expanded to it. The
+remaining ~200 were externs inference: shadow could not tell that the target of
+an interop call was a JavaScript object, because nothing said so.
+
+The fix is a `^js` hint at the binding, and since a hint is an assertion about
+the value, each was checked against what actually flows through rather than
+applied by pattern. Most fell in groups once the right binding was found —
+hinting `lt.objs.editor/->cm-ed` alone removed 69, because nearly every
+CodeMirror call in that namespace goes through it.
+
+Five sites would not take a hint at all: `^js` on an inline expression like
+`(.-score (aget items 4))` is ignored, because it has to attach to a binding.
+Those are let-bound now, which reads better regardless.
+
+One warning was hiding behind a hole in the gate, which matched
+`WARNING #n - :type` and so missed Closure's own warnings, which carry no type.
+`browser.cljs` assigned `js/lttools` as a bare global; shadow inferred an extern
+and Closure reported the write as assigning to a constant twice.
 
 ## Tests
 
@@ -322,12 +337,199 @@ channel with nobody listening, a worker unable to talk back. None are reachable
 from unit tests. Both the test and the CI gate were verified by deliberately
 breaking things and confirming they go red.
 
+## Plugins
+
+The Clojure and Javascript plugins were cloned at the versions `script/build.sh`
+pins and run against this branch. Two things stopped them loading.
+
+**`bencode` and `shelljs` had to be restored.** They were removed as
+unreferenced, with the caveat that `deploy/core/node_modules` is also the pool
+plugins draw from. That caveat was the whole story: Clojure needs `bencode` for
+the nREPL wire protocol, Javascript needs `shelljs`, and without them neither
+plugin loads at all. Light Table's own code still uses neither.
+
+**Both call `crate.core.html`, which no longer exists.** Light Table's hiccup
+library was crate and became a fork named singultus *before* this work; plugins
+ship precompiled and are not rebuilt when the host changes, so both have been
+broken since that rename. `lt.compat` republishes `crate.core` and
+`crate.binding` as aliases onto the vendored singultus functions.
+
+With both fixed the plugins load and register their behaviors — 467 to 561 — and
+the smoke test asserts it.
+
+The general point is worth stating: **a renamed namespace here does not fail a
+downstream build, because there is no downstream build.** It fails in a user's
+editor, in whichever feature happened to touch it.
+
+## Where eval still lives
+
+Worth separating, because the three kinds have very different answers.
+
+| kind | sites | can it go? |
+|---|---|---|
+| Asset loading | 5 | Yes. Three are Light Table's own global-scope scripts; two are forked CodeMirror addons, one with a UMD wrapper resolving to the stock layout. All mechanical. |
+| Plugin loading | 1 | Only by changing how plugins are distributed. `plugins.cljs` loads plugin JavaScript by a path known at runtime. |
+| Self-evaluation | 2 | **No.** This is the product. |
+
+That last row is the one that matters. `lt.objs.clients.local` is the
+"Light Table UI" connector — evaluating ClojureScript and JavaScript against the
+running editor, which is how Light Table is customized from inside itself. It
+calls `js/eval` deliberately.
+
 ## Content isolation (not started)
 
-`nodeIntegration: true` and `contextIsolation: false` are still set. Turning them
-around is the last step and the one with a product decision in it: plugins are
-distributed as JavaScript `eval`'d into the renderer with full node access, so a
-preload/contextBridge split and a content security policy break every existing
-plugin by construction. The eval surface is now narrow enough that the question
-is a plugin-API one rather than an app-wide rewrite — but it is a decision, not
-a refactor.
+`nodeIntegration: true` and `contextIsolation: false` are still set.
+
+`contextIsolation` and a content security policy are separable, and they have
+different prices:
+
+- **`contextIsolation: true`** means a preload script and a `contextBridge`.
+  The renderer's Node use is enumerable — 37 `js/require` sites across 19 files,
+  around 30 distinct operations — so this is bounded work. It breaks plugins that
+  reach for Node directly.
+- **A CSP without `unsafe-eval`** cannot be adopted without removing
+  self-evaluation, and self-evaluation is the feature Light Table is named for.
+
+So the honest position is that the eval surface has narrowed as far as it
+usefully can. What remains is not cleanup deferred; it is the product.
+
+---
+
+# What comes next
+
+Scouted but not done. Ordered roughly by how much they unblock.
+
+## Security, without giving up what Light Table is
+
+This deserves stating carefully, because the obvious move is wrong.
+
+The instinct is `contextIsolation: true` plus a strict CSP, and be done. But
+Light Table's whole proposition is evaluating code against the running editor —
+`lt.objs.clients.local`, the "Light Table UI" connector, calls `js/eval`
+deliberately. A CSP without `unsafe-eval` does not harden that feature; it
+deletes it. Any plan that starts by banning `eval` has already lost the argument.
+
+The useful reframing is that **the two things people bundle together are
+separable, and only one of them is a real cost.**
+
+- `contextIsolation` is about *who can reach Node*. That is bounded work: 37
+  `js/require` sites over 19 files, roughly 30 distinct operations, behind a
+  preload and a `contextBridge`. Nothing about self-evaluation requires the
+  renderer to hold `child_process`.
+- A CSP is about *what can be executed*. This is where the feature lives.
+
+Split that way, most of the value is available without touching the feature. A
+renderer that cannot spawn processes or read arbitrary files is a much smaller
+target even while it can still evaluate expressions, because the interesting
+attacks are not "run some JavaScript in a sandboxed page" — they are "run some
+JavaScript that then shells out".
+
+Which points at where the real exposure is today, and it is not `eval`:
+
+1. **Plugins are arbitrary code with no boundary.** They are fetched over the
+   network, `eval`'d into the renderer, and inherit full Node. There is no
+   manifest of what a plugin may touch, no signature, and no review gate. In an
+   era of dependency-confusion and typosquat attacks on package ecosystems, that
+   is the supply chain, and `contextIsolation` alone does not fix it — it just
+   means a plugin has to ask the bridge instead of calling `fs` directly.
+2. **The bridge is the security model.** Once plugins go through a
+   `contextBridge`, its surface *is* the permission system, so it should be
+   designed as one: capability-scoped rather than a flat re-export of Node.
+   `readFile` scoped to the workspace is a different thing from `fs.readFile`,
+   and the difference is worth having before a hundred plugins are written
+   against the wrong one.
+3. **Self-evaluation can be scoped too.** The connector model already
+   distinguishes evaluating *in Light Table* from evaluating *in a client*. That
+   distinction is the natural place for a trust boundary: an editor-scoped eval
+   with the bridge available is defensible in a way that "everything can do
+   everything" is not.
+
+So: `contextIsolation` and a capability-shaped bridge are worth doing, in that
+order, and neither costs the feature. A CSP is the last question, and the honest
+answer may be `unsafe-eval` with a much smaller blast radius behind it.
+
+## Monorepo for the bundled plugins
+
+Worth doing, for a reason that is not code organisation.
+
+Plugins ship precompiled and nothing rebuilds them, so a rename in the editor
+does not fail a build — it fails in a user's session. That already happened
+twice here: `crate` → `singultus` broke both flagship plugins and the default
+user plugin, silently, until they were actually run. In-tree plugins compile
+against the host, which turns that class of break into a build error.
+
+Sizes are small — Clojure 1,176 lines of ClojureScript, Javascript 573. The
+complications are the payload and the coupling:
+
+- Clojure carries about 15 MB: `lein-light-nrepl`, a runner, vendored CodeMirror
+  modes. Javascript carries a 2.8 MB `node_modules`.
+- Both have vestigial `project.clj` files pinning Clojure 1.5.1.
+- Both ship compiled artifacts that would become build outputs.
+
+The natural shape is another shadow-cljs target per plugin, output where the
+plugin loader already looks, with `plugin.edn`/`plugin.json` kept so nothing
+about distribution changes for anyone else. Candidates beyond the two flagships:
+CSS, HTML, Paredit, Python, Rainbow — the set `script/build.sh` already pins.
+
+## Hand-written JavaScript to TypeScript
+
+About 2,529 lines across thirteen files, and they fall into three groups that
+deserve different answers.
+
+| | lines | notes |
+|---|---|---|
+| `main.js` | 269 | The whole main process. Ideal TypeScript candidate: Electron ships its own types, and this is the security boundary. |
+| `script/smoke-test.js` | 194 | Test harness; types would catch the probe mistakes made while writing it. |
+| `ws.js`, `browserInjection.js`, `dragdrop.js`, `fuzzy.js`, `throttle.js`, `behaviorsParser.js`, `walkdir2.js` | 1,675 | Light Table's own runtime scripts. `keyevents.js` alone is 1,086 of that and is a vendored keyboard library. |
+| forked CodeMirror addons | 281 | Vendored forks; typing them means diverging further from upstream. |
+
+The argument for starting with `main.js` is that it is where the privilege is.
+Every ipc handler added for `contextIsolation` lands there, and a typed
+`contextBridge` surface is worth considerably more than a typed drag-and-drop
+helper. shadow-cljs does not compile TypeScript, so this needs a small `tsc`
+step feeding `deploy/core` — worth scoping before committing.
+
+`keyevents.js` should probably be replaced rather than ported.
+
+## CodeMirror
+
+Worth knowing before anyone treats this as urgent: **CodeMirror 5 is still
+receiving releases.** 5.65.21 shipped in February 2026 — *more recently* than the
+`codemirror` 6.0.2 meta-package, which sits still because CodeMirror 6 is
+distributed as `@codemirror/state`, `@codemirror/view`, `@codemirror/language`
+and friends, each independently versioned and actively developed.
+
+So there is no security cliff and no forced migration. CodeMirror 6 is a genuine
+rewrite — immutable state, transactions, a different extension model — and Light
+Table has 59 `js/CodeMirror` references, 16 addon loads, and a plugin API that
+exposes the CodeMirror object directly. That last point makes it a plugin API
+break at least as large as the editor work itself.
+
+Reasonable position: stay on 5, revisit if upstream signals an end.
+
+## Dependencies
+
+Everything is at its latest release: `codemirror` 5.65.21 (see above),
+`socket.io` 4.8.3, `tar` 7.5.22, `bencode` 4.0.1, `shelljs` 0.10.0,
+`replace` 1.2.2, Electron 43.2.0, Clojure 1.12.5, ClojureScript 1.12.145.
+
+The one that is not really finished is `replace`, which pulls an old `minimatch`
+and is the sole source of the three remaining npm advisories, all
+`brace-expansion` denial-of-service. Forcing a newer `minimatch` breaks it, since
+its export shape changed. Clearing them means either an upstream fix or replacing
+`replace` with a small in-tree file walker — worth doing, but it is the
+project-wide search implementation, so not worth rushing.
+
+## Smaller things
+
+- **The `lt.macros/background` removal is still an unshimmed API break.** No
+  bundled plugin uses it. A shim would mean restoring the register-and-eval path
+  in the worker, which is exactly what made shadow-cljs impossible; the
+  alternative — running the work in the renderer with a deprecation warning —
+  keeps plugins working but silently loses the off-thread property. It is a
+  judgement call, not a technical obstacle.
+- **Three `load/js` eval sites remain** for Light Table's own global-scope
+  scripts and the forked CodeMirror addons. Mechanical, and a prerequisite for
+  any CSP conversation.
+- **`project.clj` builds nothing** and exists only for codox. It stays as long as
+  the published plugin API docs do.

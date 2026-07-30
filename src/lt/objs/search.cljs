@@ -144,7 +144,7 @@
                       (when (> (.-length (:results @this)) 0)
                         (let [all (:results @this)
                               [file result] (:position @this)
-                              cur (aget all file)
+                              ^js cur (aget all file)
                               [file result] (if (>= (inc result) (.-results.length cur))
                                               (if (>= (inc file) (.-length all))
                                                 [0 0]
@@ -166,12 +166,10 @@
                               cur (aget all file)
                               [file result] (if (< (dec result) 0)
                                               (if (< (dec file) 0)
-                                                [(dec (.-length all)) (-> (aget all (dec (.-length all)))
-                                                                          (.-results.length)
-                                                                          (dec))]
-                                                [(dec file) (-> (aget all (dec file))
-                                                                (.-results.length)
-                                                                (dec))])
+                                                [(dec (.-length all)) (let [^js last-file (aget all (dec (.-length all)))]
+                                                                        (dec (.-results.length last-file)))]
+                                                [(dec file) (let [^js prev-file (aget all (dec file))]
+                                                              (dec (.-results.length prev-file)))])
                                               [file (dec result)])
                               neue (aget (:results @this) file)]
                           (object/merge! this {:position [file result]})

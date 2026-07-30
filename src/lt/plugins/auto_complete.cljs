@@ -19,7 +19,7 @@
 (defn stream [str]
   (js/CodeMirror.StringStream. str))
 
-(defn advance [s]
+(defn advance [^js s]
   (set! (.-start s) (.-pos s)))
 
 (defn next* [s]
@@ -28,15 +28,15 @@
 (defn current [s]
   (.current s))
 
-(defn peek* [s]
+(defn peek* [^js s]
   (.peek s))
 
-(defn skip-space [s]
+(defn skip-space [^js s]
   (when (and (peek* s) (re-seq #"\s" (peek* s)))
     (.eatSpace s)
     (advance s)))
 
-(defn eat-while [s r]
+(defn eat-while [^js s r]
   (.eatWhile s r))
 
 (defn string->tokens [str pattern]
@@ -99,15 +99,15 @@
     (w this {:string (editor/->val this)
              :pattern (.-source (get-pattern this))})))
 
-(defn text|completion [x]
+(defn text|completion [^js x]
   (or (.-text x) (.-completion x)))
 
-(defn text+completion [x]
+(defn text+completion [^js x]
   (str (.-text x) (.-completion x)))
 
 (defn distinct-completions [hints]
   (let [seen #js {}]
-    (filter (fn [hint]
+    (filter (fn [^js hint]
               (if (true? (aget seen (.-completion hint)))
                 false
                 (aset seen (.-completion hint) true)))
@@ -116,13 +116,13 @@
 (declare hinter)
 
 (defn remove-long-completions [hints]
-  (filter #(< (.-length (.-completion %)) (:hint-limit @hinter)) hints))
+  (filter (fn [^js h] (< (.-length (.-completion h)) (:hint-limit @hinter))) hints))
 
 (def hinter (-> (scmd/filter-list {:items (fn []
                                             (when-let [cur (pool/last-active)]
                                               (let [token (-> @hinter :starting-token :string)]
                                                 (->> (if token
-                                                       (remove #(= token (.-completion %))
+                                                       (remove (fn [^js h] (= token (.-completion h)))
                                                                (object/raise-reduce cur :hints+ [] token))
                                                        (object/raise-reduce cur :hints+ []))
                                                      remove-long-completions
@@ -175,7 +175,7 @@
                         (object/merge! this {:active false})
                         (if (.-select c)
                           ((.-select c) (partial editor/replace (:ed @this) start end) c)
-                          (editor/replace (:ed @this) start end (.-completion c)))
+                          (editor/replace (:ed @this) start end (.-completion ^js c)))
                         (object/raise this :escape!))))
 
 (behavior ::select-unknown

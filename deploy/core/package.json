@@ -18,8 +18,10 @@
     }
   },
   "dependencies": {
+    "bencode": "^4.0.1",
     "codemirror": "^5.65.21",
     "replace": "^1.2.2",
+    "shelljs": "^0.10.0",
     "socket.io": "^4.8.3",
     "tar": "^7.5.22"
   },

@@ -45,8 +45,11 @@
         [lt.object :only [object* behavior*]])
   (:require-macros [lt.macros :refer [behavior]]))
 
-(defn ->cm-ed
-  "Return editor `e`'s CodeMirror object."
+(defn ^js ->cm-ed
+  "Return editor `e`'s CodeMirror object.
+
+  Hinted ^js so that the compiler can resolve the CodeMirror methods called on
+  the result, rather than warning at every one of them."
   [e]
   (if (satisfies? IDeref e)
     (:ed @e)
@@ -100,7 +103,7 @@
 ;; commands
 ;;*********************************************************
 
-(defn- expand-tab [cm]
+(defn- expand-tab [^js cm]
   (cond
    (.somethingSelected cm) (.indentSelection cm "add")
    (.getOption cm "indentWithTabs") (.replaceSelection cm "\t" "end" "+input")
@@ -133,7 +136,7 @@
       (set-val e c)
       (clear-history e))
     (when (:doc context)
-      (.swapDoc e (-> (:doc context) deref :doc)))
+      (.swapDoc ^js e (-> (:doc context) deref :doc)))
     e))
 
 (defn on
@@ -291,7 +294,7 @@
   "Return input field element of editor.
 
   See [getInputField](http://codemirror.net/doc/manual.html#getInputField)."
-  [e]
+  [^js e]
   (.getInputField e))
 
 (defn blur
@@ -313,7 +316,7 @@
   `func` should take two arguments, `ed` and `delta`. Returns `e`.
 
   See [cursorActivity](http://codemirror.net/doc/manual.html#event_cursorActivity)"
-  [e func]
+  [^js e func]
   (.on e "onCursorActivity"
        (fn [ed delta]
          (func ed delta)))
@@ -324,7 +327,7 @@
   `func` should take two arguments, `ed` and `delta`. Returns `e`.
 
   See [change](http://codemirror.net/doc/manual.html#event_change)"
-  [e func]
+  [^js e func]
   (.on e "onChange"
        (fn [ed delta]
          (func ed delta)))
@@ -335,7 +338,7 @@
   `func` should take two arguments, `ed` and `delta`. Returns `e`.
 
   See [update](http://codemirror.net/doc/manual.html#event_update)"
-  [e func]
+  [^js e func]
   (.on e "onUpdate"
        (fn [ed delta]
          (func ed delta)))
@@ -346,7 +349,7 @@
   `func` should take two arguments, `ed`. Returns `e`.
 
   See [scroll](http://codemirror.net/doc/manual.html#event_scroll)"
-  [e func]
+  [^js e func]
   (.on e "onScroll"
        (fn [ed]
          (func ed)))

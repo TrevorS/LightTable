@@ -21,7 +21,7 @@
 (defn rem! [p]
   (swap! procs disj p))
 
-(defn kill [p]
+(defn kill [^js p]
   (.kill p))
 
 (defn kill-all [& [ps]]
@@ -44,7 +44,7 @@
                     @custom-env))))
 
 (defn simple-spawn* [obj {:keys [command args]} cwd? env]
-  (let [proc (spawn command
+  (let [^js proc (spawn command
                     (when (seq args) (clj->js args))
                     (js-obj "cwd" cwd?
                             "env" (merge-env env)))]
