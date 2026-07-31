@@ -24,7 +24,8 @@
     publishes diagnostics for a project it has just finished loading.
 
   Everything here works in bytes and decodes only a complete body."
-  (:require [clojure.string :as string]))
+  (:require [clojure.string :as string]
+            [goog :as goog]))
 
 (defn- index-of-separator
   "Where the header block ends in `bytes`, or nil.
@@ -87,6 +88,40 @@
 
 (def empty-buffer (js/Uint8Array. 0))
 
+(def ^:private identifier?
+  "Whether a JSON key is a plain identifier, and therefore safe as a keyword."
+  #(re-matches #"[A-Za-z_$][A-Za-z0-9_$]*" %))
+
+(defn ->clj
+  "A parsed JSON value as ClojureScript, keywordising only the keys it is safe
+  to keywordise.
+
+  `(js->clj … :keywordize-keys true)` is the obvious thing and is wrong for
+  this protocol. Almost every key in LSP is a fixed camelCase name and reads
+  better as a keyword — but not all of them. `WorkspaceEdit.changes` is keyed
+  by *document URI*, and `file:///src/probe.clj` becomes a keyword whose
+  namespace is `file:` and whose name is the rest of the path; what comes back
+  out is `\"file:\"`. A rename could not name a single file it was renaming in.
+
+  So the rule is a property of the key rather than of the caller: an
+  identifier becomes a keyword, anything else stays the string it was. Nothing
+  else in the protocol changes shape, which is why this is one function here
+  instead of a special case in whichever surface trips over it next — and the
+  next one would be `didChangeWatchedFiles`, then `codeAction.changes`, then
+  the one nobody predicted."
+  [x]
+  (cond
+    (array? x) (mapv ->clj x)
+    (identical? "object" (goog/typeOf x))
+    (if (nil? x)
+      nil
+      (persistent!
+       (reduce (fn [m k]
+                 (assoc! m (if (identifier? k) (keyword k) k) (->clj (aget x k))))
+               (transient {})
+               (js/Object.keys x))))
+    :else x))
+
 (defn feed
   "Append `chunk` to `buffer` and take every complete message out of it.
 
@@ -121,7 +156,7 @@
           :else
           (let [body (.subarray buf body-start (+ body-start len))
                 text (.decode (js/TextDecoder. "utf-8") body)
-                parsed (try (js->clj (.parse js/JSON text) :keywordize-keys true)
+                parsed (try (->clj (.parse js/JSON text))
                             (catch :default e {::parse-error (str e)}))
                 rest-buf (.slice buf (+ body-start len))]
             (if (and (map? parsed) (::parse-error parsed))

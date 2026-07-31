@@ -212,3 +212,32 @@
 (deftest a-notification-carries-no-id
   (testing "a server is entitled to reject one that does"
     (is (not (contains? (wire/notification "initialized" {}) :id)))))
+
+;;*********************************************************
+;; Keys that are not identifiers
+;;*********************************************************
+
+(deftest identifier-keys-become-keywords
+  (is (= {:jsonrpc "2.0" :id 1 :method "textDocument/rename"}
+         (wire/->clj #js {"jsonrpc" "2.0" "id" 1 "method" "textDocument/rename"}))))
+
+(deftest uri-keys-stay-strings
+  ;; The one shape in LSP keyed by arbitrary text. Keywordising it produced a
+  ;; keyword whose namespace was "file:" and lost the path, so a rename could
+  ;; not name the file it was renaming in.
+  (let [edit (wire/->clj #js {"changes" #js {"file:///src/probe.clj"
+                                             #js [#js {"newText" "plus"}]}})]
+    (is (= ["file:///src/probe.clj"] (keys (:changes edit))))
+    (is (= [{:newText "plus"}] (get-in edit [:changes "file:///src/probe.clj"])))))
+
+(deftest nested-and-mixed
+  (let [v (wire/->clj #js {"result" #js {"changes" #js {"file:///a.clj" #js []}
+                                         "documentChanges" #js [#js {"textDocument" #js {"uri" "file:///a.clj"}}]}})]
+    (is (= ["file:///a.clj"] (keys (get-in v [:result :changes]))))
+    (is (= "file:///a.clj" (get-in v [:result :documentChanges 0 :textDocument :uri])))))
+
+(deftest scalars-and-nil-survive
+  (is (nil? (wire/->clj nil)))
+  (is (= 3 (wire/->clj 3)))
+  (is (= "x" (wire/->clj "x")))
+  (is (= [1 "two" {:three 3}] (wire/->clj #js [1 "two" #js {"three" 3}]))))

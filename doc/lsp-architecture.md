@@ -102,7 +102,7 @@ The reason this is worth doing once: nothing here is new UI.
 | `definition` | jump, with a way back | `lt.objs.jump-stack` | **built** |
 | `references` | the search sidebar | `lt.objs.search` results list | **built** |
 | `documentSymbol` | the search sidebar | `lt.objs.search` results list | **built** |
-| `rename` | a workspace edit | — the one genuinely new piece | not yet |
+| `rename` | a workspace edit | `lt.objs.workspace-edit` | **built** |
 
 `documentSymbol` was going to be the navigate bar and is the search sidebar
 instead. Both are lists of places in the project, Light Table already has one,

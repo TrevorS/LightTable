@@ -201,6 +201,7 @@
  [:editor :lt.objs.editor.lsp/jump-to-definition]
  [:editor :lt.objs.editor.lsp/find-references]
  [:editor :lt.objs.editor.lsp/document-symbols]
+ [:editor :lt.objs.editor.lsp/rename]
  [:app :lt.objs.editor.lsp/shutdown-servers-on-close]
  [:editor :lt.objs.editor.treesitter/use-treesitter]
  [:editor :lt.objs.editor.treesitter/reparse-on-change]

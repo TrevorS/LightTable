@@ -42,7 +42,9 @@
             [lt.objs.jump-stack :as jump-stack]
             [lt.objs.notifos :as notifos]
             [lt.objs.search :as search]
+            [lt.objs.sidebar.command :as scmd]
             [lt.objs.tabs :as tabs]
+            [lt.objs.workspace-edit :as we]
             [lt.plugins.auto-complete :as auto-complete]
             [lt.util.bridge :as bridge])
   (:require-macros [lt.macros :refer [behavior defui]]))
@@ -628,6 +630,92 @@
               :exec (fn []
                       (when-let [ed (pool/last-active)]
                         (object/raise ed :editor.document-symbols!)))})
+
+;;*********************************************************
+;; Rename
+;;*********************************************************
+
+(defn- ->edits
+  "A `WorkspaceEdit`, as the flat list [[lt.objs.workspace-edit]] applies.
+
+  Both shapes are handled. `changes` maps a document URI to text edits and is
+  what both servers Light Table ships with actually send; `documentChanges`
+  wraps the same thing with a document version and is what the specification
+  prefers. The version is ignored — `workspace-edit` refuses to touch a file
+  with unsaved changes, which is a stronger check made against the thing that
+  would actually be overwritten."
+  [{:keys [changes documentChanges]}]
+  (vec
+   (concat
+    (for [[uri edits] changes
+          {:keys [range newText]} edits]
+      {:path (sync/uri->path (name uri))
+       :from (sync/->loc (:start range))
+       :to (sync/->loc (:end range))
+       :text newText})
+    (for [{:keys [textDocument edits]} documentChanges
+          {:keys [range newText]} edits]
+      {:path (sync/uri->path (:uri textDocument))
+       :from (sync/->loc (:start range))
+       :to (sync/->loc (:end range))
+       :text newText}))))
+
+(defn- rename! [ed new-name]
+  (when-let [conn (::conn @ed)]
+    (lsp/request!
+     conn "textDocument/rename"
+     {:textDocument {:uri (:uri (::doc @ed))}
+      :position (sync/->position (editor/->cursor ed))
+      :newName new-name}
+     (fn [{:keys [result error]}]
+       (cond
+         error (notifos/set-msg! (str "Rename failed: " (:message error)) {:class "error"})
+         (nil? result) (notifos/set-msg! "The server had nothing to rename." {:class "error"})
+         :else
+         (let [edits (->edits result)
+               outcome (we/apply! (str "rename to " new-name) edits)]
+           (if (:error outcome)
+             (notifos/set-msg! (:error outcome) {:class "error"})
+             (notifos/set-msg! (str "Renamed " (:edits outcome) " occurrence"
+                                    (when-not (= 1 (:edits outcome)) "s")
+                                    " in " (:files outcome) " file"
+                                    (when-not (= 1 (:files outcome)) "s")
+                                    " — Editor: Undo workspace edit to take it back")))))))))
+
+(behavior ::rename
+          :triggers #{:editor.rename!}
+          :type :user
+          :desc "Editor: Rename a symbol with the language server"
+          :doc "Renames every use of the symbol under the cursor, across the
+                project, as one action. `Editor: Undo workspace edit` puts it
+                back — the whole thing, not one file at a time.
+
+                Files with unsaved changes are refused rather than overwritten:
+                a workspace edit works on what is on disk, so what it took away
+                is what it can put back."
+          :reaction (fn [ed new-name]
+                      (if-not (::conn @ed)
+                        (notifos/set-msg! "No language server for this editor.")
+                        (rename! ed new-name))))
+
+(cmd/command {:command :editor.rename
+              :desc "Editor: Rename symbol"
+              :options (scmd/options-input {:placeholder "new name"})
+              :exec (fn [new-name]
+                      (when-let [ed (pool/last-active)]
+                        (when-not (string/blank? new-name)
+                          (object/raise ed :editor.rename! new-name))))})
+
+(cmd/command {:command :editor.undo-workspace-edit
+              :desc "Editor: Undo workspace edit"
+              :exec (fn []
+                      (let [outcome (we/undo!)]
+                        (notifos/set-msg!
+                         (if (:error outcome)
+                           (:error outcome)
+                           (str "Undid " (:label outcome) " across "
+                                (:files outcome) " file"
+                                (when-not (= 1 (:files outcome)) "s"))))))})
 
 ;;*********************************************************
 ;; The client object
