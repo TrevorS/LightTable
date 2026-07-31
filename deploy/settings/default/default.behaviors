@@ -199,6 +199,8 @@
  [:editor :lt.objs.editor.lsp/update-completions]
  [:editor :lt.objs.editor.lsp/doc-at-cursor]
  [:editor :lt.objs.editor.lsp/jump-to-definition]
+ [:editor :lt.objs.editor.lsp/find-references]
+ [:editor :lt.objs.editor.lsp/document-symbols]
  [:app :lt.objs.editor.lsp/shutdown-servers-on-close]
  [:editor :lt.objs.editor.treesitter/use-treesitter]
  [:editor :lt.objs.editor.treesitter/reparse-on-change]

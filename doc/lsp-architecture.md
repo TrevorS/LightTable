@@ -100,9 +100,13 @@ The reason this is worth doing once: nothing here is new UI.
 | `completion` | the completion list | `lt.plugins.auto-complete` | **built** |
 | `hover` | the doc bar | `lt.plugins.doc` | **built** |
 | `definition` | jump, with a way back | `lt.objs.jump-stack` | **built** |
-| `references` | the search sidebar | `lt.objs.search` results list | not yet |
-| `documentSymbol` | the navigate bar | `lt.objs.sidebar.navigate` | not yet |
+| `references` | the search sidebar | `lt.objs.search` results list | **built** |
+| `documentSymbol` | the search sidebar | `lt.objs.search` results list | **built** |
 | `rename` | a workspace edit | — the one genuinely new piece | not yet |
+
+`documentSymbol` was going to be the navigate bar and is the search sidebar
+instead. Both are lists of places in the project, Light Table already has one,
+and a picker would have been a second thing to build, learn and keep working.
 
 One behavior per row, each independently switchable. A user who wants
 diagnostics but not completion turns one off, which is what the behavior system

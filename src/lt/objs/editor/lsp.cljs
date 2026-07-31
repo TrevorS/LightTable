@@ -41,6 +41,8 @@
             [lt.objs.editor.pool :as pool]
             [lt.objs.jump-stack :as jump-stack]
             [lt.objs.notifos :as notifos]
+            [lt.objs.search :as search]
+            [lt.objs.tabs :as tabs]
             [lt.plugins.auto-complete :as auto-complete]
             [lt.util.bridge :as bridge])
   (:require-macros [lt.macros :refer [behavior defui]]))
@@ -483,6 +485,149 @@
                              (object/raise jump-stack/jump-stack :jump-stack.push!
                                            ed (sync/uri->path uri) (sync/range->loc range))
                              (notifos/set-msg! "No definition found.")))))))
+
+;;*********************************************************
+;; References
+;;*********************************************************
+
+(defn- ->reference
+  "One LSP location, as a line the search sidebar can list.
+
+  The excerpt comes from the buffer when the file is open and from disk when
+  it is not — a reference list that says only \"line 40\" is a list of numbers."
+  [{:keys [uri range]}]
+  (let [path (sync/uri->path uri)
+        line (:line (sync/range->loc range))
+        text (if-let [ed (first (pool/by-path path))]
+               (editor/line ed line)
+               (some-> (.readFileSync bridge/files path "utf-8")
+                       (string/split #"\n")
+                       (nth line nil)))]
+    {:path path
+     :line line
+     :text (or (some-> text string/trim) "")}))
+
+(defn- show-references!
+  "Put `locations` in the search sidebar, grouped by file.
+
+  The sidebar is Light Table's list of places in the project, and a reference
+  list is exactly that — so this is the existing surface with a different
+  question behind it, which is the point of the whole LSP layer."
+  [locations]
+  (object/raise search/searcher :clear!)
+  (tabs/add! search/searcher)
+  (tabs/active! search/searcher)
+  (let [refs (map ->reference locations)]
+    (doseq [[path rs] (group-by :path refs)]
+      (object/raise search/searcher :result
+                    (js-obj "file" path
+                            "results" (into-array
+                                       (for [r rs]
+                                         (js-obj "line" (inc (:line r)) "text" (:text r)))))))
+    (notifos/done-working (str (count refs) " reference"
+                              (when-not (= 1 (count refs)) "s")))))
+
+(behavior ::find-references
+          :triggers #{:editor.find-references!}
+          :type :user
+          :desc "Editor: Find references with the language server"
+          :doc "Lists every use of the symbol under the cursor in the search
+                sidebar. There is no REPL equivalent worth deferring to — a
+                running program knows what calls what only for code it has
+                loaded — so this is the server's answer whenever there is one."
+          :reaction (fn [ed]
+                      (notifos/working "Finding references…")
+                      (if-not (::conn @ed)
+                        (notifos/set-msg! "No language server for this editor.")
+                        (when-let [conn (::conn @ed)]
+                          (lsp/request! conn "textDocument/references"
+                                        {:textDocument {:uri (:uri (::doc @ed))}
+                                         :position (sync/->position (editor/->cursor ed))
+                                         :context {:includeDeclaration true}}
+                                        (fn [{:keys [result]}]
+                                          (if (seq result)
+                                            (show-references! result)
+                                            (notifos/done-working "No references found."))))))))
+
+(cmd/command {:command :editor.find-references
+              :desc "Editor: Find references"
+              :exec (fn []
+                      (when-let [ed (pool/last-active)]
+                        (object/raise ed :editor.find-references!)))})
+
+;;*********************************************************
+;; Document symbols
+;;*********************************************************
+
+(def ^:private symbol-kinds
+  "LSP's SymbolKind, numbered as the specification numbers them."
+  {1 "file" 2 "module" 3 "namespace" 4 "package" 5 "class" 6 "method"
+   7 "property" 8 "field" 9 "constructor" 10 "enum" 11 "interface"
+   12 "function" 13 "variable" 14 "constant" 15 "string" 16 "number"
+   17 "boolean" 18 "array" 19 "object" 20 "key" 21 "null" 22 "enum-member"
+   23 "struct" 24 "event" 25 "operator" 26 "type-parameter"})
+
+(defn- flatten-symbols
+  "`DocumentSymbol[]` or `SymbolInformation[]`, as one flat list.
+
+  Both shapes are legal and servers disagree about which to send. The nested
+  one carries children; they are flattened with their names qualified, because
+  a method is worth finding by its own name and worth reading with its class's."
+  ([symbols] (flatten-symbols symbols nil))
+  ([symbols prefix]
+   (mapcat (fn [{:keys [name kind location range selectionRange children]}]
+             (let [qualified (if prefix (str prefix "/" name) name)
+                   loc (sync/range->loc (or selectionRange range (:range location)))]
+               (cons {:name qualified
+                      :kind (get symbol-kinds kind "symbol")
+                      :path (some-> location :uri sync/uri->path)
+                      :line (:line loc)
+                      :ch (:ch loc)}
+                     (flatten-symbols children qualified))))
+           symbols)))
+
+(defn- show-symbols!
+  "List a file's definitions in the search sidebar.
+
+  The same surface as references, and for the same reason: both are lists of
+  places in the project, and Light Table already has one of those. A picker
+  would have been a second thing to build, learn and keep working."
+  [ed syms]
+  (object/raise search/searcher :clear!)
+  (tabs/add! search/searcher)
+  (tabs/active! search/searcher)
+  (object/raise search/searcher :result
+                (js-obj "file" (-> @ed :info :path)
+                        "results" (into-array
+                                   (for [sym syms]
+                                     (js-obj "line" (inc (:line sym))
+                                             "text" (str (:kind sym) "  " (:name sym)))))))
+  (notifos/done-working (str (count syms) " symbol"
+                            (when-not (= 1 (count syms)) "s"))))
+
+(behavior ::document-symbols
+          :triggers #{:editor.document-symbols!}
+          :type :user
+          :desc "Editor: List this file's symbols from the language server"
+          :doc "Every definition in the file, as somewhere to jump to. The
+                `:navigable` tag is granted by the server advertising
+                `documentSymbolProvider`, so a language gets this by its server
+                saying it can answer."
+          :reaction (fn [ed]
+                      (when-let [conn (::conn @ed)]
+                        (lsp/request! conn "textDocument/documentSymbol"
+                                      {:textDocument {:uri (:uri (::doc @ed))}}
+                                      (fn [{:keys [result]}]
+                                        (let [syms (flatten-symbols result)]
+                                          (if (seq syms)
+                                            (show-symbols! ed syms)
+                                            (notifos/set-msg! "No symbols found."))))))))
+
+(cmd/command {:command :editor.document-symbols
+              :desc "Editor: Jump to a symbol in this file"
+              :exec (fn []
+                      (when-let [ed (pool/last-active)]
+                        (object/raise ed :editor.document-symbols!)))})
 
 ;;*********************************************************
 ;; The client object
