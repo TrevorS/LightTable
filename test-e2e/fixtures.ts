@@ -51,6 +51,29 @@ export async function launch(extraEnv: Record<string, string> = {}): Promise<Ele
     });
 }
 
+/**
+ * Shut the application down without asking it anything.
+ *
+ * `close()` alone is not enough. Light Table intercepts a window close and, if
+ * a buffer is dirty, draws "You will lose changes" and waits — so any test
+ * that typed into an editor would hang the whole run on a modal that nothing
+ * is going to click. `destroy()` skips the handler, which is what teardown
+ * wants: the test is over, and its scratch directory is about to be deleted.
+ *
+ * Everything here is best-effort. A test that failed by crashing the window
+ * should report that failure, not a teardown error on top of it.
+ */
+async function teardown(app: ElectronApplication): Promise<void> {
+    try {
+        await app.evaluate(({ BrowserWindow }) => {
+            for (const w of BrowserWindow.getAllWindows()) w.destroy();
+        });
+    } catch { /* already gone */ }
+    try {
+        await app.close();
+    } catch { /* already gone */ }
+}
+
 /** Home directories to remove when the run ends. */
 const homes: string[] = [];
 
@@ -144,7 +167,7 @@ export const test = base.extend<Fixtures>({
     app: async ({ }, use) => {
         const app = await launch();
         await use(app);
-        await app.close();
+        await teardown(app);
         cleanUpHomes();
     },
 

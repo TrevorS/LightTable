@@ -32,6 +32,29 @@
 
  [:editor.keys.hinting.active "enter" :passthrough]
 
+ ;; Multiple cursors. The commands and the CodeMirror addon behind them have
+ ;; been here for years with no key on them, so the feature existed and was
+ ;; unreachable.
+ ;;
+ ;; Cmd-D selects the next occurrence in every editor anyone has used, but
+ ;; `pmeta` is ctrl away from a Mac and ctrl-d has opened Light Table's inline
+ ;; docs on every platform since 2014. So mac gets the binding everyone expects
+ ;; and the others get one that is free — see `for-this-platform?`.
+ [:editor.keys.normal "mac:pmeta-d" :editor.sublime.selectNextOccurrence]
+ [:editor.keys.normal "win:ctrl-alt-d" :editor.sublime.selectNextOccurrence]
+ [:editor.keys.normal "linux:ctrl-alt-d" :editor.sublime.selectNextOccurrence]
+ [:editor.keys.normal "mac:pmeta-shift-d" :editor.sublime.skipAndSelectNextOccurrence]
+ [:editor.keys.normal "win:ctrl-alt-shift-d" :editor.sublime.skipAndSelectNextOccurrence]
+ [:editor.keys.normal "linux:ctrl-alt-shift-d" :editor.sublime.skipAndSelectNextOccurrence]
+ [:editor.keys.normal "pmeta-alt-down" :editor.sublime.addCursorToNextLine]
+ [:editor.keys.normal "pmeta-alt-up" :editor.sublime.addCursorToPrevLine]
+ [:editor.keys.normal "pmeta-shift-l" :editor.sublime.splitSelectionByLine]
+ [:editor.keys.normal "pmeta-u" :editor.sublime.undoSelection]
+ [:editor.keys.normal "pmeta-shift-u" :editor.sublime.redoSelection]
+ ;; One cursor again. Esc is what every editor uses for this, and nothing else
+ ;; in an editor claims it.
+ [:editor.keys.normal "esc" :editor.sublime.singleSelectionTop]
+
  [:editor.keys.normal "pmeta-shift-g" :find.prev]
  [:editor.keys.normal "pmeta-f" :find.fill-selection :find.toggle]
  [:editor.keys.normal "pmeta-g" :find.next]

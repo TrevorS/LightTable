@@ -596,10 +596,34 @@
               :exec (fn []
                       (cmd/exec! :editor.codemirror.command "singleSelectionTop"))})
 
-(cmd/command {:command :editor.sublime.singleSelectionTop
-              :desc "Editor: Clear multiple cursors"
+;; These five are what make multiple cursors usable rather than merely
+;; possible, and none of them had a command. The sublime addon has been in the
+;; bundle the whole time — selectNextOccurrence works, and nothing could reach
+;; it.
+(cmd/command {:command :editor.sublime.addCursorToNextLine
+              :desc "Editor: Add cursor to next line"
               :exec (fn []
-                      (cmd/exec! :editor.codemirror.command "singleSelectionTop"))})
+                      (cmd/exec! :editor.codemirror.command "addCursorToNextLine"))})
+
+(cmd/command {:command :editor.sublime.addCursorToPrevLine
+              :desc "Editor: Add cursor to previous line"
+              :exec (fn []
+                      (cmd/exec! :editor.codemirror.command "addCursorToPrevLine"))})
+
+(cmd/command {:command :editor.sublime.skipAndSelectNextOccurrence
+              :desc "Editor: Skip this occurrence and select the next"
+              :exec (fn []
+                      (cmd/exec! :editor.codemirror.command "skipAndSelectNextOccurrence"))})
+
+(cmd/command {:command :editor.sublime.undoSelection
+              :desc "Editor: Undo the last selection"
+              :exec (fn []
+                      (cmd/exec! :editor.codemirror.command "undoSelection"))})
+
+(cmd/command {:command :editor.sublime.redoSelection
+              :desc "Editor: Redo the last selection"
+              :exec (fn []
+                      (cmd/exec! :editor.codemirror.command "redoSelection"))})
 
 (cmd/command {:command :editor.sublime.insertLineAfter
               :desc "Editor: Insert line after"

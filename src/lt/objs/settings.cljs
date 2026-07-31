@@ -4,6 +4,7 @@
             [lt.objs.app :as app]
             [lt.objs.command :as cmd]
             [lt.objs.keyboard :as kb]
+            [lt.objs.platform :as platform]
             [lt.objs.tabs :as tabs]
             [lt.objs.files :as files]
             [lt.objs.console :as console]
@@ -192,8 +193,37 @@
          char)))
 
 
+(def ^:private platforms
+  {"mac" platform/mac? "win" platform/win? "linux" platform/linux?})
+
+(defn for-this-platform?
+  "Is this binding meant for the machine it is being read on?
+
+  A key may carry a platform prefix — `mac:pmeta-d`, `linux:ctrl-alt-d` — and
+  one naming a different platform is dropped. `pmeta` already covers the usual
+  case, which is the same binding spelled with a different modifier. This is
+  for the rarer one, where the modifier `pmeta` resolves to is already taken on
+  one platform and free on another.
+
+  Multiple cursors are why it exists. Cmd-D selects the next occurrence in
+  every editor anyone has used, but `pmeta` makes that Ctrl-D away from a Mac,
+  and Ctrl-D has opened Light Table's inline docs on every platform since 2014.
+  Without this the choice was to shadow a documented key or to leave the most
+  used multi-cursor binding off Macs as well."
+  [k]
+  (if-let [[_ named] (re-matches #"([a-z]+):.+" k)]
+    (if-let [this? (platforms named)]
+      (this?)
+      ;; An unknown prefix is a typo, and silently dropping the binding is how
+      ;; a typo becomes an afternoon. Keep it; it simply never matches a key.
+      true)
+    true))
+
+(defn strip-platform [k]
+  (string/replace k #"^(mac|win|linux):" ""))
+
 (defn fix-key [k]
-  (let [k (string/replace k "pmeta" kb/meta)
+  (let [k (-> k strip-platform (string/replace "pmeta" kb/meta))
         keys (string/split k " ")]
     ;;ctrl cmd alt altgr shift
     (reduce #(str % " " %2) (map ->ordered-keystr keys))))
@@ -203,7 +233,10 @@
 
 (defn +keys [cur m]
   (reduce (fn [res [k v]]
-            (update-in res [k] #(into (or % {}) (map fix-key-entry v))))
+            (update-in res [k] #(into (or % {})
+                                      (->> v
+                                           (filter (comp for-this-platform? first))
+                                           (map fix-key-entry)))))
           cur
           m))
 
