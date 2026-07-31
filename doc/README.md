@@ -55,6 +55,8 @@ re-litigated from scratch.
 | [The road to context isolation](context-isolation.md) | How the window came to have no Node, what it cost, and the measurement that decided the design. |
 | [The JavaScript left](javascript-remaining.md) | There is none of Light Table's own. What the four TypeScript roots are and why they are separate. |
 | [LSP architecture](lsp-architecture.md) | The language server client: the four layers, how a server is declared and who declares it, and what building it settled. *Current.* |
+| [Workspace edits](workspace-edits.md) | What rename actually requires: what the servers send, the framing bug that blocks it, and the undo question underneath. *A scouting note.* |
+| [Evaluating ClojureScript](clojurescript-eval.md) | The two routes to a ClojureScript REPL, measured, and the two decisions to make before writing any. *A scouting note.* |
 | [Language support](language-support.md) | Where a language server would fit, why it belongs in the editor rather than in each plugin, and the two preload gaps it turned up. |
 | [Syntax highlighting](syntax-highlighting.md) | Tree-sitter highlighting: what it does, and the scouting note that first argued against it. *Current.* |
 | [The editor engine](editor-engine.md) | Whether CodeMirror 6 is what we would choose if nothing were chosen, and what the migration actually costs. |
