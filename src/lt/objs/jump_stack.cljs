@@ -10,7 +10,11 @@
 
 (defn jump-to [file pos]
   (cmd/exec! :open-path file)
-  (let [cur (pool/last-active)]
+  ;; The editor showing the file just opened, rather than whichever one was
+  ;; last focused. They are usually the same and `last-active` is nil when the
+  ;; window has not been focused at all — which is every automated run, and a
+  ;; jump that lands on nothing is a null dereference rather than a message.
+  (when-let [cur (or (first (pool/by-path file)) (pool/last-active))]
     (editor/move-cursor cur pos)
     (editor/center-cursor cur)))
 

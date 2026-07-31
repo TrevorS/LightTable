@@ -48,7 +48,7 @@
 (def Buffer (js/require "buffer"))
 (def net (js/require "net"))
 
-(declare send send*)
+(declare send send* interrupt! send-form! eval-message)
 
 ;;*********************************************************
 ;; The wire
@@ -147,7 +147,12 @@
     (:stacktrace msg) (assoc :class (:class msg)
                              :message (:message msg)
                              :stacktrace (:stacktrace msg))
-    (some #{"eval-error"} status) (assoc :errored? true)))
+    ;; Any error status, not just eval-error. namespace-not-found arrives with
+    ;; no :value and no :ex, so treating only eval-error as failure drew a
+    ;; result of "nil" for a request that never ran — silence where there
+    ;; should have been a message.
+    (some #{"error" "eval-error" "namespace-not-found"} status)
+    (assoc :errored? true :status (vec status))))
 
 (defn- done? [{:keys [status]}]
   (boolean (some #{"done"} status)))
@@ -156,6 +161,37 @@
 ;; Standard nREPL out, Light Table in
 ;;*********************************************************
 
+(defn- send-form!
+  "Evaluate form `n` of `data`, and remember to send the next one after it.
+
+  **One at a time, in order.** The obvious thing is to send every form at once
+  and let the session serialise them, and it does not work: nREPL resolves a
+  request's `:ns` when the request arrives rather than when it runs, so every
+  form after `(ns foo)` is answered `namespace-not-found` before the form that
+  creates `foo` has been dequeued. Verified against a bare cider-nrepl, not
+  inferred — the replies come back out of order and the failures arrive first.
+
+  Waiting is not a cost worth avoiding anyway. A file evaluates top to bottom,
+  each result appears as its form finishes, and watching that happen is the
+  thing Light Table is for."
+  [client cb data n]
+  (when-let [form (nth (:forms data) n nil)]
+    (let [id (str cb "-" n)]
+      (track! client id {:command :editor.eval.clj
+                         :cb cb
+                         :meta (:meta form)
+                         :data data
+                         :next (inc n)})
+      (send client (assoc (eval-message (assoc form
+                                               :ns (:buffer-ns data)
+                                               :path (:path data)))
+                          :id id)))))
+
+(defn- ns-form?
+  "Whether `code` is an `(ns …)` form."
+  [code]
+  (boolean (re-find #"^\s*\(ns\s" (str code))))
+
 (defn- eval-message
   "One `eval` request for one form.
 
@@ -163,7 +199,21 @@
   editor rather than at a generated form, and they cost nothing to send."
   [{:keys [code ns path pos]}]
   (cond-> {:op "eval" :code code}
-    ns (assoc :ns ns)
+    ;; The buffer's namespace, on every form but the `ns` form itself.
+    ;;
+    ;; Both halves of that matter. Without `:ns` a form runs in whatever the
+    ;; session's `*ns*` is, and evaluating `(ns probe)` does *not* leave it
+    ;; there — nREPL pushes a thread-binding frame per request and pops it
+    ;; afterwards, so the change is discarded and every later form defines its
+    ;; vars in `user`. With `:ns` on the `ns` form, the first evaluation of a
+    ;; file fails with `namespace-not-found`, because the namespace is what
+    ;; that form is about to create.
+    ;;
+    ;; So the `ns` form runs bare and creates it — `in-ns` does that whether or
+    ;; not the binding survives — and everything after names it explicitly.
+    ;; The forms are separate requests but one session, and a session runs them
+    ;; in order, so it exists by the time the second is dequeued.
+    (and ns (not (ns-form? code))) (assoc :ns ns)
     path (assoc :file path)
     (:line pos) (assoc :line (inc (:line pos)))
     (:ch pos) (assoc :column (inc (:ch pos)))))
@@ -190,10 +240,13 @@
   `:stack` is filled in later by [[request-stacktrace!]] if the server can
   analyse it; `:err` is what nREPL already printed, which is a good summary
   and is always there."
-  [{:keys [ex err meta]}]
-  {:result (or (some-> err string/trim (string/split #"\n") first) ex)
-   :stack (or err ex)
-   :meta meta})
+  [{:keys [ex err meta status]}]
+  (let [summary (or (some-> err string/trim (string/split #"\n") first)
+                    ex
+                    (when (seq status) (str "nREPL: " (string/join ", " status))))]
+    {:result summary
+     :stack (or err ex summary)
+     :meta meta}))
 
 (def watch-sentinel
   "The marker a watch prints its value behind.
@@ -241,21 +294,25 @@
                             cb (or (:cb msg) 0)]
                         (case command
                           "editor.eval.clj"
-                          (doseq [[n form] (map-indexed vector (:forms data))]
-                            (let [id (str cb "-" n)]
-                              (track! this id {:command :editor.eval.clj
-                                               :cb cb
-                                               :meta (:meta form)
-                                               :origin (:origin data)})
-                              (send this (assoc (eval-message (assoc form :ns (:ns data) :path (:path data)))
-                                                :id id))))
+                          (send-form! this cb data 0)
 
                           "editor.clj.doc"
                           (let [id (str cb)]
-                            (track! this id {:command :editor.clj.doc :cb cb :meta (:meta data)})
+                            ;; :result-type and :loc are the caller's, and both
+                            ;; renderers gate on them — `print-clj-doc` draws
+                            ;; only for :doc and `finish-jump-to-definition`
+                            ;; only for :jump. The old middleware echoed the
+                            ;; whole request back, which is how they arrived.
+                            (track! this id {:command :editor.clj.doc :cb cb
+                                             :meta (:meta data)
+                                             :result-type (:result-type data)
+                                             :loc (:loc data)})
                             (send this {:op "info" :id id
                                         :ns (or (:ns data) "user")
                                         :sym (:sym data)}))
+
+                          ("editor.eval.clj.cancel" "client.cancel-all")
+                          (interrupt! this)
 
                           "editor.clj.hints"
                           (let [id (str cb)]
@@ -291,6 +348,18 @@
     (track! client st-id (assoc record :command ::stacktrace))
     (send client {:op "analyze-last-stacktrace" :id st-id})))
 
+(defn- ->path
+  "cider's `:file`, as somewhere the editor can open.
+
+  `info` answers with a URL — `file:/…/src/probe.clj` for a project file and
+  `jar:file:/…/clojure-1.11.1.jar!/clojure/core.clj` for anything else on the
+  classpath. The jump stack takes a path and checks it exists, so the first
+  becomes one and the second becomes nil: there is nothing to open inside a
+  jar, and saying so beats jumping somewhere that is not there."
+  [file]
+  (when (and file (not (string/starts-with? file "jar:")))
+    (string/replace file #"^file:" "")))
+
 (defn- frames->text
   "orchard's frame list, as the block the exception widget shows."
   [frames]
@@ -304,15 +373,21 @@
   (forget! client id)
   (case command
     :editor.eval.clj
-    (if errored?
+    (do
+      ;; The next form goes out as soon as this one is finished, whether it
+      ;; produced a value or threw — a file does not stop evaluating because
+      ;; one form in the middle of it failed, and the failure is drawn beside
+      ;; the form it belongs to.
+      (send-form! client cb (:data record) (:next record))
+      (if errored?
       ;; The exception is drawn now from what nREPL printed, and again with
       ;; orchard's frames when they arrive. Drawing twice is deliberate: the
       ;; first is instant and the second is better.
-      (do (object/raise clients/clients :message
-                        [cb :editor.eval.clj.exception (->exception record)])
-          (request-stacktrace! client id record))
-      (object/raise clients/clients :message
-                    [cb :editor.eval.clj.result (->result record)]))
+        (do (object/raise clients/clients :message
+                          [cb :editor.eval.clj.exception (->exception record)])
+            (request-stacktrace! client id record))
+        (object/raise clients/clients :message
+                      [cb :editor.eval.clj.result (->result record)])))
 
     ::stacktrace
     (let [{:keys [class message stacktrace]} record]
@@ -331,8 +406,10 @@
                     :name (:name msg)
                     :args (:arglists-str msg)
                     :doc (:doc msg)
-                    :file (:file msg)
+                    :file (->path (:file msg))
                     :line (:line msg)
+                    :result-type (:result-type record)
+                    :loc (:loc record)
                     :meta meta}])
 
     :editor.clj.hints

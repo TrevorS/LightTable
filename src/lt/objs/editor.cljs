@@ -175,9 +175,22 @@
 (defn ->token
   "Returns token located as `pos` within editor `e`.
 
-  See [getTokenAt](http://codemirror.net/doc/manual.html#getTokenAt)."
+  See [getTokenAt](http://codemirror.net/doc/manual.html#getTokenAt).
+
+  Built field by field rather than with `js->clj`, which is what this did and
+  which silently returned nothing: CodeMirror constructs a token with `new
+  Token(...)`, and `js->clj` converts *plain* objects only — a class instance
+  comes back unchanged, so every `(:string token)` in the editor was nil. That
+  took out `find-symbol-at-cursor`, and with it documentation and
+  jump-to-definition, for every language that asked."
   [e pos]
-  (js->clj (.getTokenAt (->cm-ed e) (clj->js pos)) :keywordize-keys true))
+  (let [^js token (.getTokenAt (->cm-ed e) (clj->js pos))]
+    (when token
+      {:start (.-start token)
+       :end (.-end token)
+       :string (.-string token)
+       :type (.-type token)
+       :state (.-state token)})))
 
 (defn- ->token-js [e pos]
   (.getTokenAt (->cm-ed e) (clj->js pos)))

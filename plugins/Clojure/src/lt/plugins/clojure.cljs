@@ -50,7 +50,7 @@
 ;; Forward references. This namespace is written in call order rather than
 ;; definition order throughout, which the ClojureScript compiler reports as an
 ;; undeclared var — see plugins/Clojure/VENDORED.md.
-(declare clj-lang check-all find-project find-symbol-at-cursor run-local-server)
+(declare clj-lang check-all find-project find-symbol-at-cursor run-local-server buffer-ns)
 
 ;;****************************************************
 ;; highlighting
@@ -130,6 +130,7 @@
                       (object/raise clj-lang :eval! {:origin editor
                                                      :info (assoc (@editor :info)
                                                              :print-length (object/raise-reduce editor :clojure.print-length+ nil)
+                                                             :buffer-ns (buffer-ns editor)
                                                              :forms (or (forms-in editor)
                                                                         (whole-region editor)))})))
 (behavior ::on-eval.cljs
@@ -166,6 +167,7 @@
                                       [(->form editor form)]))
                             info (assoc info
                                         :forms forms
+                                        :buffer-ns (buffer-ns editor)
                                         :print-length (object/raise-reduce editor :clojure.print-length+ nil))]
                         (if (seq forms)
                           (object/raise clj-lang :eval! {:origin editor :info info})
@@ -715,7 +717,12 @@
                           (object/raise editor :editor.doc.show! result)))))
 
 (defn symbol-token? [s]
-  (re-seq #"[\w\$_\-\.\*\+\/\?\><!]" s))
+  ;; `(:string token)` is nil for a position CodeMirror has no token at, and
+  ;; re-seq throws on nil rather than returning it — so asking for
+  ;; documentation with the cursor just past the end of a line took the whole
+  ;; behavior down, and lt.object swallowed it.
+  (when (string? s)
+    (re-seq #"[\w\$_\-\.\*\+\/\?\><!]" s)))
 
 (defn find-symbol-at-cursor [editor]
   (let [loc (ed/->cursor editor)
