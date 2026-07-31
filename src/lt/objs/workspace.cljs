@@ -8,6 +8,7 @@
             [lt.objs.cache :as cache]
             [lt.objs.notifos :as notifos]
             [lt.objs.console :as console]
+            [clojure.set]
             [cljs.reader :as reader]
             [lt.util.load :as load]
             [lt.util.js :refer [now]]
@@ -117,14 +118,34 @@
        (object/update! current-ws [:watches] merge (persistent! results)))
      results)))
 
-(defn alert-folder [path]
+(defn- children-of
+  "The entries of `path` worth telling anyone about."
+  [path]
+  (set (remove #(re-seq files/ignore-pattern %) (files/full-path-ls path))))
+
+(defn alert-folder
+  "What to do when a watched directory changes.
+
+  Against a remembered listing rather than against the watch table, which is
+  what this compared before: it took the first child that was not being
+  watched and announced it as new. Files inside an open folder are mostly not
+  watched, so that was almost never the file that had just appeared — it was
+  whichever ordinary file happened to sort first, which already existed, so
+  the tree never learned about anything created in it. Creating a file in a
+  folder you had open did nothing until you closed and reopened it.
+
+  Diffing the listing also gets deletions of unwatched files for free, which
+  the old shape could not see at all."
+  [path known]
   (fn [_stat]
     (if (.existsSync bridge/files path)
-      (let [watches (:watches @current-ws)
-            neue (first (filter #(and (not (get watches %))
-                                      (not (re-seq files/ignore-pattern %)))
-                                (files/full-path-ls path)))]
-        (when neue
+      (let [now (children-of path)
+            before @known]
+        (reset! known now)
+        (doseq [gone (clojure.set/difference before now)]
+          (unwatch! gone :recursive)
+          (object/raise current-ws :watched.delete gone))
+        (doseq [neue (clojure.set/difference now before)]
           (watch! neue)
           (object/raise current-ws :watched.create neue (.statSync bridge/files neue))))
       (do
@@ -132,7 +153,10 @@
         (object/raise current-ws :watched.delete path)))))
 
 (defn folder->watch [path]
-  (let [handle (.watch bridge/files path watch-interval (alert-folder path))]
+  ;; The listing as it was when watching started, so the first change has
+  ;; something to be a change from.
+  (let [known (atom (children-of path))
+        handle (.watch bridge/files path watch-interval (alert-folder path known))]
     {:path path
      :close (fn [] (.close handle))}))
 

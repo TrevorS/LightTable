@@ -34,6 +34,7 @@
             [lt.objs.editor :as editor]
             [lt.objs.editor.pool :as pool]
             [lt.objs.files :as files]
+            [lt.objs.sidebar.workspace :as sidebar-ws]
             [lt.objs.tabs :as tabs]
             [lt.objs.workspace :as workspace])
   (:require-macros [lt.macros :refer [behavior]]))
@@ -77,6 +78,10 @@
                                     tabs))]
     {:open open
      :active (or active 0)
+     ;; Which folders were expanded. Reopening to a collapsed tree in a
+     ;; project you had opened four levels into is the same annoyance as
+     ;; reopening to no tabs, and the tree already tracks this for watching.
+     :open-dirs (vec (:open-dirs @sidebar-ws/tree))
      ;; What this session belongs to. Not decoration: it is what stops a
      ;; session being applied to a workspace it has nothing to do with.
      :folders (vec (:folders @workspace/current-ws))}))
@@ -137,6 +142,13 @@
                 :when line]
           (when-let [ed (first (pool/by-path path))]
             (editor/move-cursor ed {:line line :ch (or ch 0)})))
+        ;; Shallowest first: a folder has no tree item until its parent has
+        ;; been expanded, so opening in path order is opening in the order
+        ;; they can be found.
+        (doseq [dir (sort-by count (:open-dirs session))
+                :when (files/exists? dir)]
+          (when-let [item (sidebar-ws/find-by-path dir)]
+            (object/raise item :open!)))
         (when-let [{:keys [path]} (nth open (:active session) nil)]
           (when-let [ed (first (pool/by-path path))]
             (tabs/active! ed)))

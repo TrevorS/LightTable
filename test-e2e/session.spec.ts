@@ -131,3 +131,45 @@ test('a file deleted since last time is skipped rather than fatal', async () => 
     fs.rmSync(home, { recursive: true, force: true });
     fs.rmSync(work, { recursive: true, force: true });
 });
+
+test('and the folders that were expanded are expanded again', async () => {
+    const home = scratchDir('session-home-tree');
+    const work = scratchDir('session-work-tree');
+    fs.mkdirSync(path.join(work, 'nested'), { recursive: true });
+    fs.writeFileSync(path.join(work, 'nested', 'deep.txt'), 'deep\n');
+
+    const expandedIn = async (window: Page) => await window.evaluate(`(function () {
+        var kw = function (n) { return cljs.core.keyword.call(null, n); };
+        return cljs.core.clj__GT_js(cljs.core.vec(
+            cljs.core.get.call(null, cljs.core.deref(lt.objs.sidebar.workspace.tree),
+                               kw('open-dirs'))));
+    })()`) as string[];
+
+    const first = await launch({ LT_USER_DIR: home });
+    const firstWindow = await editorWindow(first);
+    // A folder in the workspace, expanded, and a file open so the session is
+    // written at all.
+    await firstWindow.evaluate(([d]) => {
+        const lt = (globalThis as any).lt, cljs = (globalThis as any).cljs;
+        lt.object.raise.call(null, lt.objs.workspace.current_ws,
+                             cljs.core.keyword.call(null, 'add.folder!'), d);
+    }, [work]);
+    await firstWindow.waitForTimeout(1500);
+    await firstWindow.evaluate(([d]) => {
+        const lt = (globalThis as any).lt, cljs = (globalThis as any).cljs;
+        const item = lt.objs.sidebar.workspace.find_by_path(d);
+        lt.object.raise.call(null, item, cljs.core.keyword.call(null, 'open!'));
+    }, [work]);
+    await firstWindow.waitForTimeout(500);
+    await open(firstWindow, path.join(work, 'nested', 'deep.txt'));
+    expect(await expandedIn(firstWindow)).toContain(work);
+    await shutDown(first);
+
+    const second = await launch({ LT_USER_DIR: home });
+    const secondWindow = await editorWindow(second);
+    await expect.poll(async () => await expandedIn(secondWindow)).toContain(work);
+
+    await shutDown(second);
+    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(work, { recursive: true, force: true });
+});

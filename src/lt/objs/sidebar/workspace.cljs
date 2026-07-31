@@ -147,8 +147,13 @@
 (behavior ::watched.create
           :triggers #{:watched.create}
           :reaction (fn [ws path]
-                      (when-not (and (find-by-path path)
-                                     (not (re-seq files/ignore-pattern (files/basename path))))
+                      ;; Read this as it is meant: add it when the tree does
+                      ;; not have it and it is not ignored. The `when-not (and
+                      ;; found (not ignored))` this replaces was true for an
+                      ;; ignored file, so watching a folder put .DS_Store into
+                      ;; the tree the moment one appeared.
+                      (when (and (not (find-by-path path))
+                                 (not (re-seq files/ignore-pattern (files/basename path))))
                         (when-let [parent (find-by-path (files/parent path))]
                           (when (:realized? @parent)
                             (if (files/dir? path)
