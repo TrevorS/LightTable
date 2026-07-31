@@ -17,7 +17,7 @@
             [lt.objs.clients :as clients]
             [lt.objs.notifos :as notifos]
             [lt.util.load :as load]
-            [lt.util.cljs :refer [js->clj]])
+            [lt.util.cljs])
   (:require-macros [lt.macros :refer [behavior defui]]))
 
 ;; Forward references: this namespace is written in call order — see
@@ -37,11 +37,8 @@
                               (let [out (.toString data)]
                                 (object/update! this [:buffer] str out)
                                 (when (> (.indexOf out "Connected") -1)
-                                  (do
-                                    (notifos/done-working)
-                                    (object/merge! this {:connected true})
-                                    ;(object/destroy! this)
-                                    )))))
+                                  (notifos/done-working)
+                                  (object/merge! this {:connected true})))))
 
 (behavior ::on-error
                   :triggers #{:proc.error}

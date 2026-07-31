@@ -5,8 +5,8 @@
             [lt.objs.editor :as ed]
             [lt.objs.files :as files]
             [lt.objs.clients :as clients]
-            [lt.util.dom :refer [$ append]])
-  (:require-macros [lt.macros :refer [behavior defui]]))
+            [lt.util.dom])
+  (:require-macros [lt.macros :refer [behavior]]))
 
 ;; Forward reference: this namespace is written in call order — see
 ;; plugins/CSS/VENDORED.md.
@@ -20,8 +20,9 @@
                    ".+?)"                ; Matches the URL string
                    "[\"']?\\)")))        ; Matches single, double, or no quotation mark followed by ')'
 
-(defn preprocess [file-path client-path code]
+(defn preprocess
   "Preprocess CSS to make it work as expected when injected."
+  [file-path client-path code]
   ; Matches a url() function containing a possibly quoted relative path. Captures just the path in group 1.
   (let [matches (distinct (re-seq relative-url-pattern code))
         diff (files/relative client-path file-path)]

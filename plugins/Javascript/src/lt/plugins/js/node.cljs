@@ -16,7 +16,7 @@
             [lt.objs.clients.tcp :as tcp]
             [lt.util.load :as load]
             [clojure.string :as string])
-  (:use [lt.util.js :only [wait ->clj]])
+  (:require [lt.util.js :refer [wait]])
   (:require-macros [lt.macros :refer [behavior]]))
 
 ;;****************************************************
@@ -199,8 +199,10 @@
   ;(load-tools this)
   )
 
-(defn wrap-source [src]
-  (str "(function (exports, require, module, __filename, __dirname) { " src " })")
+(defn wrap-source
+  "Left as-is. The commonjs wrapper this used to build was discarded on the
+  next line, so changelive! has always sent the source unwrapped."
+  [src]
   src)
 
 (defn handle-message [client msg]
@@ -212,9 +214,8 @@
                       (when (= "client.close" (:command msg))
                         (object/merge! (:proc @this) {:disconnecting true}))
                       (handle-message this msg)
-                      (when (= "editor.eval.js" (:command msg))
-                        ;(object/raise this :changelive! (js->clj (last msg) :keywordize-keys true))
-                        )
+                      ;; The :changelive! raise that used to be here was
+                      ;; commented out, leaving a `when` with no body.
                       ))
 
 (behavior ::refresh-scripts!

@@ -95,9 +95,8 @@
   (let [path (:path info)
         {:keys [project-path]} (when path (find-project {:path path}))]
     (if project-path
-      (do
-        (check-all {:path path
-                    :client (clients/client! :nrepl.client)}))
+      (check-all {:path path
+                  :client (clients/client! :nrepl.client)})
       (or (clients/by-name local-name)
           (run-local-server (clients/client! :nrepl.client))))))
 
@@ -517,8 +516,7 @@
                                          :start-line (dec (:line meta))}]]
                         (if (:stack result)
                           (object/raise obj :editor.eval.clj.exception result :passed)
-                          (do
-                            (object/raise obj :editor.result (:result result) loc))))))
+                          (object/raise obj :editor.result (:result result) loc)))))
 
 (behavior ::clj-result.inline-at-cursor
           :triggers #{:editor.eval.clj.result.inline-at-cursor}
@@ -529,8 +527,7 @@
                                          :start-line (-> res :meta :start)}]]
                         (if (:stack result)
                           (object/raise obj :editor.eval.clj.exception result :passed)
-                          (do
-                            (object/raise obj :editor.result (:result result) loc))))))
+                          (object/raise obj :editor.result (:result result) loc)))))
 
 (behavior ::clj-result.return
           :triggers #{:editor.eval.clj.result.return}

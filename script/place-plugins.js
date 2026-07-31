@@ -62,7 +62,14 @@ function main() {
 
         const dest = path.join(DEST, name);
         fs.rmSync(dest, { recursive: true, force: true });
-        fs.cpSync(dir, dest, { recursive: true });
+        // verbatimSymlinks, because node's cp resolves a symlink's target to an
+        // absolute path unless told not to. A plugin's node_modules/.bin holds
+        // relative links like ../acorn/bin/acorn; copied without this they
+        // became absolute paths into whoever's checkout built the release, and
+        // codesign rejected the app bundle for it — "invalid destination for
+        // symbolic link in bundle", followed by "the signature did not verify;
+        // the app may not launch".
+        fs.cpSync(dir, dest, { recursive: true, verbatimSymlinks: true });
         console.log('placed ' + name);
     }
 }

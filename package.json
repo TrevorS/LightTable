@@ -7,7 +7,6 @@
     "@eslint/js": "^10.0.1",
     "@playwright/test": "^1.62.1",
     "@types/node": "^24.10.1",
-    "clj-kondo": "^2025.10.23",
     "electron": "43.2.0",
     "eslint": "^10.8.0",
     "shadow-cljs": "^3.4.4",
@@ -24,7 +23,7 @@
     "place:user-plugin": "node -e \"require('fs').copyFileSync('deploy/core/lighttable/user.js','deploy/core/User/user_compiled.js')\"",
     "build:plugins": "tsc -p plugins/TypeScript/tsconfig.json && npm run --silent deps:plugins && node script/place-plugins.js",
     "deps:plugins": "node script/install-plugin-deps.js",
-    "lint:cljs": "clj-kondo --fail-level error --lint src test deploy/core/User/src plugins/Clojure/src plugins/CSS/src plugins/HTML/src plugins/Javascript/src plugins/Paredit/src plugins/Python/src",
+    "lint:cljs": "node script/fetch-clj-kondo.js && .tools/clj-kondo --fail-level error --lint src test deploy/core/User/src plugins/Clojure/src plugins/CSS/src plugins/HTML/src plugins/Javascript/src plugins/Paredit/src plugins/Python/src",
     "lint:js": "eslint script src-electron src-window src-worker src-browser test-electron test-e2e",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.window.json --noEmit && tsc -p tsconfig.worker.json --noEmit && tsc -p tsconfig.browser.json --noEmit && tsc -p plugins/TypeScript/tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit",
     "test": "npm run --silent test:cljs && npm run --silent test:electron",
@@ -33,6 +32,10 @@
     "test:e2e": "script/e2e.sh",
     "docs:api": "node script/gen-api-docs.js",
     "docs:check": "node script/gen-api-docs.js --check",
-    "check": "npm run --silent lint:cljs && npm run --silent lint:js && npm run --silent typecheck && npm run --silent docs:check"
+    "check": "npm run --silent lint:cljs && npm run --silent lint:js && npm run --silent typecheck && npm run --silent docs:check",
+    "tools": "node script/fetch-clj-kondo.js"
+  },
+  "allowScripts": {
+    "fsevents": false
   }
 }

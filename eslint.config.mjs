@@ -86,7 +86,8 @@ export default [
             sourceType: 'commonjs',
             globals: {
                 require: 'readonly', module: 'writable', exports: 'writable',
-                process: 'readonly', __dirname: 'readonly', console: 'readonly',
+                process: 'readonly', __dirname: 'readonly', __filename: 'readonly',
+                console: 'readonly',
                 Buffer: 'readonly', fetch: 'readonly', WebSocket: 'readonly',
                 setTimeout: 'readonly', clearTimeout: 'readonly',
                 setInterval: 'readonly', clearInterval: 'readonly',

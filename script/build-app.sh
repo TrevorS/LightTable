@@ -88,6 +88,12 @@ cp -R deploy/settings $RELEASE_RSRC/app/
 cp -R deploy/plugins "${RELEASE_RSRC}"/app/
 rm -rf "${RELEASE_RSRC}"/app/plugins/*/.git
 
+# The .bin shims npm writes beside a package are command-line entry points, and
+# nothing in the shipped application runs one — plugins `require` their modules,
+# and `which` searches the user's PATH rather than anything in here. They are
+# also the only thing that has ever made this bundle unsignable, so they go.
+find "${RELEASE_RSRC}"/app -type d -name .bin -prune -exec rm -rf {} +
+
 #----------------------------------------------------------------------
 # Polishing
 #----------------------------------------------------------------------

@@ -8,8 +8,8 @@
             ;; error rather than a warning.
             [lt.objs.editor.pool :as pool]
             [lt.objs.clients :as clients]
-            [lt.util.dom :refer [$ append]])
-  (:require-macros [lt.macros :refer [behavior defui]]))
+            [lt.util.dom])
+  (:require-macros [lt.macros :refer [behavior]]))
 
 ;; Forward reference: this namespace is written in call order — see
 ;; plugins/HTML/VENDORED.md.

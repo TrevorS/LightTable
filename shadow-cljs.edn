@@ -14,6 +14,15 @@
 
  :dependencies []
 
+ ;; Closure Compiler bundles a protobuf that reads memory through
+ ;; sun.misc.Unsafe, and every JDK since 24 prints four lines about it on every
+ ;; compile. Nothing here can act on that — it is a transitive dependency of a
+ ;; transitive dependency — and four unactionable lines at the top of every
+ ;; build are how people learn to stop reading build output. Saying "allow" is
+ ;; only louder-or-quieter: when the JDK finally removes the API the flag will
+ ;; not save it, and the failure will be loud and upstream's to fix.
+ :jvm-opts ["--sun-misc-unsafe-memory-access=allow"]
+
  :builds
  {:app
   {:target     :browser
@@ -126,7 +135,29 @@
                 :resolve {"fs" {:target :file
                                 :file "src-window/fs-stub-shim.js"}
                           "fs/promises" {:target :file
-                                         :file "src-window/fs-stub-shim.js"}}}}
+                                         :file "src-window/fs-stub-shim.js"}}}
+
+   ;; This build compiles the same sources as :app plus ClojureScript's own
+   ;; compiler, and its output is analysis data rather than code anything runs.
+   ;; :app is the build that polices our source — it is warning-free and stays
+   ;; that way — so what is left here is upstream telling us about upstream:
+   ;;
+   ;;   :extending-base-js-type   lt.util.cljs extends js/String and js/Array
+   ;;                             on purpose, and :app already says so
+   ;;   :redef                    cljs.core$macros redefines names from
+   ;;                             cljs.core, which is what a macro namespace
+   ;;                             compiled for self-hosting does
+   ;;   :undeclared-var           cljs/analyzer/api.cljc reads `clojure`,
+   ;;                             `java` and `class`, none of which exist in
+   ;;                             ClojureScript. Reachable only because
+   ;;                             lt.objs.cljs-compiler runs cljs.js.
+   ;;
+   ;; Nine warnings nobody can act on train people to skim a build log, so they
+   ;; are named and silenced rather than tolerated.
+   :compiler-options {:optimizations :simple
+                      :warnings {:extending-base-js-type false
+                                 :redef false
+                                 :undeclared-var false}}}
 
   ;; Runs under node, so only namespaces that load without a DOM or an Electron
   ;; runtime can be exercised here. Anything needing the real app is covered by

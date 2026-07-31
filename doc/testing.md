@@ -92,6 +92,21 @@ offline, and a devtools client that polled a port that was not there.
   defined`. Rebuilding the app without re-running `script/place-plugins.js`
   produces exactly that, and the startup-console assertion is what says so.
 
+## The linter is a pinned binary
+
+`npm run lint:cljs` fetches clj-kondo from its GitHub release, checks it
+against a digest pinned in [`script/fetch-clj-kondo.js`](../script/fetch-clj-kondo.js),
+and caches it in `.tools/`. That replaced the `clj-kondo` npm package, which
+wrapped `binwrap`, which depends on `request`, which has been deprecated since
+2020 — eight advisories reached this repository through it, three critical, all
+of them marked "no fix available". It had also stopped working: npm blocks
+dependency install scripts by default now, so a fresh clone got the package
+without the binary it exists to install.
+
+Fetching the binary ourselves is what the repository's own policy already
+allowed — source in the repository, binaries fetched at build time, pinned and
+checksummed.
+
 ## Running one thing
 
 ```

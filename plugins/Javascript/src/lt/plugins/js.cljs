@@ -82,11 +82,10 @@
              :ch (.-column end)}})))
 
 (defn code->forms [text]
-  (let [forms (try
-                (-> text
-                    (parse)
-                    (->body)
-                    (->forms)))
+  (let [forms (-> text
+                  (parse)
+                  (->body)
+                  (->forms))
         lines (vec (string/split-lines text))]
     (for [f forms
           :let [^js loc (:loc f)

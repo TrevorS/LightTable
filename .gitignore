@@ -64,3 +64,6 @@
 /playwright-report/
 /blob-report/
 /.playwright/
+
+# The pinned clj-kondo binary, fetched by script/fetch-clj-kondo.js.
+/.tools/

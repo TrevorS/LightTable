@@ -20,6 +20,10 @@
 const { execFileSync } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
+// The same pinned binary `npm run lint:cljs` uses. This used to shell out to
+// `npx --no-install clj-kondo`, which stopped resolving the day the npm
+// wrapper was dropped for a checksummed download.
+const cljKondo = require('./fetch-clj-kondo.js');
 
 const ROOT = path.join(__dirname, '..');
 const OUT_DIR = path.join(ROOT, 'doc', 'api');
@@ -53,7 +57,6 @@ const KIND = {
 
 function analyze() {
   const args = [
-    '--no-install', 'clj-kondo',
     '--lint', NAMESPACES.map((n) => n.file).join(':'),
     '--config',
     // skip-comments because a (comment ...) block is a scratchpad, and
@@ -61,7 +64,7 @@ function analyze() {
     // ever been able to reach.
     '{:skip-comments true :output {:analysis {:arglists true} :format :json} :linters {}}',
   ];
-  const out = execFileSync('npx', args, {
+  const out = execFileSync(cljKondo.ensure(), args, {
     cwd: ROOT,
     encoding: 'utf8',
     maxBuffer: 64 * 1024 * 1024,

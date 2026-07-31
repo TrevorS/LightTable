@@ -70,6 +70,15 @@ jobs:
           key: m2-${{ runner.os }}-${{ hashFiles('shadow-cljs.edn', 'package-lock.json') }}
           restore-keys: m2-${{ runner.os }}-
 
+      # The linter is a 55MB binary fetched from a GitHub release and checked
+      # against a pinned digest, so it is worth not fetching on every run. Keyed
+      # on the script because the version and the digests both live in it.
+      - name: Cache clj-kondo
+        uses: actions/cache@v4
+        with:
+          path: .tools
+          key: clj-kondo-${{ runner.os }}-${{ hashFiles('script/fetch-clj-kondo.js') }}
+
       - name: Install build tooling
         run: npm ci
 
