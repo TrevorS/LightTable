@@ -227,9 +227,21 @@ const LSP_ACTION_PICK = `(function () {
     if (!popup) return 'no popup';
     // .lsp-action, not li.button: the popup's own cancel is one of those.
     var buttons = popup.querySelectorAll('li.lsp-action');
-    if (!buttons.length) return 'no actions';
+    if (!buttons.length) { lt.objs.command.exec_BANG_(cljs.core.keyword.call(null,'popup.escape')); return 'no actions'; }
     buttons[0].click();
     return buttons.length + ' offered';
+})()`;
+
+// A modal left open is a modal every later step is behind, and on a headed
+// run it is an editor that looks hung. Whatever happened above, nothing is
+// waiting for a click after this.
+const LSP_DISMISS = `(function () {
+    var closed = 0;
+    for (var i = 0; i < 5 && document.querySelector('.popup'); i++) {
+        lt.objs.command.exec_BANG_(cljs.core.keyword.call(null, 'popup.escape'));
+        closed += 1;
+    }
+    return { closed: closed, stillOpen: !!document.querySelector('.popup') };
 })()`;
 
 const LSP_FORMAT = `(function () {
@@ -536,6 +548,7 @@ app.on('ready', function () {
                 lsp.actions = { offered: actionOffer };
                 lsp.afterAction = JSON.parse(
                     await w.webContents.executeJavaScript(${JSON.stringify(LSP_REPORT)}));
+                lsp.dismissed = await w.webContents.executeJavaScript(${JSON.stringify(LSP_DISMISS)});
 
                 // Formatting: the one LSP surface that changes the buffer the
                 // user is looking at, so it goes into the editor rather than
@@ -1355,6 +1368,10 @@ async function main(): Promise<void> {
          !!lsp.afterAction && /^FIXED /.test(lsp.afterAction.firstLine || '')],
         ['carrying the diagnostics the fix is for',
          !!lsp.afterAction && /withDiagnostics=[1-9]/.test(lsp.afterAction.firstLine || '')],
+        // Choosing an action closes the popup. Left open it would sit in
+        // front of every later step, and on a headed run it reads as a hang.
+        ['and choosing one closes the popup',
+         !!lsp.dismissed && lsp.dismissed.closed === 0 && lsp.dismissed.stillOpen === false],
         // Formatting. The fixture replaces the first line with a fixed string
         // that echoes the options back, so this says both that the edit was
         // applied and that the client sent what the editor is configured with

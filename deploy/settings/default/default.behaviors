@@ -215,8 +215,6 @@
  [:editor :lt.objs.editor.lsp/rename]
  [:editor :lt.objs.editor.lsp/format]
  [:editor :lt.objs.editor.lsp/code-actions]
- [:lsp.action.selector :lt.objs.editor.lsp/action-selected]
- [:lsp.action.selector :lt.objs.editor.lsp/action-selector-close]
  ;; ::format-on-save is deliberately not here. Formatting somebody's
  ;; file on save is a strong opinion, so it is a line they add.
  [:app :lt.objs.editor.lsp/shutdown-servers-on-close]

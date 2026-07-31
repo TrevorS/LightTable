@@ -803,39 +803,28 @@
 (defn- action-title [action]
   (or (:title action) "(untitled action)"))
 
-(defui action-button [obj action]
-  ;; Its own class, because the popup's cancel is an `li.button` too and
-  ;; "the first button" would otherwise mean the wrong thing to anything
-  ;; reading this list — a test, or a keyboard.
+(defui action-button [popup action cb]
+  ;; Its own class, because the popup's cancel is an `li.button` too.
   [:li.button.lsp-action (action-title action)]
   :click (fn []
-           (object/raise obj :selected action)))
+           (cb action)
+           (when-let [p @popup] (object/raise p :close!))))
 
-(behavior ::action-selected
-          :triggers #{:selected}
-          :reaction (fn [this action]
-                      (when-let [cb (:cb @this)]
-                        (cb action))
-                      (object/raise this :close!)))
+(defn- offer-actions!
+  "Ask which action, then run it.
 
-(behavior ::action-selector-close
-          :triggers #{:close!}
-          :reaction (fn [this]
-                      (object/raise (:popup @this) :close!)
-                      (object/destroy! this)))
-
-(object/object* ::action-selector
-                :tags #{:lsp.action.selector}
-                :init (fn [this actions cb]
-                        (object/merge!
-                         this
-                         {:cb cb
-                          :popup (popup/popup!
-                                  {:header "What would you like to do?"
-                                   :body [:ul.lsp-actions
-                                          (map (partial action-button this) actions)]
-                                   :buttons [popup/cancel-button]})})
-                        nil))
+  No object of its own. An earlier version created one to hold the callback,
+  the way lt.objs.connector's client selector does, and destroyed it when a
+  button was clicked — so dismissing the popup with Esc instead left the
+  object behind, tagged and reachable, holding a closure over the editor.
+  Closing over the callback here means there is nothing to clean up."
+  [actions cb]
+  (let [popup (atom nil)]
+    (reset! popup
+            (popup/popup! {:header "What would you like to do?"
+                           :body [:ul.lsp-actions
+                                  (map #(action-button popup % cb) actions)]
+                           :buttons [popup/cancel-button]}))))
 
 (defn- run-action!
   "Do what a chosen action says: an edit, a command, or both.
@@ -888,7 +877,7 @@
            ;; One action is not a choice. Offering a popup with a single
            ;; button in it is a dialog that exists to be dismissed.
            (= 1 (count result)) (run-action! ed (first result))
-           :else (object/create ::action-selector result #(run-action! ed %))))))))
+           :else (offer-actions! result #(run-action! ed %))))))))
 
 (behavior ::code-actions
           :triggers #{:editor.code-actions!}

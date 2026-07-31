@@ -146,6 +146,20 @@ the parse error is reported hundreds of lines later. And `__dirname` inside
 that harness is the *window's*, which one check exists to assert is undefined;
 the script's own is `SCRIPT_DIR` from `script/lib/paths.mts`.
 
+## Probing a running editor
+
+`script/lt-repl.sh` drives a real instance, and by default that instance uses
+the same home directory as the one you develop in — so a probe that calls
+`add.folder!` adds the folder to *your* workspace, and sessions then restore
+it. Give it a scratch home:
+
+```
+LT_USER_DIR=$(mktemp -d) script/lt-repl.sh start
+```
+
+The workspace and session live under `deploy/core/ltcache` in a tree run,
+which is gitignored; deleting it resets both.
+
 ## Running one thing
 
 ```
