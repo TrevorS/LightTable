@@ -11,6 +11,7 @@
             [lt.objs.thread :as thread]
             [lt.util.dom :as dom]
             [lt.objs.workspace :as workspace2]
+            [lt.objs.workspace-edit :as workspace-edit]
             [singultus.core :as crate]
             [singultus.binding :refer [bound]]
             [lt.util.js]
@@ -99,7 +100,7 @@
 (behavior ::clear!
           :triggers #{:clear!}
           :reaction (fn [this]
-                      (object/merge! this {:timeout nil :results (array) :result-count 0 ::time nil ::filesSearched nil :position [0 -1]})
+                      (object/merge! this {:timeout nil :results (array) :result-count 0 ::time nil ::filesSearched nil ::rewritten {} :position [0 -1]})
                       (dom/empty (->res this))))
 
 (behavior ::search!
@@ -133,8 +134,17 @@
                       (object/merge! this {::time (/ (:time info) 1000)
                                            ::filesSearched (:total info)})
                       (if (:replace? info)
-                        (do
-                          (notifos/done-working (str "Replaced " (:result-count @this) " results in " (/ (:time info) 1000) "s." ))
+                        (let [rewritten (::rewritten @this)
+                              res (when (seq rewritten)
+                                    (workspace-edit/apply-texts!
+                                     (str "Replace \"" (:search @this) "\" in workspace")
+                                     rewritten))]
+                          (object/merge! this {::rewritten {}})
+                          (if (:error res)
+                            (notifos/set-msg! (:error res) {:class "error"})
+                            (notifos/done-working
+                             (str "Replaced " (:result-count @this) " results in "
+                                  (:files res 0) " files in " (/ (:time info) 1000) "s.")))
                           (dom/empty (->res this)))
                         (notifos/done-working (str "Found " (:result-count @this) " results searching " (:total info) " files in " (/ (:time info) 1000) "s." )))))
 
@@ -191,6 +201,11 @@
                         (when (< (:result-count @this) result-threshold)
                           (dom/append (->res this) (->result-item result)))
                         (.push (:results @this) result)
+                        ;; A replace sends the rewritten text back instead of
+                        ;; writing it. Held until the walk finishes so the
+                        ;; whole replace is one action and one undo.
+                        (when-let [text (.-text result)]
+                          (object/update! this [::rewritten] assoc (.-file result) text))
                         (object/update! this [:result-count] + total))))
 
 (behavior ::focus

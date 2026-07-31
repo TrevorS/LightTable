@@ -136,6 +136,40 @@
         (remember! label befores)
         {:files (count by-file) :edits (count edits)}))))
 
+(defn apply-texts!
+  "Replace whole files, as one action.
+
+  The ranged [[apply!]] above is the right shape when a server hands back
+  ranges. Workspace search-and-replace does not have ranges — it matches by
+  line and rewrites with a regex — so asking it to invent them would be
+  arithmetic in the one place nobody would check it.
+
+  Everything else is shared: the same refusal to start with a file missing or
+  unsaved, the same write through an open editor, the same single undo. That
+  is the point of it being here rather than a `writeFileSync` in a worker,
+  which is what this replaced — search-and-replace rewrote files that were
+  open in a tab and told no one, so the buffer and the disk disagreed until
+  something else saved over it."
+  [label texts]
+  (let [texts (into {} (remove (fn [[path _]] (nil? path)) texts))
+        edits (mapv (fn [[path _]] {:path path}) texts)]
+    (cond
+      (empty? texts)
+      {:error "Nothing to change."}
+
+      (seq (missing edits))
+      {:error (str "Cannot find " (string/join ", " (missing edits)))}
+
+      (seq (unsaved edits))
+      {:error (str "Save first: " (string/join ", " (map files/basename (unsaved edits))))}
+
+      :else
+      (let [befores (into {} (for [[path _] texts] [path (read-text path)]))]
+        (doseq [[path text] texts]
+          (write! path text))
+        (remember! label befores)
+        {:files (count texts)}))))
+
 (defn undo!
   "Put back what the last workspace edit changed."
   []

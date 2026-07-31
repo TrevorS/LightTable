@@ -130,10 +130,12 @@
         (let [text (.toString buf "utf8")
               results (matching-lines text re)]
           (if (seq results)
-            (do
-              (when replacement
-                (set! (.-lastIndex re) 0)
-                (.writeFileSync fs file (.replace text re replacement)))
+            ;; With a replacement, the rewritten text goes back rather than to
+            ;; disk. Writing here meant writing behind an open tab — see
+            ;; lt.objs.workspace-edit, which is what applies it now.
+            (if replacement
+              (do (set! (.-lastIndex re) 0)
+                  {:file file :results results :text (.replace text re replacement)})
               {:file file :results results})
             {:searched true}))))
     (catch :default e

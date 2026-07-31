@@ -182,14 +182,28 @@
         "the searcher divides this by 1000, so undefined is not an option")))
 
 (deftest exclusions-skip-directories-but-not-similar-files
+  (write! *root* "node_modules/left-pad/index.js" "NEEDLE in a dependency\n")
   (let [res (run {:pattern "NEEDLE"
-                  :exclude #"(^\..*)|target/"})
+                  :exclude #"(^\..*)|target/|node_modules/"})
         names (relative-names res)]
     (is (not (contains? names "target/ignored.txt")) "target/ is excluded")
     (is (not (contains? names ".hidden/ignored.txt")) "dotdirs are excluded")
+    (is (not (contains? names "node_modules/left-pad/index.js"))
+        "and the directory that is most of a modern project")
     (is (contains? names "target.txt")
         "a file named like an excluded directory is still searched")
     (is (contains? names "a.txt"))))
+
+(deftest an-excluded-directory-costs-nothing-to-skip
+  ;; Not merely absent from the results — never opened. Excluding after
+  ;; reading is the shape of a search that is correct and still slow, which is
+  ;; what a project's dependencies would make of every search.
+  (write! *root* "node_modules/left-pad/index.js" "NEEDLE in a dependency\n")
+  (write! *root* "node_modules/left-pad/quiet.js" "nothing here\n")
+  (let [with-it (run {:pattern "NEEDLE"})
+        without (run {:pattern "NEEDLE" :exclude #"node_modules/"})]
+    (is (= 2 (- (:total-files with-it) (:total-files without)))
+        "both files under it are skipped, not just the matching one")))
 
 (deftest an-explicitly-named-path-is-searched-even-if-excluded
   (let [res (fsearch/search {:paths [(.join path *root* "target")]
@@ -254,37 +268,60 @@
 ;; Replacing
 ;;*********************************************************
 
+(defn- rewritten
+  "The new text the searcher produced for `relative`, if it produced any.
+
+  A replacement is handed back rather than written: the worker cannot see
+  which files are open in a tab, and writing behind one is how a buffer and
+  the disk come to disagree. lt.objs.workspace-edit applies these."
+  [res relative]
+  (->> (:files res)
+       (filter #(= relative (-> (:file %)
+                                (string/replace (str *root* (.-sep path)) "")
+                                (string/replace "\\" "/"))))
+       first
+       :text))
+
 (deftest replacement-rewrites-only-what-matched
   (let [res (run {:pattern "NEEDLE" :replacement "THREAD"})]
     (is (= 6 (:matched-files res)))
-    (is (= "alpha beta\ngamma THREAD delta\nepsilon\n" (read-file "a.txt")))
+    (is (= "alpha beta\ngamma THREAD delta\nepsilon\n" (rewritten res "a.txt")))
     (is (= "no match here\nTHREAD again and THREAD twice\nTHREAD alone\n"
-           (read-file "b.txt"))
+           (rewritten res "b.txt"))
         "both matches on a line are replaced, though the line is reported once")
-    (is (= "nothing of interest\n" (read-file "quiet.txt"))
+    (is (nil? (rewritten res "quiet.txt"))
         "a file with no match is not rewritten")))
+
+(deftest a-replacement-does-not-touch-the-disk
+  ;; The bug this shape exists to stop: the worker used to writeFileSync here,
+  ;; including over files that were open in a tab.
+  (let [before (read-file "a.txt")]
+    (run {:pattern "NEEDLE" :replacement "THREAD"})
+    (is (= before (read-file "a.txt"))
+        "the searcher reports what to write; it does not write it")))
 
 (deftest replacement-is-case-insensitive-when-the-search-is
   (let [res (run {:pattern "needle" :replacement "THREAD"})]
     (is (= 7 (:matched-files res)))
-    (is (= "deeper THREAD in lower case\n" (read-file "nested/deeper/d.txt")))
-    (is (= "gamma THREAD delta" (second (string/split-lines (read-file "a.txt"))))
+    (is (= "deeper THREAD in lower case\n" (rewritten res "nested/deeper/d.txt")))
+    (is (= "gamma THREAD delta" (second (string/split-lines (rewritten res "a.txt"))))
         "an insensitive search replaces the differently-cased match too")))
 
 (deftest replacement-leaves-binaries-untouched
-  (run {:pattern "NEEDLE" :replacement "THREAD"})
-  (let [after (.readFileSync fs (.join path *root* "blob.bin"))]
-    (is (= 13 (.-length after))
-        "rewriting a binary as UTF-8 would corrupt it")))
+  (let [res (run {:pattern "NEEDLE" :replacement "THREAD"})]
+    (is (nil? (rewritten res "blob.bin"))
+        "rewriting a binary as UTF-8 would corrupt it")
+    (is (= 13 (.-length (.readFileSync fs (.join path *root* "blob.bin")))))))
 
 (deftest a-regex-replacement-can-use-a-capture
   (write! *root* "cap.txt" "value = 1\n")
-  (let [res (fsearch/search {:paths [(.join path *root* "cap.txt")]
+  (let [seen (atom [])
+        res (fsearch/search {:paths [(.join path *root* "cap.txt")]
                              :pattern "/value = (\\d+)/"
                              :replacement "value = $1$1"
-                             :on-file identity})]
+                             :on-file #(swap! seen conj %)})]
     (is (= 1 (:matched-files res)))
-    (is (= "value = 11\n" (read-file "cap.txt")))))
+    (is (= "value = 11\n" (:text (first @seen))))))
 
 (deftest searching-without-a-replacement-changes-nothing
   (let [before (read-file "a.txt")]
