@@ -121,14 +121,60 @@ The value is read by the Clojure reader and has to be a **symbol**, so the
 quotes have to come off. The error names neither the middleware nor the
 quoting.
 
-## Scope
+## What was verified
 
-- Files: `plugins/Clojure/src/lt/plugins/clojure/nrepl.cljs` (+~80),
-  `plugins/Clojure/src/lt/plugins/clojure.cljs`, `plugins/Clojure/clojure.behaviors`
-- Named units: 1 connector entry, `repl-type` tracking, an `:editor.eval.cljs`
-  branch in `::nrepl-send!`, and the environment choice
-- Verification: live against this repository's own shadow-cljs build and
-  against a Leiningen project with piggieback; a smoke check would need a
-  ClojureScript runtime, which is more than the fixture server currently is
-- Risk: public API no · data migration no · cross-module no · reversible yes ·
-  external blocker no
+A `.cljs` file in a Leiningen project, evaluated from the editor:
+
+```
+(ns cljsprobe)              nil
+(defn add [a b] (+ a b))    #'cljsprobe/add
+(add 20 22)                 42
+(js/Math.max 3 7)           7
+```
+
+Real ClojureScript, compiled and run in node, with a result beside each form —
+the same path Clojure takes, differing only in which session evaluates.
+
+The shadow route was driven from the editor too, in a project holding only a
+`shadow-cljs.edn`: the server started, the second session was cloned and
+switched, and `:repl-type` came back `:cljs`. Evaluation then reported *No
+available JS runtime*, which is shadow telling the truth — `node-repl` needs
+something to run in and that scratch project had nothing built. The machinery
+either side of it is verified.
+
+Not covered by `make smoke`: the fixture server there answers LSP, and a
+ClojureScript runtime is a great deal more than that.
+
+## A REPL against the editor itself
+
+The interesting case, and close to what Light Table was named for. Light
+Table's window *is* a ClojureScript program — the `:app` build in this
+repository's `shadow-cljs.edn` — so `shadow.cljs.devtools.api/nrepl-select
+:app` would attach a ClojureScript REPL to **the editor you are typing in**.
+Evaluating a form would change the running editor.
+
+It does not work today, and what stands in the way is build configuration
+rather than anything in the plugin. `deploy/core/lighttable/bootstrap.js` is a
+shadow **release** build, and a release carries no devtools client — so there
+is no runtime for shadow to attach to and `nrepl-select` has nothing to select.
+A `shadow-cljs watch app` build does carry one; it opens a websocket back to
+the shadow server, and an editor loaded from that output is a live
+ClojureScript runtime.
+
+So the missing piece is a development build mode: a `watch:cljs` script, an
+editor launched against its output, and shadow's server running beside it.
+Everything after that already works, because it is the same `nrepl-select` this
+page measured.
+
+Worth being exact about the scope of it. In a packaged release, no — a shipped
+editor should not hold a websocket open to a development server, and the
+release build has no client with which to. In development, yes, and that is
+where an editor you can change while using it is worth having.
+
+## Still to do
+
+- A development build mode, for the section above.
+- The shadow route selects `node-repl` rather than a named build. `nrepl-select
+  :build` is what attaches to a runtime the user already has open, and choosing
+  *which* build is a question the project can answer — `shadow-cljs.edn` lists
+  them.
