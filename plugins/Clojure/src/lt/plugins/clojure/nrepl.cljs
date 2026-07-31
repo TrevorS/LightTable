@@ -636,7 +636,13 @@
               :editor.eval.clj.cancel
               :editor.eval.cljs
               :editor.clj.doc
-              :editor.clj.hints]})
+              :editor.clj.hints]
+   ;; What this answers that a language server would otherwise, said rather
+   ;; than inferred from the command names — see lt.objs.providers. A REPL
+   ;; wins these two because it knows what is actually loaded: the docstring
+   ;; of the function you redefined a minute ago, and completions that include
+   ;; locals. It does not do jump-to-definition, so clojure-lsp keeps that.
+   :provides #{:doc :completion}})
 
 (behavior ::init-session
           :triggers #{:new-session}

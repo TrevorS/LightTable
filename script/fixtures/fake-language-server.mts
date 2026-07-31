@@ -30,6 +30,7 @@ let buffer = Buffer.alloc(0);
 let changes = 0;
 let lastText = '';
 let lastVersion = 0;
+let lastCommand = '';
 
 function send(message: Record<string, unknown>): void {
     const body = Buffer.from(JSON.stringify(Object.assign({ jsonrpc: '2.0' }, message)), 'utf8');
@@ -48,7 +49,8 @@ function publish(uri: string): void {
                 {
                     range: { start: { line: 0, character: 0 }, end: { line: 0, character: 1 } },
                     message: 'changes=' + changes + ' version=' + lastVersion +
-                             ' last=' + JSON.stringify(lastText),
+                             ' last=' + JSON.stringify(lastText) +
+                             (lastCommand ? ' ran=' + lastCommand : ''),
                     severity: 1,
                     source: 'fake'
                 },
@@ -84,7 +86,8 @@ function handle(msg: LspMessage): void {
                     textDocumentSync: { openClose: true, change: CHANGE_INCREMENTAL },
                     // Enough for the client to earn its :formattable tag and
                     // send a request worth answering.
-                    documentFormattingProvider: true
+                    documentFormattingProvider: true,
+                    codeActionProvider: true
                 },
                 serverInfo: { name: 'fake-language-server' }
             }
@@ -120,6 +123,39 @@ function handle(msg: LspMessage): void {
                          ' insertSpaces=' + msg.params.options.insertSpaces
             }]
         });
+    case 'textDocument/codeAction':
+        // Two, so the client has to offer a choice rather than apply the only
+        // one. The first carries an edit; the second carries a command, which
+        // is the other half of the shape a server may send.
+        return send({
+            id: msg.id,
+            result: [
+                {
+                    title: 'Fix the first line',
+                    kind: 'quickfix',
+                    edit: {
+                        changes: {
+                            [msg.params.textDocument.uri]: [{
+                                range: { start: { line: 0, character: 0 },
+                                         end: { line: 0, character: 10000 } },
+                                // How many diagnostics the client sent back
+                                // with the request: a fix is a fix *for* a
+                                // diagnostic, so a client that forgets to
+                                // include them gets nothing from a real server.
+                                newText: 'FIXED withDiagnostics=' +
+                                         (msg.params.context.diagnostics || []).length
+                            }]
+                        }
+                    }
+                },
+                { title: 'Run a command instead',
+                  kind: 'refactor',
+                  command: { command: 'fake.doSomething', arguments: [1, 2] } }
+            ]
+        });
+    case 'workspace/executeCommand':
+        lastCommand = msg.params.command;
+        return send({ id: msg.id, result: null });
     case 'shutdown':
         return send({ id: msg.id, result: null });
     case 'exit':

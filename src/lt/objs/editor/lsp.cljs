@@ -41,6 +41,8 @@
             [lt.objs.editor.pool :as pool]
             [lt.objs.jump-stack :as jump-stack]
             [lt.objs.notifos :as notifos]
+            [lt.objs.popup :as popup]
+            [lt.objs.providers :as providers]
             [lt.objs.search :as search]
             [lt.objs.sidebar.command :as scmd]
             [lt.objs.tabs :as tabs]
@@ -171,6 +173,7 @@
    (for [d ds] (->diagnostic d))])
 
 (defn- clear-diagnostics! [ed]
+  (object/merge! ed {::diagnostics []})
   (doseq [widget (::widgets @ed)]
     (editor/remove-line-widget ed widget))
   (object/merge! ed {::widgets []}))
@@ -191,7 +194,11 @@
                        :when (and line (<= 0 line last-line))]
                    (editor/line-widget ed line (->diagnostics ds)
                                        {:coverGutter false})))]
-    (object/merge! ed {::widgets (vec widgets)})))
+    ;; The diagnostics themselves are kept, not only the widgets drawn from
+    ;; them: a code action is a fix *for* a diagnostic, and the server expects
+    ;; to be handed back the ones it sent for the range being asked about.
+    (object/merge! ed {::widgets (vec widgets)
+                       ::diagnostics (vec diagnostics)})))
 
 ;;*********************************************************
 ;; Telling the server about the document
@@ -314,25 +321,21 @@
 ;; it and nothing about the line you have not run yet. So diagnostics are the
 ;; server's, unconditionally.
 
-(defn- repl-answers?
-  "Whether a client this editor is already using handles `suffix`.
+(defn- answered-elsewhere?
+  "Whether a client this editor is already using answers `surface`.
 
   Asked of the clients the editor has, not of `lt.objs.eval/get-client!`,
   which would *start* a REPL to answer — the opposite of what a fallback
   should do.
 
-  Matched by suffix because the command is the language's, not Light Table's:
-  the Clojure plugin advertises `:editor.clj.doc` and a Python one would
-  advertise `:editor.python.doc`. What is common is the ending, so that is
-  what is compared, and core needs no table of languages to do it."
-  [ed suffix]
-  (boolean
-   (some (fn [client]
-           (and client
-                (clients/available? client)
-                (some #(string/ends-with? (str %) suffix)
-                      (:commands @client))))
-         (vals (:client @ed)))))
+  Which client answers what is [[lt.objs.providers]]; all this does is find
+  the connected ones and hand over their values."
+  [ed surface]
+  (providers/provided?
+   (->> (vals (:client @ed))
+        (filter #(and % (clients/available? %)))
+        (map deref))
+   surface))
 
 (defn- request-at-cursor!
   "Send `method` about the cursor's position in `ed`, if a server is connected."
@@ -427,7 +430,9 @@
     (:hoverProvider capabilities) (conj :docable)
     (:documentSymbolProvider capabilities) (conj :navigable)
     (:documentFormattingProvider capabilities) (conj :formattable)
-    (:documentRangeFormattingProvider capabilities) (conj :range-formattable)))
+    (:documentRangeFormattingProvider capabilities) (conj :range-formattable)
+    ;; codeActionProvider is `true` or an options map, and both mean yes.
+    (:codeActionProvider capabilities) (conj :actionable)))
 
 (behavior ::tag-from-capabilities
           :triggers #{:lsp.ready}
@@ -447,7 +452,7 @@
                 answer instead: a REPL knows what is actually loaded, and
                 there is only one doc bar."
           :reaction (fn [ed]
-                      (when-not (repl-answers? ed ".doc")
+                      (when-not (answered-elsewhere? ed :doc)
                         (request-at-cursor!
                          ed "textDocument/hover"
                          (fn [{:keys [result]}]
@@ -482,7 +487,7 @@
                 one cursor, and a REPL knows where a var was actually defined
                 rather than where it appears to have been."
           :reaction (fn [ed]
-                      (when-not (repl-answers? ed ".jump-to-definition")
+                      (when-not (answered-elsewhere? ed :jump)
                         (request-at-cursor!
                          ed "textDocument/definition"
                          (fn [{:keys [result]}]
@@ -765,6 +770,140 @@
            (let [n (apply-to-editor! ed (->text-edits result))]
              (notifos/set-msg! (str "Formatted — " n " change"
                                     (when-not (= 1 n) "s"))))))))))
+
+(defn- diagnostics-in-range
+  "The server's own diagnostics overlapping `range`, sent back with the request.
+
+  Required by the protocol rather than optional: a quick fix is a fix *for a
+  diagnostic*, and a server given no diagnostics has nothing to offer a fix
+  for. This is why asking on a line with a red squiggle produces actions and
+  asking two lines above it produces none."
+  [ed]
+  (let [{:keys [line]} (editor/->cursor ed)]
+    (->> (::diagnostics @ed)
+         (filter (fn [d]
+                   (let [start (get-in d [:range :start :line])
+                         end (get-in d [:range :end :line])]
+                     (and start end (<= start line end)))))
+         vec)))
+
+(defn- action-title [action]
+  (or (:title action) "(untitled action)"))
+
+(defui action-button [obj action]
+  ;; Its own class, because the popup's cancel is an `li.button` too and
+  ;; "the first button" would otherwise mean the wrong thing to anything
+  ;; reading this list — a test, or a keyboard.
+  [:li.button.lsp-action (action-title action)]
+  :click (fn []
+           (object/raise obj :selected action)))
+
+(behavior ::action-selected
+          :triggers #{:selected}
+          :reaction (fn [this action]
+                      (when-let [cb (:cb @this)]
+                        (cb action))
+                      (object/raise this :close!)))
+
+(behavior ::action-selector-close
+          :triggers #{:close!}
+          :reaction (fn [this]
+                      (object/raise (:popup @this) :close!)
+                      (object/destroy! this)))
+
+(object/object* ::action-selector
+                :tags #{:lsp.action.selector}
+                :init (fn [this actions cb]
+                        (object/merge!
+                         this
+                         {:cb cb
+                          :popup (popup/popup!
+                                  {:header "What would you like to do?"
+                                   :body [:ul.lsp-actions
+                                          (map (partial action-button this) actions)]
+                                   :buttons [popup/cancel-button]})})
+                        nil))
+
+(defn- run-action!
+  "Do what a chosen action says: an edit, a command, or both.
+
+  A `CodeAction` may carry `:edit`, `:command`, or both, and the order is the
+  specification's — the edit first, then the command. A `Command` on its own
+  is the older shape and is still what several servers send.
+
+  The edit goes through [[lt.objs.workspace-edit]] rather than into the
+  editor: unlike formatting, a code action routinely rewrites files you are
+  not looking at — an import added at the top of another module, a symbol
+  renamed where it is used — and that is exactly what that namespace is for."
+  [ed action]
+  (let [conn (::conn @ed)]
+    (when-let [edit (:edit action)]
+      (let [outcome (we/apply! (action-title action) (->edits edit))]
+        (if (:error outcome)
+          (notifos/set-msg! (:error outcome) {:class "error"})
+          (notifos/set-msg! (str (action-title action) " — "
+                                 (:files outcome) " file"
+                                 (when-not (= 1 (:files outcome)) "s")
+                                 " changed, Editor: Undo workspace edit to take it back")))))
+    (when-let [command (:command action)]
+      ;; A Command nested inside a CodeAction, or the action itself when the
+      ;; server sent the older shape.
+      (let [cmd (if (string? (:command command)) command action)]
+        (lsp/request! conn "workspace/executeCommand"
+                      {:command (:command cmd) :arguments (or (:arguments cmd) [])}
+                      (fn [{:keys [error]}]
+                        (when error
+                          (notifos/set-msg! (str "Action failed: " (:message error))
+                                            {:class "error"}))))))))
+
+(defn- code-actions! [ed]
+  (when-let [conn (::conn @ed)]
+    (let [from (if (editor/selection? ed) (editor/->cursor ed "start") (editor/->cursor ed))
+          to (if (editor/selection? ed) (editor/->cursor ed "end") (editor/->cursor ed))]
+      (notifos/working "Asking for code actions")
+      (lsp/request!
+       conn "textDocument/codeAction"
+       {:textDocument {:uri (:uri (::doc @ed))}
+        :range {:start (sync/->position from) :end (sync/->position to)}
+        :context {:diagnostics (diagnostics-in-range ed)}}
+       (fn [{:keys [result error]}]
+         (notifos/done-working)
+         (cond
+           error (notifos/set-msg! (str "Code actions failed: " (:message error))
+                                   {:class "error"})
+           (empty? result) (notifos/set-msg! "No code actions here.")
+           ;; One action is not a choice. Offering a popup with a single
+           ;; button in it is a dialog that exists to be dismissed.
+           (= 1 (count result)) (run-action! ed (first result))
+           :else (object/create ::action-selector result #(run-action! ed %))))))))
+
+(behavior ::code-actions
+          :triggers #{:editor.code-actions!}
+          :type :user
+          :desc "Editor: Offer the language server's code actions"
+          :doc "Asks what can be done at the cursor, or over the selection —
+                quick fixes for a diagnostic, adding a missing import,
+                extracting a function. An action that edits files applies as
+                one workspace edit, so `Editor: Undo workspace edit` takes the
+                whole thing back."
+          :reaction (fn [ed]
+                      (cond
+                        (not (::conn @ed))
+                        (notifos/set-msg! "No language server for this editor.")
+
+                        (not (object/has-tag? ed :actionable))
+                        (notifos/set-msg! "This language server offers no code actions.")
+
+                        (answered-elsewhere? ed :code-action)
+                        (notifos/set-msg! "Something else is answering code actions here.")
+
+                        :else (code-actions! ed))))
+
+(cmd/command {:command :editor.code-actions
+              :desc "Editor: Code actions"
+              :exec (fn []
+                      (when-let [ed (pool/last-active)]
+                        (object/raise ed :editor.code-actions!)))})
 
 (behavior ::format
           :triggers #{:editor.format!}

@@ -209,6 +209,29 @@ const LSP_EDIT = `(function () {
     lt.objs.editor.__GT_cm_ed(ed).replaceRange('X', { line: 0, ch: 0 });
 })()`;
 
+const LSP_ACTIONS = `(function () {
+    var kw = function (n) { return cljs.core.keyword.call(null, n); };
+    var ed = cljs.core.first.call(null, lt.objs.editor.pool.by_path(${JSON.stringify(LSP_PROBE)}));
+    // Saved first, and not incidentally. An action's edits go through
+    // lt.objs.workspace-edit, which refuses to start when a file it would
+    // touch has unsaved changes — the keystroke check above left this buffer
+    // dirty, and without this the action is correctly declined.
+    lt.object.raise.cljs$core$IFn$_invoke$arity$variadic(
+        ed, kw('save'), cljs.core.prim_seq.cljs$core$IFn$_invoke$arity$2([], 0));
+    lt.object.raise.call(null, ed, kw('editor.code-actions!'));
+})()`;
+
+// Clicking the first button in the selector, which is how a person chooses.
+const LSP_ACTION_PICK = `(function () {
+    var popup = document.querySelector('.popup');
+    if (!popup) return 'no popup';
+    // .lsp-action, not li.button: the popup's own cancel is one of those.
+    var buttons = popup.querySelectorAll('li.lsp-action');
+    if (!buttons.length) return 'no actions';
+    buttons[0].click();
+    return buttons.length + ' offered';
+})()`;
+
 const LSP_FORMAT = `(function () {
     var kw = function (n) { return cljs.core.keyword.call(null, n); };
     var ed = cljs.core.first.call(null, lt.objs.editor.pool.by_path(${JSON.stringify(LSP_PROBE)}));
@@ -238,6 +261,10 @@ const LSP_REPORT = `JSON.stringify((function () {
         out.widgets = widgets ? cljs.core.count(widgets) : -1;
         out.tags = cljs.core.pr_str(cljs.core.get.call(null, st, kw('tags')));
         out.formattable = out.tags.indexOf(':formattable') !== -1;
+        out.actionable = out.tags.indexOf(':actionable') !== -1;
+        out.diagnosticsKept = cljs.core.count(
+            cljs.core.get.call(null, st, kw('lt.objs.editor.lsp/diagnostics')) ||
+            cljs.core.PersistentVector.EMPTY);
         out.firstLine = String(lt.objs.editor.__GT_val(ed)).split('\\n')[0];
         var el = lt.object.__GT_content(ed);
         out.messages = Array.from(el.querySelectorAll('.inline-diagnostic')).map(function (n) {
@@ -497,6 +524,18 @@ app.on('ready', function () {
                     after: JSON.parse(
                         await w.webContents.executeJavaScript(${JSON.stringify(LSP_REPORT)}))
                 };
+
+                // Code actions, which is the surface that offers a choice.
+                // The fixture sends two, so this exercises the selector rather
+                // than the shortcut for a single action.
+                step = 'asking the language server for code actions';
+                await w.webContents.executeJavaScript(${JSON.stringify(LSP_ACTIONS)});
+                await new Promise(function (r) { setTimeout(r, 2500); });
+                const actionOffer = await w.webContents.executeJavaScript(${JSON.stringify(LSP_ACTION_PICK)});
+                await new Promise(function (r) { setTimeout(r, 2500); });
+                lsp.actions = { offered: actionOffer };
+                lsp.afterAction = JSON.parse(
+                    await w.webContents.executeJavaScript(${JSON.stringify(LSP_REPORT)}));
 
                 // Formatting: the one LSP surface that changes the buffer the
                 // user is looking at, so it goes into the editor rather than
@@ -1300,6 +1339,20 @@ async function main(): Promise<void> {
          lsp.after.version === lsp.before.version + 1 && /version=2 /.test(lspFirst)],
         ['and redrawing rather than accumulating',
          !!lsp.after && lsp.after.widgets === 2 && lsp.after.messages.length === 3],
+        ['diagnostics are kept, not only drawn',
+         !!lsp.before && lsp.before.diagnosticsKept === 3],
+        ['an editor is tagged actionable when its server offers code actions',
+         !!lsp.before && lsp.before.actionable === true],
+        ['a choice of actions is offered rather than one applied',
+         lsp.actions && lsp.actions.offered === '2 offered'],
+        // The fixture's first action edits the file, and writes into the edit
+        // how many diagnostics the client sent with the request — so this
+        // says the context went out, which is what a real server needs to
+        // have anything to fix.
+        ['choosing one applies its workspace edit',
+         !!lsp.afterAction && /^FIXED /.test(lsp.afterAction.firstLine || '')],
+        ['carrying the diagnostics the fix is for',
+         !!lsp.afterAction && /withDiagnostics=[1-9]/.test(lsp.afterAction.firstLine || '')],
         // Formatting. The fixture replaces the first line with a fixed string
         // that echoes the options back, so this says both that the edit was
         // applied and that the client sent what the editor is configured with
@@ -1347,6 +1400,8 @@ async function main(): Promise<void> {
                 JSON.stringify(r.preloadStillRelative));
     console.log('self-eval: ' + ((r.selfEval && r.selfEval.compiler) || 'no report') +
                 ', results ' + ((r.selfEval && r.selfEval.results) || '-'));
+    console.log('code actions: ' + ((lsp.actions && lsp.actions.offered) || 'no report') +
+                ', applied ' + ((lsp.afterAction && lsp.afterAction.firstLine) || '-'));
     console.log('formatting: ' + ((lsp.formatted && lsp.formatted.firstLine) || 'no report'));
     console.log('language server: ' + (lsp.after ? lsp.after.widgets + ' widgets, ' +
                 lsp.after.messages.length + ' diagnostics, said "' + lspFirst + '"'

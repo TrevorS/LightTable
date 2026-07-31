@@ -94,6 +94,16 @@ stopped".
 
 The reason this is worth doing once: nothing here is new UI.
 
+Where a REPL could answer too, it does — a REPL knows what is actually loaded,
+including the function you redefined a minute ago, and there is only one doc
+bar. [`lt.objs.providers`](../src/lt/objs/providers.cljs) decides: a client
+says what it provides (`:provides #{:doc :completion}`), and one that says
+nothing is read by matching its commands against the suffix each surface is
+known by, so a plugin compiled in 2014 that supplies documentation keeps
+supplying it. That replaced a bare `(string/ends-with? command ".doc")`, which
+was correct and unreadable at the point of use — a string with no type, and no
+way to find every place it mattered.
+
 | LSP | rendered by | already exists as | |
 |---|---|---|---|
 | `publishDiagnostics` | inline widget at the line | `lt.objs.eval` inline results | **built** |
@@ -104,6 +114,19 @@ The reason this is worth doing once: nothing here is new UI.
 | `documentSymbol` | the search sidebar | `lt.objs.search` results list | **built** |
 | `rename` | a workspace edit | `lt.objs.workspace-edit` | **built** |
 | `formatting` | the buffer itself | CodeMirror's own undo | **built** |
+| `codeAction` | a popup of choices | `lt.objs.workspace-edit` | **built** |
+
+`codeAction` and `formatting` land on opposite sides of the same line, which
+is the clearest way to see what `lt.objs.workspace-edit` is for. A code action
+routinely rewrites files you are not looking at — an import added at the top
+of another module, a symbol renamed where it is used — so it goes through the
+workspace edit, refuses to start when anything it would touch is unsaved, and
+is one undo. Formatting only ever touches the buffer in front of you.
+
+Diagnostics are kept now, not only drawn as widgets: a code action is a fix
+*for* a diagnostic, and the server expects to be handed back the ones it sent
+for the range being asked about. A client that forgets them gets an empty list
+from a real server and looks broken.
 
 `formatting` is the one surface that does not go through
 `lt.objs.workspace-edit`, and the difference is worth stating. That
