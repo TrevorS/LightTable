@@ -1,0 +1,9 @@
+{:name "Rust"
+ :version "0.1.0"
+ :author "Light Table"
+ :desc "Rust: rust-analyzer, with clippy and rustfmt."
+ :source "https://github.com/TrevorS/LightTable"
+ :behaviors "rust.behaviors"
+
+ ;; None. The editor spawns the language server, not this plugin.
+ :capabilities #{}}

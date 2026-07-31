@@ -105,6 +105,9 @@
                 (when (.existsSync bridge/files full) full)))
             (string/split path #":")))))
 
+;; Projects already told about a missing server, so it is said once.
+(defonce ^:private announced (atom #{}))
+
 (defn server-command
   "Where to find the server for `root`, or nil if it is not installed.
 
@@ -134,17 +137,27 @@
 
 (defn- ensure-connection!
   "The connection for this root and server, started if it is not running."
-  [root {:keys [command args]}]
+  [root {:keys [command args init-options install] :as server}]
   (let [key [root command]]
     (or (get @connections key)
-        (when-let [full (server-command root command)]
+        (if-let [full (server-command root command)]
           (let [conn (lsp/connect! {:command full
                                     :args args
+                                    :init-options init-options
                                     :root-path root
                                     :object lsp-client})]
             (swap! connections assoc key conn)
             (notifos/set-msg! (str "Language server starting for " root))
-            conn)))))
+            conn)
+          ;; Said once per project, and with the install line the declaration
+          ;; carries. A missing server used to be silent, which is the same
+          ;; experience as a language server that does not work.
+          (do (when-not (contains? @announced key)
+                (swap! announced conj key)
+                (js/lt.objs.console.log (str command " is not installed, so " (:language-id server)
+                                  " has no language server here."
+                                  (when install (str " To install it: " install)))))
+              nil)))))
 
 ;;*********************************************************
 ;; Diagnostics, drawn inline

@@ -23,7 +23,8 @@
     :language-id "clojure"
     :root ["deps.edn" "project.clj" "shadow-cljs.edn" "bb.edn" ".lsp/config.edn"]
     :command "clojure-lsp"
-    :args []}]]
+    :args []
+    :install "brew install clojure-lsp/brew/clojure-lsp-native"}]]
  [:app :lt.plugins.clojure/set-default-cljs-client :auto]
  [:app :lt.plugins.clojure/set-cljs-browser-paths ["index.html" "resources/public/index.html" "public/index.html" "dev-resources/public/index.html"]]
 

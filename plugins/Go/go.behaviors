@@ -1,0 +1,13 @@
+{;; Go, as data. No code in this plugin.
+ ;;
+ ;; gopls also formats (gofmt) and organises imports, so one server covers it.
+ ;; staticcheck adds the lints `go vet` does not.
+ :+ {:lsp.client [(:lt.objs.editor.lsp/language-servers
+                   [{:tags [:editor.go]
+                     :language-id "go"
+                     :root ["go.mod" "go.work" ".git"]
+                     :command "gopls"
+                     :args []
+                     :install "go install golang.org/x/tools/gopls@latest"
+                     :init-options {:staticcheck true
+                                    :usePlaceholders true}}])]}}

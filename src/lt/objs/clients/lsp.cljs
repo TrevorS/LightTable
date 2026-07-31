@@ -145,7 +145,7 @@
 ;; Lifecycle
 ;;*********************************************************
 
-(defn- initialize-params [root-path]
+(defn- initialize-params [root-path init-options]
   {:processId nil
    :rootUri (sync/->uri root-path)
    :workspaceFolders [{:uri (sync/->uri root-path)
@@ -158,7 +158,10 @@
    ;; Only what is actually implemented is advertised. A client that claims a
    ;; capability it does not have gets sent things it will drop, and the server
    ;; has no way to know.
-   :clientInfo {:name "Light Table"}})
+   :clientInfo {:name "Light Table"}
+   ;; Server-specific settings, straight from the declaration. This is where
+   ;; rust-analyzer is told to run clippy.
+   :initializationOptions (or init-options {})})
 
 (defn connect!
   "Start `command` as a language server rooted at `root-path`.
@@ -167,7 +170,7 @@
   `initialize` result once the handshake finishes, which is where a caller
   learns what the server can actually do — sync kind, completion triggers, and
   the rest."
-  [{:keys [command args root-path object on-ready]}]
+  [{:keys [command args root-path object on-ready init-options]}]
   (let [conn (atom {:next-id 0
                     :pending {}
                     :queued []
@@ -193,7 +196,7 @@
     ;; The handshake. `initialize` is a request; `initialized` is the
     ;; notification that tells the server the client is ready for real work,
     ;; and skipping it leaves some servers waiting forever.
-    (request! conn "initialize" (initialize-params root-path)
+    (request! conn "initialize" (initialize-params root-path init-options)
               (fn [{:keys [result error]}]
                 (if error
                   (object/raise object :lsp.error

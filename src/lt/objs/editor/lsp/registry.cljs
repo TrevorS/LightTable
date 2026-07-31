@@ -13,8 +13,15 @@
     :language-id \"clojure\"
     :root [\"deps.edn\" \"project.clj\"]
     :command \"clojure-lsp\"
-    :args []}]
+    :args []
+    ;; Optional.
+    :install \"brew install clojure-lsp/brew/clojure-lsp-native\"
+    :init-options {}}]
   ```
+
+  `:install` is shown when the command is not on PATH, so a missing server
+  says how to get it. `:init-options` is sent as `initializationOptions` —
+  server-specific settings, like telling rust-analyzer to check with clippy.
 
   `:tags` is inside the entry rather than being the key. One server usually
   answers for several editor tags — clojure-lsp for four file extensions —

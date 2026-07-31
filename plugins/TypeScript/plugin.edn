@@ -1,7 +1,7 @@
 {:name "TypeScript"
  :version "0.1.0"
  :author "Light Table"
- :desc "TypeScript support: type-checks the project the open file belongs to, using the project's own compiler."
+ :desc "TypeScript and JavaScript: vtsls, plus type-checking with the project's own compiler."
  :source "https://github.com/LightTable/LightTable"
  :behaviors "typescript.behaviors"
 

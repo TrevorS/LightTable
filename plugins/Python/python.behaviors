@@ -13,4 +13,22 @@
                      :lt.plugins.python/watch-src
                      [:lt.object/add-tag :watchable]]
      :files [(:lt.objs.files/file-types [{:name "Python" :exts [:py :pyw] :mime "text/x-python" :tags [:editor.python]}])]
-     :python.lang [:lt.plugins.python/eval! :lt.plugins.python/connect]}}
+     :python.lang [:lt.plugins.python/eval! :lt.plugins.python/connect]
+     ;; pyright, for everything the IPython client cannot answer: it knows the
+     ;; file, the client knows the session. Where both could answer,
+     ;; lt.objs.providers decides.
+     ;;
+     ;; ruff is the other half of a modern Python setup — lint and format —
+     ;; and it needs a second server for one language, which the registry does
+     ;; not do yet. See doc/lsp-architecture.md.
+     ;;
+     ;; :root ends with .git because a directory of scripts is a real project.
+     ;; Without a root the server gets the file's own directory and forgets
+     ;; everything when you open a sibling.
+     :lsp.client [(:lt.objs.editor.lsp/language-servers
+                   [{:tags [:editor.python]
+                     :language-id "python"
+                     :root ["pyproject.toml" "setup.py" "setup.cfg" "requirements.txt" ".git"]
+                     :command "pyright-langserver"
+                     :args ["--stdio"]
+                     :install "pip install pyright  (or npm i -g pyright)"}])]}}

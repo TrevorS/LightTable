@@ -12,18 +12,30 @@
 [
  [:app :lt.objs.plugins/load-js "typescript_compiled.js"]
 
- ;; One entry per distinct :language-id. TypeScript and TSX differ there —
- ;; "typescript" versus "typescriptreact" — and that costs nothing, because
- ;; connections are keyed by [root command] and the two share one server.
+ ;; vtsls rather than typescript-language-server: it wraps the same extension
+ ;; VS Code ships, so completion matches what most people are used to. Both
+ ;; speak LSP, so swapping back is one line in user.behaviors.
+ ;;
+ ;; One entry per distinct :language-id. They differ — "typescript",
+ ;; "typescriptreact", "javascript" — and that costs nothing, because
+ ;; connections are keyed by [root command] and all three share one server.
  [:lsp.client :lt.objs.editor.lsp/language-servers
   [{:tags [:editor.typescript]
     :language-id "typescript"
     :root ["tsconfig.json" "jsconfig.json" "package.json"]
-    :command "typescript-language-server"
-    :args ["--stdio"]}
+    :command "vtsls"
+    :args ["--stdio"]
+    :install "npm i -g @vtsls/language-server"}
    {:tags [:editor.tsx]
     :language-id "typescriptreact"
     :root ["tsconfig.json" "jsconfig.json" "package.json"]
-    :command "typescript-language-server"
-    :args ["--stdio"]}]]
+    :command "vtsls"
+    :args ["--stdio"]
+    :install "npm i -g @vtsls/language-server"}
+   {:tags [:editor.javascript]
+    :language-id "javascript"
+    :root ["tsconfig.json" "jsconfig.json" "package.json"]
+    :command "vtsls"
+    :args ["--stdio"]
+    :install "npm i -g @vtsls/language-server"}]]
 ]

@@ -1,0 +1,18 @@
+{;; Rust, as data. No code in this plugin.
+ ;;
+ ;; rust-analyzer also runs rustfmt (formatting) and clippy (the check below),
+ ;; so one server covers all three.
+ ;;
+ ;; :init-options turns `cargo check` into `cargo clippy`, which is what makes
+ ;; clippy's lints appear inline rather than only in a terminal. It costs a
+ ;; rebuild on save, which is the trade everyone makes.
+ :+ {:lsp.client [(:lt.objs.editor.lsp/language-servers
+                   [{:tags [:editor.rust]
+                     :language-id "rust"
+                     :root ["Cargo.toml"]
+                     :command "rust-analyzer"
+                     :args []
+                     :install "rustup component add rust-analyzer"
+                     :init-options {:check {:command "clippy"}
+                                    :cargo {:buildScripts {:enable true}}
+                                    :procMacro {:enable true}}}])]}}

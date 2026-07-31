@@ -299,3 +299,38 @@ and what each uses agree. It is also the case that made
 inference cover the third route to a capability: it reaches `lt.util.bridge`
 directly rather than through `require` or `lt.objs`, and until it existed the
 scanner did not look there.
+
+## A plugin that is only a language
+
+The thinnest useful plugin has no code. `plugins/Rust` is a `plugin.edn`, a
+`rust.behaviors` holding one declaration, and a README — and it gets every
+language-server surface, because none of those behaviors knows what language
+it is for.
+
+```
+node script/new-language-plugin.mts Go \
+  --command gopls --root go.mod,go.work \
+  --install "go install golang.org/x/tools/gopls@latest"
+```
+
+The tag has to exist in core's file-types table already; the generator checks.
+
+A plugin rather than a line in core, even for four lines of data: a language
+should be something you can turn off, replace, or take with you.
+
+### What a declaration can carry
+
+| | |
+|---|---|
+| `:tags` | which editors it serves |
+| `:language-id` | what the protocol calls the language |
+| `:root` | project markers, nearest wins |
+| `:command` `:args` | how to start it |
+| `:install` | shown when the command is not on PATH |
+| `:init-options` | server settings, sent as `initializationOptions` |
+
+`:install` is why a missing server says how to get it instead of nothing.
+`:init-options` is how rust-analyzer is told to check with clippy.
+
+Servers are never downloaded. A language server belongs to the machine, not
+to the editor.
