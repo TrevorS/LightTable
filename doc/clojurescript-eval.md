@@ -147,33 +147,91 @@ ClojureScript runtime is a great deal more than that.
 
 ## A REPL against the editor itself
 
-The interesting case, and close to what Light Table was named for. Light
-Table's window *is* a ClojureScript program — the `:app` build in this
-repository's `shadow-cljs.edn` — so `shadow.cljs.devtools.api/nrepl-select
-:app` would attach a ClojureScript REPL to **the editor you are typing in**.
-Evaluating a form would change the running editor.
+Not a side case — the reason the editor is called Light Table, and what
+[workflow.md](workflow.md) still tells you to do: open a file, evaluate, choose
+`Light Table UI`, and change the editor you are typing in.
 
-It does not work today, and what stands in the way is build configuration
-rather than anything in the plugin. `deploy/core/lighttable/bootstrap.js` is a
-shadow **release** build, and a release carries no devtools client — so there
-is no runtime for shadow to attach to and `nrepl-select` has nothing to select.
-A `shadow-cljs watch app` build does carry one; it opens a websocket back to
-the shadow server, and an editor loaded from that output is a live
-ClojureScript runtime.
+An earlier draft of this page said this needed a `shadow-cljs watch app` build,
+because a release carries no devtools client. That is true of shadow's
+`nrepl-select` route and **false of Light Table's own**, which is the one that
+matters. Light Table never attached a REPL to its window. It compiled
+ClojureScript somewhere else and evaluated the resulting *JavaScript* in the
+window — `lt.objs.clients.local`, the client named `LightTable-UI`, which is
+`(.call js/eval js/window code)` and about seventy lines around it.
 
-So the missing piece is a development build mode: a `watch:cljs` script, an
-editor launched against its output, and shadow's server running beside it.
-Everything after that already works, because it is the same `nrepl-select` this
-page measured.
+That works in a packaged release, and it works because of two lines in
+`shadow-cljs.edn`:
 
-Worth being exact about the scope of it. In a packaged release, no — a shipped
-editor should not hold a websocket open to a development server, and the
-release build has no client with which to. In development, yes, and that is
-where an editor you can change while using it is worth having.
+```clojure
+:optimizations  :simple
+:output-wrapper false
+```
+
+`:simple` renames locals and leaves properties alone, and no wrapper means no
+closure to hide them in — so `lt.objs.notifos.set_msg_BANG_` is a live global
+in the shipped bundle, and JavaScript that names it reaches the running
+editor's own function. The whole plugin API is addressable at runtime. That is
+not an accident of the build; it is the build carrying the feature.
+
+### What was measured, in `builds/LightTable-0.10.0-mac/LightTable.app`
+
+A packaged release, launched from `builds/`, driven through the same commands a
+person would use:
+
+| | |
+|---|---|
+| `lt.*` still global after `:simple` | yes |
+| `Light Table UI` connector present, connects | yes |
+| `.js` buffer → eval → statusbar changed | yes |
+| `.js` buffer → eval → **new command defined, then ran** | yes |
+| `.css` buffer → eval → editor restyled live | yes |
+| `.cljs` buffer → eval | **no client** |
+
+The command is the one that matters. `:live-hello` did not exist; a buffer was
+evaluated; it existed and ran. The editor gained a capability it shipped
+without, while running, from a file open in it.
+
+### The one missing link
+
+`lt.objs.clients.discover` for `:editor.eval.cljs` answers `:none`, and for
+`:editor.eval.cljs.exec` answers `:found`. That pair is the whole diagnosis.
+
+Nothing compiles ClojureScript. **Everything downstream of the compiler is
+present and working** — `::on-code` takes `:editor.eval.cljs.code`, raises
+`:exec.cljs!`, which sends `:editor.eval.cljs.exec` to the `LightTable-UI`
+client, which evaluates the JavaScript and renders the result inline. All of
+that is live in the release; it is a chain with its first link missing.
+
+The link used to be `lein-light-nrepl`, which ran the ClojureScript compiler on
+the JVM against a prebuilt analysis cache of Light Table's namespaces and sent
+JavaScript back. It was deleted with the rest of that middleware, for reasons
+[VENDORED.md](../plugins/Clojure/VENDORED.md) records and which still hold —
+but this went with it, and nothing replaced it.
+
+### Two ways to put it back
+
+**On the JVM, over nREPL.** What the original did. It needs a project, a jack-in,
+and a JVM before the editor can change itself — so the editor's own primary
+feature would depend on a toolchain that a person editing their `user.behaviors`
+has no other reason to have.
+
+**In the window, self-hosted.** shadow-cljs ships `:target :bootstrap`
+(`shadow/build/targets/bootstrap.clj`, confirmed present in 3.4.11), which emits
+per-namespace analysis caches as `/ana/<ns>.transit.json` alongside an index.
+`cljs.js` reads those and compiles in the window. No JVM, no project, no jack-in,
+nothing to install — the editor carries its own compiler and can always change
+itself, which is the property worth having.
+
+The unverified risk in the second, and it should be settled before committing to
+it: the bootstrap loader wants to load a namespace's *JavaScript* along with its
+analysis, and Light Table's namespaces are already loaded. Re-evaluating them
+would re-run every top-level `def`, replacing atoms the running editor is
+holding. The analysis is the only part we need. Whether the loader can be told
+that is the question to answer first.
 
 ## Still to do
 
-- A development build mode, for the section above.
+- A ClojureScript compiler, per the section above. It is the last link.
 - The shadow route selects `node-repl` rather than a named build. `nrepl-select
   :build` is what attaches to a runtime the user already has open, and choosing
   *which* build is a question the project can answer — `shadow-cljs.edn` lists
