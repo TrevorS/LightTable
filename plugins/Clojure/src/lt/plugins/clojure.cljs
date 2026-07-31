@@ -584,7 +584,7 @@
 
 (behavior ::lein-exe
           :triggers #{:object.instant}
-          :desc "Clojure: set the path to the Leiningen executable for clients"
+          :desc "Clojure: set the path to the build tool executable for clients"
           :doc "Was `::java-exe`, which named the JVM Light Table started its
                 own nREPL server with. It no longer starts one: the REPL is
                 your Leiningen, and which JVM that uses is Leiningen's business
@@ -964,6 +964,53 @@
 ;; command line assembled as a string. Nothing assembles one now — proc/exec
 ;; takes an argument vector and no shell sees it.
 
+(declare lein-args)
+
+(def build-tools
+  "How to start an nREPL, by the file that says what kind of project this is.
+
+  In order, and the order is the answer to \"a project with more than one\": a
+  `shadow-cljs.edn` means shadow whatever else is beside it, because shadow is
+  the one that knows that project's builds and can attach a ClojureScript REPL
+  to the runtime the user already has open. A `deps.edn` without one is the
+  Clojure CLI. A `project.clj` without either is Leiningen.
+
+  Each brings cider-nrepl, because Light Table's documentation, completion and
+  stacktraces are cider-nrepl's — that is a feature of the editor rather than a
+  dependency a project should have to declare to be opened in it."
+  [{:tool :shadow
+    :marker "shadow-cljs.edn"
+    :exe "shadow-cljs"
+    :name "shadow-cljs"
+    :install "https://github.com/thheller/shadow-cljs#installation"
+    :args (fn [] ["-d" (str "cider/cider-nrepl:" cider-nrepl-version)
+                  "server"])}
+
+   {:tool :deps
+    :marker "deps.edn"
+    :exe "clojure"
+    :name "the Clojure CLI"
+    :install "https://clojure.org/guides/install_clojure"
+    :args (fn []
+            ["-Sdeps" (str "{:deps {nrepl/nrepl {:mvn/version \"" nrepl-version "\"}"
+                           " cider/cider-nrepl {:mvn/version \"" cider-nrepl-version "\"}"
+                           " cider/piggieback {:mvn/version \"" piggieback-version "\"}"
+                           " org.clojure/clojurescript {:mvn/version \"" clojurescript-version "\"}}}")
+             "-M" "-m" "nrepl.cmdline"
+             "--middleware" "[cider.nrepl/cider-middleware,cider.piggieback/wrap-cljs-repl]"])}
+
+   {:tool :lein
+    :marker "project.clj"
+    :exe "lein"
+    :name "Leiningen"
+    :install "https://leiningen.org/#install"
+    :args (fn [] (lein-args))}])
+
+(defn tool-for
+  "The entry in [[build-tools]] whose marker `dir` holds, or nil."
+  [dir]
+  (first (filter #(files/exists? (files/join dir (:marker %))) build-tools)))
+
 (defn lein-args
   "The `lein` command line that starts a headless nREPL Light Table can talk to.
 
@@ -986,33 +1033,38 @@
    "update-in" ":repl-options:nrepl-middleware" "conj" "cider.piggieback/wrap-cljs-repl" "--"
    "repl" ":headless"])
 
-(defn run-lein
-  "Start the REPL for this project, through the user's own Leiningen.
+(defn run-repl
+  "Start the REPL for this project, through the tool the project uses.
 
   This replaced a 15MB uberjar that was Leiningen 2.5.2 packaged, fetched at
   build time, and dead on every JDK this editor supports — see
-  plugins/Clojure/VENDORED.md. Using the Leiningen the user already has means
-  it tracks their JDK and their project rather than a 2015 snapshot of both,
-  and it is what every other editor's Clojure integration does."
-  [{:keys [project-path name client]}]
+  plugins/Clojure/VENDORED.md. Using what the user already has means the REPL
+  tracks their JDK and their project rather than a 2015 snapshot of both, and
+  it is what every other editor's Clojure integration does."
+  ;; `tool-exe` destructured rather than read off the map below, because the
+  ;; `let` rebinds `obj` to the notifier object — reading it there asked the
+  ;; wrong thing and silently fell back to the bare executable name.
+  [{:keys [project-path name client build-tool tool-exe]}]
   ;; `n` upstream, which is not bound anywhere: the notifier argument has
   ;; always arrived undefined, and nothing reads `:notifier` back out. nil says
   ;; so rather than relying on an undefined property lookup.
   (let [obj (object/create ::connecting-notifier nil (clients/->id client))
-        args (vec (lein-args))]
+        args (vec ((:args build-tool)))
+        exe (or tool-exe (:exe build-tool))]
     (notifos/working "Connecting..")
     ;; console/core-log is a path in this fork, not a write stream — see
     ;; lt.objs.console. Calling .write on it threw, and two of the three call
     ;; sites were in the behaviors that read the REPL process's output, so the
     ;; connecting notifier died on the first line the server printed.
-    (console/write-to-log (str "STARTING CLIENT: lein " (string/join " " args) "\n"))
-    (proc/exec {:command (or (:lein-exe @clj-lang) "lein")
+    (console/write-to-log (str "STARTING CLIENT: " exe " " (string/join " " args) "\n"))
+    (proc/exec {:command exe
                 :args args
                 :cwd project-path
                 :obj obj})
     ;; A project client had no name, so the Connect bar showed "null". The
     ;; directory it is rooted at is what a user would call it.
     (object/merge! client {:dir project-path
+                           :build-tool (:tool build-tool)
                            :name (or name (last (string/split project-path #"/")))})
     (object/raise client :try-connect!)))
 
@@ -1021,36 +1073,78 @@
               :client client
               :name local-name}))
 
-(defn check-lein [obj]
-  (assoc obj :lein (or (:lein-exe @clj-lang)
-                       (.which shell "lein"))))
+(defn tool-exe
+  "Where to find `exe` for a project at `dir`, or nil.
 
-(defn find-project [obj]
-  (if-let [path (files/walk-up-find (:path obj) "project.clj")]
-    (assoc obj :project-path (files/parent path))
-    (assoc obj :project-path nil)))
+  The project's own `node_modules/.bin` before `PATH`, which is the rule
+  `lt.objs.editor.lsp/server-command` already applies to language servers and
+  is right here for the same reason — a shadow-cljs project keeps its
+  shadow-cljs there, pinned to the version that project builds with, and it is
+  usually nowhere else at all."
+  [dir exe]
+  (let [local (files/join dir "node_modules" ".bin" exe)]
+    (if (files/exists? local)
+      local
+      (let [found (.which shell exe)]
+        (when-not (or (nil? found) (empty? (str found)))
+          (str found))))))
+
+(defn check-tool
+  "Whether the tool this project needs is installed.
+
+  After [[find-project]], because which tool it is depends on what the project
+  turned out to be."
+  [{:keys [build-tool project-path] :as obj}]
+  (assoc obj :tool-exe (when (and build-tool project-path)
+                         (or (:lein-exe @clj-lang)
+                             (tool-exe project-path (:exe build-tool))))))
+
+(defn find-project
+  "The nearest directory at or above `:path` that some build tool claims.
+
+  Walked once looking for every marker rather than once looking for
+  `project.clj`, which is what this did — so a shadow-cljs or deps.edn project
+  had no project at all and could not start a REPL."
+  [obj]
+  (loop [dir (files/parent (:path obj))]
+    (cond
+      (or (empty? dir) (= dir (files/parent dir)))
+      (assoc obj :project-path nil :build-tool nil)
+
+      (tool-for dir)
+      (assoc obj :project-path dir :build-tool (tool-for dir))
+
+      :else (recur (files/parent dir)))))
 
 (defn notify [obj]
-  (let [{:keys [lein project-path path]} obj]
+  (let [{:keys [tool-exe project-path path build-tool]} obj]
     (cond
-     (or (not lein) (empty? lein))
-     (popup/popup! {:header "We couldn't find Leiningen."
-                    :body "Clojure evaluation starts a REPL in your project, and Leiningen is what reads project.clj and works out its classpath. Light Table used to ship its own copy; that copy was from 2015 and does not run on a current JDK."
-                    :buttons [{:label "Install Leiningen"
-                               :action (fn []
-                                         (platform/open "https://leiningen.org/#install"))}
+     (not project-path)
+     (console/error
+      (str "No Clojure project above " path ". Looked for "
+           (string/join ", " (map :marker build-tools))))
+
+     (or (not tool-exe) (empty? tool-exe))
+     (popup/popup! {:header (str "We couldn't find " (:name build-tool) ".")
+                    :body (str "This project has a " (:marker build-tool)
+                               ", so Light Table starts its REPL with "
+                               (:name build-tool) " — which reads that file, works out "
+                               "the classpath and knows the project's builds. "
+                               "Light Table used to ship its own copy of a build tool; "
+                               "that copy was from 2015 and does not run on a current JDK.")
+                    :buttons [{:label (str "Install " (:name build-tool))
+                               :action (fn [] (platform/open (:install build-tool)))}
                               {:label "ok"}]})
 
-     (not project-path)
-     (console/error (str "Couldn't find a project.clj in any parent of " path))
-
-     :else (run-lein obj))
+     :else (run-repl obj))
     obj))
 
 (defn check-all [obj]
   (-> obj
-      (check-lein)
+      ;; The project first: which tool has to be installed is a question about
+      ;; what kind of project this turned out to be.
       (find-project)
+      (check-tool)
       (notify))
   (:client obj))
 

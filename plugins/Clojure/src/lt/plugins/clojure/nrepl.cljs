@@ -39,7 +39,6 @@
             [lt.object :as object]
             [lt.objs.clients :as clients]
             [lt.objs.console :as console]
-            [lt.objs.files :as files]
             [lt.objs.notifos :as notifos]
             [lt.util.load :refer [node-module]]
             [cljs.reader :as reader])
@@ -160,6 +159,16 @@
 
 (defn- done? [{:keys [status]}]
   (boolean (some #{"done"} status)))
+
+(defn- failed?
+  "Whether a finished request should be drawn as a failure.
+
+  An error status is one way. The other is a request that printed to stderr and
+  produced no value at all — shadow-cljs answers \"No available JS runtime\"
+  exactly like that, with no status to say so, and rendering it as a result of
+  `nil` is the editor claiming the form evaluated to nothing when it never ran."
+  [{:keys [errored? values err]}]
+  (boolean (or errored? (and err (empty? values)))))
 
 ;;*********************************************************
 ;; Standard nREPL out, Light Table in
@@ -395,7 +404,7 @@
       ;; one form in the middle of it failed, and the failure is drawn beside
       ;; the form it belongs to.
       (send-form! client cb (:data record) (:next record))
-      (if errored?
+      (if (failed? record)
       ;; The exception is drawn now from what nREPL printed, and again with
       ;; orchard's frames when they arrive. Drawing twice is deliberate: the
       ;; first is instant and the second is better.
@@ -570,9 +579,14 @@
 ;;*********************************************************
 
 (defn- build-tool
-  "Which switch form this project wants, from what is beside the code."
+  "Which switch form this project wants.
+
+  `lt.plugins.clojure` worked out what kind of project this is when it started
+  the REPL and put it on the client, so this is a lookup rather than a second
+  opinion. Only shadow has its own; a Leiningen or deps.edn project gets
+  piggieback, which Light Table injects into either."
   [client]
-  (if (files/exists? (files/join (:dir @client) "shadow-cljs.edn"))
+  (if (= :shadow (:build-tool @client))
     :shadow
     :piggieback))
 
