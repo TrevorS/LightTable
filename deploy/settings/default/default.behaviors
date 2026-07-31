@@ -182,9 +182,23 @@
  [:lsp.client :lt.objs.editor.lsp/on-exit]
  [:lsp.client :lt.objs.editor.lsp/on-error]
  [:lsp.client :lt.objs.editor.lsp/on-ready]
+ [:lsp.client :lt.objs.editor.lsp/tag-from-capabilities]
  [:editor :lt.objs.editor.lsp/use-language-server]
  [:editor :lt.objs.editor.lsp/sync-on-change]
  [:editor :lt.objs.editor.lsp/close-document]
+ ;; The surfaces other than diagnostics. Generic, so every language with a
+ ;; server gets them at once — which is the argument for their being here
+ ;; rather than in any one language's plugin.
+ ;;
+ ;; Completion adds to the list rather than replacing it: `:hints+` is a
+ ;; reduction, so a server's suggestions and a REPL's appear together.
+ ;; Documentation and jump-to-definition are singular, so they stand down when
+ ;; a REPL is connected that can answer — a REPL knows what is loaded, and
+ ;; Light Table is an editor about the running program.
+ [:editor :lt.objs.editor.lsp/completion-hints]
+ [:editor :lt.objs.editor.lsp/update-completions]
+ [:editor :lt.objs.editor.lsp/doc-at-cursor]
+ [:editor :lt.objs.editor.lsp/jump-to-definition]
  [:app :lt.objs.editor.lsp/shutdown-servers-on-close]
  [:editor :lt.objs.editor.treesitter/use-treesitter]
  [:editor :lt.objs.editor.treesitter/reparse-on-change]

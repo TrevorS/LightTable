@@ -22,21 +22,30 @@
   plugin's, and the user's, in that order. [[lt.objs.editor.lsp.registry]] is
   the table and the precedence rule.
 
-  See doc/lsp-architecture.md for the layering and what is deliberately not
-  here yet — completion, hover and navigation are additive on top of this."
+  **Diagnostics, completion, documentation and jump-to-definition** are wired.
+  Which of them answers when a language also has a REPL is decided under
+  *Surfaces other than diagnostics* below, and the short version is: completion
+  merges, the other two defer to a connected REPL, and diagnostics are the
+  server's alone because no REPL has any.
+
+  See doc/lsp-architecture.md for the layering and what is deliberately still
+  not here — references, document symbols and rename."
   (:require [clojure.string :as string]
             [lt.object :as object]
             [lt.objs.clients.lsp :as lsp]
             [lt.objs.clients.lsp.sync :as sync]
+            [lt.objs.clients :as clients]
             [lt.objs.command :as cmd]
             [lt.objs.editor :as editor]
             [lt.objs.editor.lsp.registry :as registry]
             [lt.objs.editor.pool :as pool]
+            [lt.objs.jump-stack :as jump-stack]
             [lt.objs.notifos :as notifos]
+            [lt.plugins.auto-complete :as auto-complete]
             [lt.util.bridge :as bridge])
   (:require-macros [lt.macros :refer [behavior defui]]))
 
-(declare lsp-client)
+(declare lsp-client capability-tags)
 
 (defn servers
   "Every language server that has been declared, in declaration order."
@@ -228,6 +237,12 @@
                               (when-let [conn (ensure-connection! root server)]
                                 (let [doc (sync/document path (:language-id server))]
                                   (object/merge! this {::doc doc ::conn conn})
+                                  ;; A server that was already up when this
+                                  ;; editor opened has answered `initialize`
+                                  ;; long ago, so ::tag-from-capabilities will
+                                  ;; not fire again for it.
+                                  (doseq [tag (capability-tags (lsp/server-capabilities conn))]
+                                    (object/add-tags this [tag]))
                                   (when (open-close? conn)
                                     (lsp/notify! conn "textDocument/didOpen"
                                                  {:textDocument
@@ -268,6 +283,206 @@
                         ;; reused leaves the object behind.
                         (clear-diagnostics! this)
                         (object/merge! this {::conn nil ::doc nil}))))
+
+;;*********************************************************
+;; Surfaces other than diagnostics
+;;*********************************************************
+
+;; **Which of these answers, when a language also has a REPL.**
+;;
+;; Light Table's own design already decides two of the three. Completions come
+;; from `:hints+`, which is a `raise-reduce` — every source contributes and the
+;; list is the union — so a language server and a REPL both add and neither has
+;; to win. Documentation and jump-to-definition are singular: there is one doc
+;; bar and one cursor, so exactly one answer is wanted.
+;;
+;; For those two the REPL goes first when one is connected. That is not a
+;; hedge: a language server reads what is written and a REPL knows what is
+;; *loaded*, including vars that only exist because something defined them at
+;; runtime, and Light Table is an editor about the running program. When no
+;; REPL can answer — no client, no project, another language entirely — the
+;; server does, which is most of the time and every language that has no REPL
+;; at all.
+;;
+;; Diagnostics are not in this argument. cider-nrepl publishes 183 operations
+;; and none of them is a linter; a REPL can tell you a form threw when you ran
+;; it and nothing about the line you have not run yet. So diagnostics are the
+;; server's, unconditionally.
+
+(defn- repl-answers?
+  "Whether a client this editor is already using handles `suffix`.
+
+  Asked of the clients the editor has, not of `lt.objs.eval/get-client!`,
+  which would *start* a REPL to answer — the opposite of what a fallback
+  should do.
+
+  Matched by suffix because the command is the language's, not Light Table's:
+  the Clojure plugin advertises `:editor.clj.doc` and a Python one would
+  advertise `:editor.python.doc`. What is common is the ending, so that is
+  what is compared, and core needs no table of languages to do it."
+  [ed suffix]
+  (boolean
+   (some (fn [client]
+           (and client
+                (clients/available? client)
+                (some #(string/ends-with? (str %) suffix)
+                      (:commands @client))))
+         (vals (:client @ed)))))
+
+(defn- request-at-cursor!
+  "Send `method` about the cursor's position in `ed`, if a server is connected."
+  [ed method callback]
+  (when-let [conn (::conn @ed)]
+    (when (lsp/ready? conn)
+      (lsp/request! conn method
+                    {:textDocument {:uri (:uri (::doc @ed))}
+                     :position (sync/->position (editor/->cursor ed))}
+                    callback))))
+
+;;*********************************************************
+;; Completion
+;;*********************************************************
+
+(defn- ->hint
+  "One LSP completion item, as the hinter's list wants it.
+
+  `:completion` is what gets inserted and `:text` is what is shown, which is
+  how a hint can carry a signature or a namespace without typing it."
+  [{:keys [label detail insertText]}]
+  #js {:completion (or insertText label)
+       :text (if detail (str label " — " detail) label)})
+
+(behavior ::completion-hints
+          :triggers #{:hints+}
+          :type :user
+          :desc "Editor: Offer the language server's completions"
+          :doc "Adds what the language server suggests to the completion list.
+                It adds rather than replaces: `:hints+` is a reduction over
+                every source, so a REPL's completions and a server's appear
+                together, which is more than either knows on its own."
+          :reaction (fn [ed hints token]
+                      ;; A new token means the list is about to be wrong, so
+                      ;; ask again — and return what is cached meanwhile,
+                      ;; because the hinter is synchronous and will not wait.
+                      (when (not= token (::hint-token @ed))
+                        (object/merge! ed {::hint-token token})
+                        (object/raise ed ::update-completions))
+                      (concat (::hints @ed) hints)))
+
+(behavior ::update-completions
+          :triggers #{::update-completions}
+          :debounce 100
+          :reaction (fn [ed]
+                      (request-at-cursor!
+                       ed "textDocument/completion"
+                       (fn [{:keys [result]}]
+                         ;; A server may answer with a list or with
+                         ;; {:items …, :isIncomplete}; both are in the spec.
+                         (let [items (if (map? result) (:items result) result)]
+                           (object/merge! ed {::hints (map ->hint items)})
+                           (object/raise auto-complete/hinter :refresh!))))))
+
+;;*********************************************************
+;; Documentation
+;;*********************************************************
+
+(defn- strip-fences
+  "Markdown code fences, removed.
+
+  A hover is markdown by specification and is nearly always one fenced block
+  holding a signature. Light Table draws it in a code widget already, so the
+  fence is three backticks and a language name the reader did not ask for."
+  [text]
+  (-> text
+      (string/replace #"(?m)^```[a-zA-Z0-9-]*\s*$" "")
+      string/trim))
+
+(defn- hover->text
+  "An LSP hover's contents, flattened to text.
+
+  Three shapes are legal — a string, a `{:kind :value}` map, or a list of
+  either — because the protocol accreted two deprecated forms and kept them."
+  [contents]
+  (strip-fences
+   (cond
+     (string? contents) contents
+     (map? contents) (or (:value contents) "")
+     (sequential? contents) (string/join "\n\n" (map #(hover->text %) contents))
+     :else "")))
+
+(defn- capability-tags
+  "The tags an editor earns from what its server says it can do.
+
+  Light Table gates surfaces on tags — the doc bar only draws for `:docable` —
+  which is how a language gets a feature without the feature knowing about the
+  language. A server's `initialize` result is exactly that list, so the tags
+  come off the wire rather than out of a table someone has to maintain."
+  [capabilities]
+  (cond-> #{}
+    (:hoverProvider capabilities) (conj :docable)
+    (:documentSymbolProvider capabilities) (conj :navigable)))
+
+(behavior ::tag-from-capabilities
+          :triggers #{:lsp.ready}
+          :desc "Language server: Tag editors with what their server can do"
+          :reaction (fn [_ result conn]
+                      (doseq [ed (object/by-tag :editor)
+                              :when (= conn (::conn @ed))
+                              tag (capability-tags (:capabilities result))]
+                        (object/add-tags ed [tag]))))
+
+(behavior ::doc-at-cursor
+          :triggers #{:editor.doc}
+          :type :user
+          :desc "Editor: Show the language server's documentation"
+          :doc "Answers **Editor: Toggle documentation at cursor** from the
+                language server. Stands down when a REPL is connected that can
+                answer instead: a REPL knows what is actually loaded, and
+                there is only one doc bar."
+          :reaction (fn [ed]
+                      (when-not (repl-answers? ed ".doc")
+                        (request-at-cursor!
+                         ed "textDocument/hover"
+                         (fn [{:keys [result]}]
+                           (let [text (hover->text (:contents result))]
+                             (if (string/blank? text)
+                               (notifos/set-msg! "No documentation found.")
+                               (object/raise ed :editor.doc.show!
+                                             {:name (:string (editor/->token ed (editor/->cursor ed)))
+                                              :doc text
+                                              :loc (editor/->cursor ed)}))))))))
+
+;;*********************************************************
+;; Jump to definition
+;;*********************************************************
+
+(defn- ->location
+  "The first location an LSP definition response names, whatever its shape.
+
+  `Location`, `Location[]` and `LocationLink[]` are all legal answers, and a
+  server picks whichever it likes."
+  [result]
+  (let [one (if (sequential? result) (first result) result)]
+    (when one
+      {:uri (or (:uri one) (:targetUri one))
+       :range (or (:range one) (:targetSelectionRange one) (:targetRange one))})))
+
+(behavior ::jump-to-definition
+          :triggers #{:editor.jump-to-definition-at-cursor!}
+          :type :user
+          :desc "Editor: Jump to a definition the language server found"
+          :doc "Stands down when a REPL is connected that can answer: there is
+                one cursor, and a REPL knows where a var was actually defined
+                rather than where it appears to have been."
+          :reaction (fn [ed]
+                      (when-not (repl-answers? ed ".jump-to-definition")
+                        (request-at-cursor!
+                         ed "textDocument/definition"
+                         (fn [{:keys [result]}]
+                           (if-let [{:keys [uri range]} (->location result)]
+                             (object/raise jump-stack/jump-stack :jump-stack.push!
+                                           ed (sync/uri->path uri) (sync/range->loc range))
+                             (notifos/set-msg! "No definition found.")))))))
 
 ;;*********************************************************
 ;; The client object

@@ -94,19 +94,54 @@ stopped".
 
 The reason this is worth doing once: nothing here is new UI.
 
-| LSP | rendered by | already exists as |
-|---|---|---|
-| `publishDiagnostics` | inline widget at the line | `lt.objs.eval` inline results |
-| `completion` | the completion list | `lt.plugins.auto-complete` |
-| `hover` | the doc bar | `lt.objs.docs` |
-| `definition` | jump, with a way back | `lt.objs.jump-stack` |
-| `references` | the search sidebar | `lt.objs.search` results list |
-| `documentSymbol` | the navigate bar | `lt.objs.sidebar.navigate` |
-| `rename` | a workspace edit | — the one genuinely new piece |
+| LSP | rendered by | already exists as | |
+|---|---|---|---|
+| `publishDiagnostics` | inline widget at the line | `lt.objs.eval` inline results | **built** |
+| `completion` | the completion list | `lt.plugins.auto-complete` | **built** |
+| `hover` | the doc bar | `lt.plugins.doc` | **built** |
+| `definition` | jump, with a way back | `lt.objs.jump-stack` | **built** |
+| `references` | the search sidebar | `lt.objs.search` results list | not yet |
+| `documentSymbol` | the navigate bar | `lt.objs.sidebar.navigate` | not yet |
+| `rename` | a workspace edit | — the one genuinely new piece | not yet |
 
 One behavior per row, each independently switchable. A user who wants
 diagnostics but not completion turns one off, which is what the behavior system
 is *for* and what makes this feel like Light Table rather than like a port.
+
+### Which surfaces an editor gets
+
+From the server, not from a table here. A server's `initialize` result lists
+what it can do, and `::tag-from-capabilities` turns that into tags —
+`hoverProvider` grants `:docable`, `documentSymbolProvider` grants
+`:navigable`. Light Table already gates its surfaces on tags, so a language
+gets the doc bar because its server said it could answer, and nothing had to
+learn the language's name.
+
+### Which answers, when a language also has a REPL
+
+Light Table's own design settles two of the three.
+
+**Completion merges.** `:hints+` is a `raise-reduce`, so every source
+contributes and the list is the union. A language server's suggestions and a
+REPL's appear together, which is more than either knows alone — the server has
+the whole project, the REPL has what is actually loaded.
+
+**Documentation and jump-to-definition defer to a connected REPL.** There is
+one doc bar and one cursor, so exactly one answer is wanted, and the REPL's is
+the better one when there is a REPL: it knows what is *loaded*, including vars
+that exist only because something defined them at runtime, and Light Table is
+an editor about the running program. With no REPL — no client, no project, or
+a language that has none — the server answers, which is most of the time.
+
+`repl-answers?` decides by asking the clients the editor already has whether
+any advertises a command ending in `.doc` or `.jump-to-definition`. By suffix,
+because the command belongs to the language — the Clojure plugin advertises
+`:editor.clj.doc` — so core needs no table of languages to compare against.
+
+**Diagnostics are not in this argument.** cider-nrepl publishes 183 operations
+and not one is a linter: a REPL can say a form threw when you ran it and
+nothing about the line you have not run. Diagnostics are the server's,
+unconditionally.
 
 ## What a declaration looks like
 
