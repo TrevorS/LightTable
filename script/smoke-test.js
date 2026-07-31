@@ -275,7 +275,7 @@ global.browserParsedArgs = { _: [] };
 // The debugging port and its origin allowance come from main.js at module
 // scope, so this harness gets them without repeating them.
 
-setTimeout(function () { report.failure = 'timed out before the window reported back'; finish(1); }, 90000);
+setTimeout(function () { report.failure = 'timed out before the window reported back'; finish(1); }, 180000);
 process.on('uncaughtException', function (e) { report.failure = 'main process threw: ' + e.message; finish(1); });
 
 app.on('ready', function () {
@@ -920,6 +920,53 @@ app.on('ready', function () {
                         })()
                     });
                 })()\`)));
+
+                // A second window, through main.js's own createWindow rather
+                // than through this harness's copy of the options — which is
+                // the whole point. createWindow used to prepend __dirname to
+                // the object require() caches, so the second window asked for
+                // <core>/<core>/preload.js, got no bridge, and came up white.
+                // Every check above passed throughout, because they all run in
+                // the first window.
+                step = 'opening a second window';
+                const w2 = createWindow();
+                const w2Errors = [];
+                w2.webContents.on('console-message', function (a, b, c) {
+                    const msg = (a && typeof a === 'object' && 'message' in a) ? a.message : c;
+                    const lvl = (a && typeof a === 'object' && 'level' in a) ? a.level : b;
+                    if (lvl === 'error' || lvl === 3) w2Errors.push(String(msg).slice(0, 200));
+                });
+                await new Promise(function (r) {
+                    if (!w2.webContents.isLoading()) return r();
+                    w2.webContents.once('did-finish-load', r);
+                    setTimeout(r, 30000);
+                });
+                let secondWindow = 'never built';
+                for (let i = 0; i < 90; i++) {
+                    await new Promise(function (r) { setTimeout(r, 500); });
+                    try {
+                        secondWindow = await w2.webContents.executeJavaScript(
+                            "(typeof lt !== 'undefined' && lt.objs && typeof lt.objs.app === 'object')" +
+                            " ? 'built' : ('not yet: lt is ' + typeof lt)");
+                    } catch (e) { secondWindow = 'threw: ' + e.message; }
+                    if (secondWindow === 'built') break;
+                }
+                report.secondWindow = secondWindow;
+                report.secondWindowErrors = w2Errors.slice(0, 4);
+                // And the object createWindow read is still what package.json
+                // said.
+                //
+                // Do not delete this as redundant with the check above: this
+                // harness builds its own first window, so the call above is
+                // createWindow's *first* and gets the path right even when the
+                // prepend is destructive. Reverting the fix leaves "a second
+                // window builds the editor too" passing and fails only here.
+                // In the shipped app onReady calls createWindow first, so the
+                // window a user opens is the second one and comes up white.
+                report.preloadStillRelative =
+                    packageJSON.browserWindowOptions.webPreferences.preload;
+                w2.destroy();
+
                 report.ok = true;
             } catch (e) {
                 report.failure = 'renderer probe failed while ' + step + ': ' + e.message;
@@ -996,15 +1043,25 @@ async function main() {
 
     const appDir = fs.mkdtempSync(path.join(os.tmpdir(), 'lt-smoke-'));
     const reportPath = path.join(appDir, 'report.json');
-    fs.writeFileSync(path.join(appDir, 'package.json'), JSON.stringify({ name: 'lt-smoke', version: '1.0.0', main: 'main.js' }));
+    // browserWindowOptions too, because main.js's own createWindow reads them
+    // from the app directory's package.json — and the second-window check
+    // calls that rather than building options the way this harness does.
+    fs.writeFileSync(path.join(appDir, 'package.json'), JSON.stringify({
+        name: 'lt-smoke', version: '1.0.0', main: 'main.js',
+        browserWindowOptions: require(path.join(CORE, 'package.json')).browserWindowOptions
+    }));
     fs.writeFileSync(path.join(appDir, 'main.js'),
         fs.readFileSync(path.join(CORE, 'main.js'), 'utf8').replace(/^start\(\);$/m, '') + HARNESS);
-    // main.js requires yargs-free node builtins only, but the harness resolves
-    // the core package.json, so give it the same module paths.
-    fs.symlinkSync(path.join(CORE, 'node_modules'), path.join(appDir, 'node_modules'));
-    // main.js pins the webview guest's preload relative to its own directory,
-    // so the temporary app directory has to carry it too.
-    fs.symlinkSync(path.join(CORE, 'browserInjection.js'), path.join(appDir, 'browserInjection.js'));
+    // Everything else in core, symlinked, so that __dirname here behaves like
+    // the shipped application directory: main.js resolves the preload, the
+    // html and the plugins against it, and the second-window check calls the
+    // real createWindow rather than reimplementing what it does.
+    for (const entry of fs.readdirSync(CORE)) {
+        if (entry === 'main.js' || entry === 'package.json') continue;
+        fs.symlinkSync(path.join(CORE, entry), path.join(appDir, entry));
+    }
+    // That loop already covers browserInjection.js, which main.js pins to the
+    // webview guest relative to its own directory.
 
     await new Promise(function (resolve) {
         const child = spawn(ELECTRON, [appDir, '--no-sandbox'],
@@ -1205,6 +1262,9 @@ async function main() {
          lsp.after.version === lsp.before.version + 1 && /version=2 /.test(lspFirst)],
         ['and redrawing rather than accumulating',
          !!lsp.after && lsp.after.widgets === 2 && lsp.after.messages.length === 3],
+        ['a second window builds the editor too', r.secondWindow === 'built'],
+        ['and creating one leaves the shared window options alone',
+         r.preloadStillRelative === 'preload.js'],
         ['nothing logged to the console', Array.isArray(r.errors) && r.errors.length === 0]
     ];
 
@@ -1235,6 +1295,8 @@ async function main() {
                 '"; file bytes: [' + r.readBytes.magic + ']');
     console.log('save: on disk ' + JSON.stringify((r.save || {}).onDisk) +
                 ', dirty ' + (r.save || {}).dirty);
+    console.log('second window: ' + r.secondWindow + ', shared preload option still ' +
+                JSON.stringify(r.preloadStillRelative));
     console.log('self-eval: ' + ((r.selfEval && r.selfEval.compiler) || 'no report') +
                 ', results ' + ((r.selfEval && r.selfEval.results) || '-'));
     console.log('language server: ' + (lsp.after ? lsp.after.widgets + ' widgets, ' +

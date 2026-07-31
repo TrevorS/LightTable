@@ -89,13 +89,28 @@ const packageJSON = require(__dirname + '/package.json');
 
 // Returns Window object
 function createWindow(): electron.BrowserWindow {
-    const browserWindowOptions = packageJSON.browserWindowOptions;
-    browserWindowOptions.icon = __dirname + '/' + browserWindowOptions.icon;
-    // Electron resolves neither of these relative to the app directory.
-    if (browserWindowOptions.webPreferences?.preload) {
-        browserWindowOptions.webPreferences.preload =
-            __dirname + '/' + browserWindowOptions.webPreferences.preload;
-    }
+    // A fresh options object per window, built from the relative paths
+    // package.json states. Electron resolves neither the icon nor the preload
+    // relative to the app directory, so both need `__dirname` — but this used
+    // to prepend it to `packageJSON.browserWindowOptions` itself, which
+    // `require` caches and hands back the same object every time.
+    //
+    // So the second window asked for `<core>/<core>/preload.js`, its preload
+    // never loaded, `lightTable` was undefined, and the bundle threw on the
+    // first thing that reached the bridge. What you saw was a white window:
+    // the first one was fine, so nothing looked broken until you opened
+    // another.
+    const defaults = packageJSON.browserWindowOptions;
+    const browserWindowOptions = {
+        ...defaults,
+        icon: __dirname + '/' + defaults.icon,
+        webPreferences: {
+            ...defaults.webPreferences,
+            ...(defaults.webPreferences?.preload
+                ? { preload: __dirname + '/' + defaults.webPreferences.preload }
+                : {})
+        }
+    };
     const window = new BrowserWindow(browserWindowOptions);
     windows[window.id] = window;
     window.focus();
