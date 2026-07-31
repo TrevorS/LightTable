@@ -17,6 +17,7 @@ rather than merely old, it says so at the top.
 | | |
 |---|---|
 | [Workflow](workflow.md) | A typical session: evaluating as you write, watches, the jump stack. *Predates the modernization.* |
+| [Changing the editor while it runs](live-editing.md) | Evaluating ClojureScript, JavaScript or CSS into the running editor. The feature Light Table is named for, and the build configuration it rests on. *Current.* |
 | [Commands](commands.md) | What a command is and how to add one. *Predates the modernization.* |
 | [Behaviors and keymaps](behavior-and-keymap-configuration.md) | Configuring the editor by editing data rather than settings screens. *Predates the modernization.* |
 
@@ -56,7 +57,7 @@ re-litigated from scratch.
 | [The JavaScript left](javascript-remaining.md) | There is none of Light Table's own. What the four TypeScript roots are and why they are separate. |
 | [LSP architecture](lsp-architecture.md) | The language server client: the four layers, how a server is declared and who declares it, and what building it settled. *Current.* |
 | [Workspace edits](workspace-edits.md) | The one way Light Table changes code it is not showing, and the rename built on it. *Scouted, then built.* |
-| [Evaluating ClojureScript](clojurescript-eval.md) | The two routes to a ClojureScript REPL, measured, and the two decisions to make before writing any. *A scouting note.* |
+| [Evaluating ClojureScript](clojurescript-eval.md) | The two routes to a ClojureScript REPL, measured, and the two decisions to make before writing any. *Scouted, then built.* |
 | [Language support](language-support.md) | Where a language server would fit, why it belongs in the editor rather than in each plugin, and the two preload gaps it turned up. |
 | [Syntax highlighting](syntax-highlighting.md) | Tree-sitter highlighting: what it does, and the scouting note that first argued against it. *Current.* |
 | [The editor engine](editor-engine.md) | Whether CodeMirror 6 is what we would choose if nothing were chosen, and what the migration actually costs. |

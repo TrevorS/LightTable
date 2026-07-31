@@ -1,6 +1,7 @@
 (ns lt.plugins.clojure
   (:require [lt.object :as object]
             [lt.objs.clients :as clients]
+            [lt.objs.clients.local :as local]
             [lt.objs.files :as files]
             [lt.objs.context :as ctx]
             [lt.objs.sidebar.clients :as scl]
@@ -275,13 +276,39 @@
                       (set! default-cljs-client client-name)))
 
 (defn lighttable-ui-project?
-  "Determine if path is part of a project that evals to LightTable's process
-  e.g. LightTable plugin or LightTable itself"
-  [path]
-  (or (files/walk-up-find path "plugin.edn")
-      (files/walk-up-find path "plugin.json")
-      (when-let [project-file (files/walk-up-find path "project.clj")]
-        (= 'lighttable (second (reader/read-string (:content (files/open-sync project-file))))))))
+  "Does this file evaluate into Light Table's own process?
+
+  Three ways to be one, and each is a thing about the file rather than a
+  setting someone has to find:
+
+  - a `plugin.edn` or `plugin.json` above it — it is a Light Table plugin
+  - a `project.clj` naming `lighttable` — the old layout, still read
+  - a namespace starting with `lt.` — Light Table's own source, which no
+    longer has a `project.clj` to be recognised by. The editor is built by
+    shadow-cljs now, and `shadow-cljs.edn` is too common a file to treat as
+    the same claim."
+  ([path] (lighttable-ui-project? path nil))
+  ([path buffer-ns]
+   (or (files/walk-up-find path "plugin.edn")
+       (files/walk-up-find path "plugin.json")
+       (when-let [project-file (files/walk-up-find path "project.clj")]
+         (= 'lighttable (second (reader/read-string (:content (files/open-sync project-file))))))
+       (when buffer-ns
+         (or (= "lt" (str buffer-ns))
+             (string/starts-with? (str buffer-ns) "lt."))))))
+
+(defn connect-cljs
+  "Which client evaluates this ClojureScript.
+
+  Light Table's own code and its plugins evaluate into the window, through
+  [[lt.objs.clients.local]] — that is the editor changing itself while
+  running, and it needs nothing started. Everything else is somebody's
+  project, and belongs in that project's REPL, so it takes the same route
+  Clojure does."
+  [{:keys [info] :as opts}]
+  (if (lighttable-ui-project? (:path info) (:buffer-ns info))
+    (local/connect!)
+    (try-connect opts)))
 
 (behavior ::eval!
           :triggers #{:eval!}
@@ -293,12 +320,13 @@
                         (clients/send (eval/get-client! {:command command
                                                          :info info
                                                          :origin origin
-                                                         ;; try-connect for ClojureScript too, rather than
-                                                         ;; reaching for a browser first. A .cljs file
-                                                         ;; evaluates in the project's REPL, the same as a
-                                                         ;; .clj one — it is a second nREPL session on the
-                                                         ;; same connection, which lt.plugins.clojure.nrepl
-                                                         ;; starts on demand.
+                                                         ;; A .cljs file evaluates in the project's REPL,
+                                                         ;; the same as a .clj one — a second nREPL session
+                                                         ;; on the same connection, which
+                                                         ;; lt.plugins.clojure.nrepl starts on demand —
+                                                         ;; unless the file is Light Table's own, in which
+                                                         ;; case it evaluates in the window. See
+                                                         ;; connect-cljs.
                                                          ;;
                                                          ;; Connecting a browser is still a thing you can
                                                          ;; do; it is a thing you *choose*, in the Connect
@@ -306,7 +334,9 @@
                                                          ;; it automatically meant evaluating any .cljs file
                                                          ;; went looking for a page to attach to, and threw
                                                          ;; before it ever reached the REPL.
-                                                         :create try-connect})
+                                                         :create (if (= command :editor.eval.cljs)
+                                                                   connect-cljs
+                                                                   try-connect)})
                                       command info :only origin))))
 
 (behavior ::build!

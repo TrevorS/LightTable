@@ -106,6 +106,59 @@ fs.writeFileSync(BINARY_PROBE, Buffer.from([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 
 const SAVE_PROBE = path.join(os.tmpdir(), 'lt-smoke-save.txt');
 fs.writeFileSync(SAVE_PROBE, 'before\n');
 
+// The editor changing itself while running — see doc/live-editing.md. This is
+// the feature Light Table is named for, and it rests on build configuration
+// (`:optimizations :simple`, `:output-wrapper false`, and the analysis cache
+// built by `shadow-cljs release bootstrap`) that nothing else here would
+// notice the loss of. Compiled in the window, evaluated in the window: if this
+// check fails the editor is still an editor and is no longer Light Table.
+const SELFEVAL_PROBE = path.join(os.tmpdir(), 'lt-smoke-selfeval.cljs');
+fs.writeFileSync(SELFEVAL_PROBE,
+    '(ns lt.smoke-probe\n' +
+    '  (:require [lt.objs.command :as cmd]))\n' +
+    '\n' +
+    '(+ 20 22)\n' +
+    '\n' +
+    '(cmd/command {:command :lt-smoke-live\n' +
+    '              :desc "Defined by evaluating a buffer, while running"\n' +
+    '              :exec (fn [] :ok)})\n');
+
+const SELFEVAL_EVAL = `(function () {
+    var ed = cljs.core.first.call(null, lt.objs.editor.pool.by_path(${JSON.stringify(SELFEVAL_PROBE)}));
+    if (!ed) { return 'no editor'; }
+    // :eval rather than the command, for the reason SAVE_EDIT gives: the
+    // command starts from pool/last-active and this window is never focused.
+    lt.object.raise.cljs$core$IFn$_invoke$arity$variadic(
+        ed, cljs.core.keyword.call(null, 'eval'),
+        cljs.core.prim_seq.cljs$core$IFn$_invoke$arity$2([], 0));
+    return 'evaluating';
+})()`;
+
+const SELFEVAL_REPORT = `JSON.stringify((function () {
+    var kw = function (n) { return cljs.core.keyword.call(null, n); };
+    var ed = cljs.core.first.call(null, lt.objs.editor.pool.by_path(${JSON.stringify(SELFEVAL_PROBE)}));
+    if (!ed) { return { error: 'no editor' }; }
+    var client = cljs.core.get.call(null,
+        cljs.core.get.call(null, cljs.core.deref(ed), kw('client')), kw('default'));
+    return {
+        // The whole point: a command that did not exist when the editor
+        // started, defined by evaluating a buffer open in it.
+        defined: !!lt.objs.command.by_id(kw('lt-smoke-live')),
+        client: client ? cljs.core.get.call(null, cljs.core.deref(client), kw('name')) : null,
+        compiler: cljs.core.pr_str(lt.objs.cljs_compiler.describe()),
+        // One result per top-level form, which is what makes them land beside
+        // the form that produced them rather than all at the end.
+        results: cljs.core.pr_str(cljs.core.mapv.call(null, function (kv) {
+            var el = cljs.core.get.call(null, cljs.core.deref(cljs.core.second(kv)), kw('content'));
+            if (!el) { return ''; }
+            // .full, not textContent: an inline result carries a truncated
+            // span beside the full one, so textContent says everything twice.
+            var full = el.querySelector ? el.querySelector('.full') : null;
+            return (full || el).textContent || '';
+        }, cljs.core.get.call(null, cljs.core.deref(ed), kw('widgets'))))
+    };
+})())`;
+
 const LSP_DIR = path.join(os.tmpdir(), 'lt-smoke-lsp');
 const LSP_PROBE = path.join(LSP_DIR, 'src', 'probe.ts');
 fs.rmSync(LSP_DIR, { recursive: true, force: true });
@@ -379,6 +432,25 @@ app.on('ready', function () {
                 // From this side, so it is the file on disk being asserted on
                 // and not the editor's opinion of it.
                 save.onDisk = fsx.readFileSync(${JSON.stringify(SAVE_PROBE)}, 'utf8');
+
+                // ClojureScript, compiled in this window and run in it.
+                step = 'compiling ClojureScript in the window';
+                await w.webContents.executeJavaScript(
+                    'lt.objs.command.exec_BANG_(cljs.core.keyword.call(null,"open-path"),' +
+                    JSON.stringify(${JSON.stringify(SELFEVAL_PROBE)}) + ')');
+                // Long enough for tree-sitter to have parsed, so the buffer is
+                // split into top-level forms rather than evaluated whole.
+                await new Promise(function (r) { setTimeout(r, 3000); });
+                await w.webContents.executeJavaScript(${JSON.stringify(SELFEVAL_EVAL)});
+                // The first evaluation loads cljs.core's analysis, which is
+                // most of the cost and is paid once. Polled rather than slept
+                // through, so a fast machine does not wait for a slow one.
+                let selfEval = null;
+                for (let i = 0; i < 60; i++) {
+                    await new Promise(function (r) { setTimeout(r, 1000); });
+                    selfEval = JSON.parse(await w.webContents.executeJavaScript(${JSON.stringify(SELFEVAL_REPORT)}));
+                    if (selfEval && selfEval.defined) break;
+                }
 
                 // A language server, end to end: spawn, frame, handshake,
                 // synchronise, and render.
@@ -797,6 +869,7 @@ app.on('ready', function () {
                 report.treesitter = treesitter;
                 report.lsp = lsp;
                 report.save = save;
+                report.selfEval = selfEval;
                 // The menubar is set by a behavior at startup, and it lands
                 // over here, so this is the only side it can be seen from.
                 step = 'reading the application menu';
@@ -1089,6 +1162,18 @@ async function main() {
         ['bundled plugins loaded', r.behaviors > 500],
         ['a save reaches the disk', !!r.save && r.save.onDisk === 'after\nbefore\n'],
         ['and the tab stops saying it is dirty', !!r.save && r.save.dirty === false],
+        // The editor changing itself. Each of these fails on its own for a
+        // different reason: the first if the analysis cache is missing or the
+        // loader cannot read it, the second if the bundle stopped exposing
+        // lt.* as globals, the third if forms stopped being split per form.
+        ['the ClojureScript compiler starts in the window',
+         !!r.selfEval && /:status :ready/.test(r.selfEval.compiler || '')],
+        ['evaluating a buffer defines a command that did not exist',
+         !!r.selfEval && r.selfEval.defined === true],
+        ['through the client that is this window',
+         !!r.selfEval && r.selfEval.client === 'LightTable-UI'],
+        ['with a result beside each top-level form',
+         !!r.selfEval && r.selfEval.results === '["nil" "42" "nil"]'],
         // The language server spine. `before` is after didOpen, `after` is
         // after one keystroke.
         ['a language server starts for a project that provides one',
@@ -1150,6 +1235,8 @@ async function main() {
                 '"; file bytes: [' + r.readBytes.magic + ']');
     console.log('save: on disk ' + JSON.stringify((r.save || {}).onDisk) +
                 ', dirty ' + (r.save || {}).dirty);
+    console.log('self-eval: ' + ((r.selfEval && r.selfEval.compiler) || 'no report') +
+                ', results ' + ((r.selfEval && r.selfEval.results) || '-'));
     console.log('language server: ' + (lsp.after ? lsp.after.widgets + ' widgets, ' +
                 lsp.after.messages.length + ' diagnostics, said "' + lspFirst + '"'
                 : 'no report' + (lsp.before && lsp.before.error ? ' — ' + lsp.before.error : '')));

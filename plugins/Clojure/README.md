@@ -42,7 +42,7 @@ Welcome first time ClojureScript users! Please see [David Nolen's tutorial](http
 
 There are 4 options to eval ClojureScript, 3 of which use your ClojureScript javascript. To add one of these connections, run the command `Connect: Add Connection`. The 3 connections to choose from:
 
-1. `Light Table UI` - Connect to the LightTable js process. Great for a headless mode, writing plugins and to try out ClojureScript features. Note, you use the ClojureScript version that comes with LightTable.
+1. `Light Table UI` - Compile and evaluate inside the running editor, which is how you write plugins and change Light Table itself while using it. The compiler runs in the window, so this needs no project and no JVM. Chosen automatically for Light Table's own source and for anything under a `plugin.edn`; see [doc/live-editing.md](../../doc/live-editing.md).
 
 2. `ClojureScript Browser` - Connect to a web page that has the compiled ClojureScript sourced e.g. `file:///path/to/index.html`. The internal browser is automatically opened to a web page based on configurable paths from behavior `:lt.plugins.clojure/set-cljs-browser-paths`. Recommended for ease of use.
 
@@ -58,7 +58,7 @@ Starting with 0.2.0, when you eval a cljs file, LT automatically chooses an appr
 For ClojureScript projects, the `ClojureScript Browser` client opens an internal browser and attempts to find a valid url to connect to using possible paths from behavior `:lt.plugins.clojure/set-cljs-browser-paths`.
 This means that before your first eval, your cljs assets _must_ already be compiled e.g. `lein cljsbuild once`. Make sure the namespace you're evaling is included in your compiled assets. For
 example, if you're in a test namespace, your client browser _must_ be connected to an html file that includes test namespaces. In other words a test build of compiled assets must exist e.g. `lein cljsbuild once test` and an associated html file that sources in that compiled js.
-For LightTable plugins, the `Light Table UI` client is started and eval should just work.
+For LightTable plugins and for Light Table's own source, the `Light Table UI` client is chosen automatically and eval just works — the compiler is in the window.
 
 For ClojureScript projects:
 

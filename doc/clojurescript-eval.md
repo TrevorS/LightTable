@@ -208,30 +208,26 @@ JavaScript back. It was deleted with the rest of that middleware, for reasons
 [VENDORED.md](../plugins/Clojure/VENDORED.md) records and which still hold —
 but this went with it, and nothing replaced it.
 
-### Two ways to put it back
+### It was put back in the window
 
-**On the JVM, over nREPL.** What the original did. It needs a project, a jack-in,
-and a JVM before the editor can change itself — so the editor's own primary
-feature would depend on a toolchain that a person editing their `user.behaviors`
-has no other reason to have.
+Two ways were open. **On the JVM, over nREPL** — what the original did, and what
+would make the editor's own primary feature depend on a project, a jack-in and a
+toolchain that a person editing their `user.behaviors` has no other reason to
+own. Or **in the window, self-hosted**, using shadow-cljs's `:target :bootstrap`
+to emit per-namespace analysis that `cljs.js` compiles against.
 
-**In the window, self-hosted.** shadow-cljs ships `:target :bootstrap`
-(`shadow/build/targets/bootstrap.clj`, confirmed present in 3.4.11), which emits
-per-namespace analysis caches as `/ana/<ns>.transit.json` alongside an index.
-`cljs.js` reads those and compiles in the window. No JVM, no project, no jack-in,
-nothing to install — the editor carries its own compiler and can always change
-itself, which is the property worth having.
+The second, and it works. The risk this page flagged — that the bootstrap loader
+would load Light Table's *JavaScript* along with its analysis, re-running every
+top-level `def` and replacing the atoms the running editor holds — turned out to
+be already solved by shadow: a build requiring `shadow.cljs.bootstrap.browser`
+is a bootstrap host, and shadow appends a `set_loaded` call naming everything
+the bundle provides, so the loader fetches analysis for those and skips their
+code. The split is its design, not something to be worked around.
 
-The unverified risk in the second, and it should be settled before committing to
-it: the bootstrap loader wants to load a namespace's *JavaScript* along with its
-analysis, and Light Table's namespaces are already loaded. Re-evaluating them
-would re-run every top-level `def`, replacing atoms the running editor is
-holding. The analysis is the only part we need. Whether the loader can be told
-that is the question to answer first.
+[Changing the editor while it runs](live-editing.md) is the built thing.
 
 ## Still to do
 
-- A ClojureScript compiler, per the section above. It is the last link.
 - The shadow route selects `node-repl` rather than a named build. `nrepl-select
   :build` is what attaches to a runtime the user already has open, and choosing
   *which* build is a question the project can answer — `shadow-cljs.edn` lists

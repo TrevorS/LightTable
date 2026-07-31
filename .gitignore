@@ -38,6 +38,9 @@
 /User/
 /deploy/core/lighttable/shadow/
 /deploy/core/lighttable/cljs-runtime/
+# The analysis caches the in-window ClojureScript compiler reads. Built from
+# source by `shadow-cljs release bootstrap`; see doc/live-editing.md.
+/deploy/core/lighttable/cljs-cache/
 /.shadow-cljs/
 /node_modules/
 /logs/

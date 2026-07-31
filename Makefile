@@ -78,6 +78,7 @@ clean: ## Remove build output. Leaves node_modules and the Electron download.
 	       deploy/core/lighttable/user.js deploy/core/lighttable/paredit.js \
 	       deploy/core/lighttable/ws.js deploy/core/lighttable/background/worker.js \
 	       deploy/core/lighttable/cljs deploy/core/lighttable/shadow \
+	       deploy/core/lighttable/cljs-cache \
 	       deploy/core/main.js deploy/core/main.js.map \
 	       deploy/core/preload.js deploy/core/preload.js.map \
 	       deploy/core/browserInjection.js deploy/core/browserInjection.js.map

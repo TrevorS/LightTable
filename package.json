@@ -19,7 +19,7 @@
     "build:window": "tsc -p tsconfig.window.json",
     "build:worker": "tsc -p tsconfig.worker.json",
     "build:browser": "tsc -p tsconfig.browser.json",
-    "build:cljs": "npm run --silent build:window && npm run --silent build:worker && npm run --silent build:browser && node script/gen-codemirror-requires.js && tsc -p plugins/TypeScript/tsconfig.json && shadow-cljs release app worker && npm run --silent deps:plugins && node script/place-plugins.js && npm run --silent place:user-plugin",
+    "build:cljs": "npm run --silent build:window && npm run --silent build:worker && npm run --silent build:browser && node script/gen-codemirror-requires.js && tsc -p plugins/TypeScript/tsconfig.json && shadow-cljs release app worker bootstrap && node script/prune-cljs-cache.js && npm run --silent deps:plugins && node script/place-plugins.js && npm run --silent place:user-plugin",
     "place:user-plugin": "node -e \"require('fs').copyFileSync('deploy/core/lighttable/user.js','deploy/core/User/user_compiled.js')\"",
     "build:plugins": "tsc -p plugins/TypeScript/tsconfig.json && npm run --silent deps:plugins && node script/place-plugins.js",
     "deps:plugins": "node script/install-plugin-deps.js",

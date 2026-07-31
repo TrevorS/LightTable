@@ -89,6 +89,45 @@
    :compiler-options {:optimizations :simple
                       :pretty-print  true}}
 
+  ;; The analysis caches that let the editor compile ClojureScript inside
+  ;; itself — see doc/live-editing.md. This emits no code the editor runs:
+  ;; every namespace here is already in the bundle above. What it emits is
+  ;; ana/<ns>.transit.json, the compiler's knowledge of each namespace, which
+  ;; is what a compiler needs to resolve `lt.objs.editor/->val` to the function
+  ;; the running window is already holding.
+  ;;
+  ;; Requiring shadow.cljs.bootstrap.browser from the app build is what makes
+  ;; that split work: shadow appends a set_loaded call listing everything the
+  ;; bundle provides, and the loader then fetches analysis for those and skips
+  ;; their JavaScript. Loading the JavaScript would re-run every top-level def
+  ;; and swap out the atoms the running editor is holding.
+  :bootstrap
+  {:target     :bootstrap
+   :output-dir "deploy/core/lighttable/cljs-cache"
+   ;; lt.core reaches the editor; the plugins are separate module roots and
+   ;; nothing requires them.
+   :entries    [lt.core lt.plugins.user lt.plugins.paredit lt.plugins.clojure
+                lt.plugins.js lt.plugins.css lt.plugins.html lt.plugins.python]
+   ;; Plugin source is mostly behaviors, and `behavior` is a macro. Without
+   ;; this, the first form anyone evaluates in a plugin fails to compile.
+   :macros     [lt.macros]
+
+   ;; The compiler's own macros, which cannot be self-hosted: cljs.js's macro
+   ;; namespace requires cljs.env.macros, and that one exists only as .clj.
+   ;; Nothing anyone evaluates in this editor needs to macroexpand the
+   ;; compiler, and lt.core reaches it only because lt.objs.cljs-compiler is
+   ;; what runs it.
+   :exclude    #{cljs.js}
+
+   ;; The same npm resolution as the app build. This target does not inherit
+   ;; it, and without it the walk stops at the first `(:require ["codemirror"])`.
+   :js-options {:js-provider :shadow
+                :js-package-dirs ["deploy/core/node_modules" "node_modules"]
+                :resolve {"fs" {:target :file
+                                :file "src-window/fs-stub-shim.js"}
+                          "fs/promises" {:target :file
+                                         :file "src-window/fs-stub-shim.js"}}}}
+
   ;; Runs under node, so only namespaces that load without a DOM or an Electron
   ;; runtime can be exercised here. Anything needing the real app is covered by
   ;; script/smoke-test.js instead.
