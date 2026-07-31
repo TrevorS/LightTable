@@ -52,7 +52,15 @@
 /deploy/core/lighttable/ws.js
 /deploy/core/main.js
 /deploy/core/main.js.map
+/deploy/core/config.js
+/deploy/core/config.js.map
 /deploy/core/preload.js
 /deploy/core/browserInjection.js
 /deploy/core/browserInjection.js.map
 /deploy/core/preload.js.map
+
+# Playwright, which writes these on a failing run.
+/test-results/
+/playwright-report/
+/blob-report/
+/.playwright/

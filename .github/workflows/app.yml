@@ -99,10 +99,11 @@ jobs:
           npm run build:worker
           npm run build:browser
 
+      # ClojureScript under node, and the main process under plain node.
+      # Both are seconds and need nothing assembled, so a failure here
+      # explains an integration failure rather than being explained by one.
       - name: Unit tests
-        run: |
-          npx shadow-cljs compile test
-          node target/test.js
+        run: npm test
 
       # The plugins are in this repository, so nothing is fetched for them and
       # nothing is cached: they are built from source by the Compile and Build
@@ -156,6 +157,23 @@ jobs:
 
       - name: Smoke test
         run: script/smoke-test.sh
+
+      # The real application, one instance per test file, driven through both
+      # halves — see doc/testing.md. This is the layer that can see a window
+      # other than the first one, which is where the blank-window bug lived.
+      - name: Integration tests
+        run: npm run test:e2e
+
+      - name: Keep the report from a failing integration run
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-${{ matrix.platform }}
+          path: |
+            test-results/
+            playwright-report/
+          retention-days: 7
+          if-no-files-found: ignore
 
       # Packaged on every run, not only for releases. This is where the
       # platform differences actually live — the Info.plist patching, the

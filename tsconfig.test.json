@@ -1,0 +1,32 @@
+{
+  // The test sources. Checked but never emitted: node runs the unit tests by
+  // stripping types, and Playwright compiles its own specs — so the only thing
+  // tsc does here is what `npm run typecheck` is for, which is to say whether
+  // a test still matches the code it tests.
+  //
+  // Separate from tsconfig.json because that one has rootDir src-electron and
+  // emits into deploy/core, and test files have no business being shipped.
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2023", "DOM"],
+    "module": "commonjs",
+    "moduleResolution": "node",
+
+    "strict": true,
+    "noImplicitOverride": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+
+    "noEmit": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+
+    // The unit tests import ../src-electron/config.ts by its real name,
+    // because that is the specifier node resolves when it runs them.
+    "allowImportingTsExtensions": true,
+    // Playwright's config and fixtures are ES modules.
+    "esModuleInterop": true,
+    "resolveJsonModule": true
+  },
+  "include": ["test-electron/**/*.ts", "test-e2e/**/*.ts", "playwright.config.ts"]
+}

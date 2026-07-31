@@ -50,6 +50,26 @@ export default [
             '@typescript-eslint/no-require-imports': 'off'
         }
     },
+    // The tests. Same rules as the source they exercise — a test that lints
+    // clean is a test someone can read six months later — with one exception:
+    // a spec reaches into the window's ClojureScript through `globalThis as
+    // any`, because the alternative is declaring types for a runtime that
+    // already has none.
+    ...ts.configs.recommended.map((config) => ({
+        ...config,
+        files: ['test-electron/**/*.ts', 'test-e2e/**/*.ts']
+    })),
+    {
+        files: ['test-electron/**/*.ts', 'test-e2e/**/*.ts'],
+        rules: {
+            '@typescript-eslint/no-unused-vars': ['warn', { args: 'none', caughtErrors: 'none' }],
+            '@typescript-eslint/no-explicit-any': 'off',
+            '@typescript-eslint/no-require-imports': 'off',
+            // Playwright fixtures destructure an empty object to declare that
+            // they depend on nothing, which is the documented form.
+            'no-empty-pattern': 'off'
+        }
+    },
     {
         // Light Table's forks of two CodeMirror addons. They have drifted from
         // upstream deliberately, but the bodies are still recognisably its

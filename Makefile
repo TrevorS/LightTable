@@ -10,7 +10,8 @@
 
 .DEFAULT_GOAL := run
 .PHONY: help deps build build-cljs build-main build-plugins run check test \
-        smoke lint typecheck docs repl clean dist screenshot
+        test-cljs test-electron test-e2e smoke lint typecheck docs repl clean \
+        dist screenshot
 
 help: ## Show this list
 	@grep -hE '^[a-z-]+:.*##' $(MAKEFILE_LIST) \
@@ -58,11 +59,20 @@ lint: ## clj-kondo over ClojureScript, eslint over JavaScript and TypeScript
 	npm run lint:cljs
 	npm run lint:js
 
-typecheck: ## tsc --noEmit over all five TypeScript projects
+typecheck: ## tsc --noEmit over every TypeScript project, tests included
 	npm run typecheck
 
-test: ## Unit tests, under node
+test: ## Every unit test: ClojureScript and the main process
 	npm test
+
+test-cljs: ## ClojureScript units, under node — no DOM, no Electron
+	npm run test:cljs
+
+test-electron: ## Main-process units, under plain node
+	npm run test:electron
+
+test-e2e: ## Integration tests: the real app, driven by Playwright — needs a build
+	script/e2e.sh
 
 smoke: ## Boot the real application and check it — needs a build first
 	script/smoke-test.sh
@@ -80,5 +90,6 @@ clean: ## Remove build output. Leaves node_modules and the Electron download.
 	       deploy/core/lighttable/cljs deploy/core/lighttable/shadow \
 	       deploy/core/lighttable/cljs-cache \
 	       deploy/core/main.js deploy/core/main.js.map \
+	       deploy/core/config.js deploy/core/config.js.map \
 	       deploy/core/preload.js deploy/core/preload.js.map \
 	       deploy/core/browserInjection.js deploy/core/browserInjection.js.map

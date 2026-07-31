@@ -20,7 +20,14 @@
 
 (def cbs (atom {}))
 (def id (atom 0))
-(def devtools-url "http://localhost:8315/json")
+(def devtools-url
+  "Where Chromium lists its debuggable targets.
+
+  The port comes from the main process rather than being written here as well.
+  It is configurable now — a harness that launches Light Table appends its own
+  `--remote-debugging-port` — and a renderer holding a second copy of the
+  number is a renderer that is right until the day the main process moves."
+  (str "http://localhost:" (or (:remoteDebuggingPort bridge/app-info) 8315) "/json"))
 
 (defn next-id []
   (swap! id inc))
@@ -272,12 +279,25 @@
                                                     (find-debugger-info (:url @this))
                                                     (:webSocketDebuggerUrl))]
                                      (object/raise this :connect! url)
-                                     (wait 1000 #(object/raise this :reconnect!)))))))
+                                     (wait 1000 #(object/raise this :reconnect!))))
+                                 ;; The endpoint not answering yet is the same
+                                 ;; situation as it answering without our
+                                 ;; target in it, and it already knows what to
+                                 ;; do about that. Without this the default
+                                 ;; handler put a bare `TypeError: Failed to
+                                 ;; fetch` in the console and stopped trying.
+                                 (fn [_] (wait 1000 #(object/raise this :reconnect!))))))
 
 (behavior ::connect-on-init
           :triggers #{:init}
           :reaction (fn [app]
-                      (object/raise local :reconnect!)))
+                      ;; Only when there is somewhere to connect to. The port
+                      ;; is settable and can be turned off — a harness that
+                      ;; launches Light Table appends its own — and polling an
+                      ;; endpoint that will never exist, once a second, for the
+                      ;; life of the process, is not a way to find out.
+                      (when (:remoteDebuggingPort bridge/app-info)
+                        (object/raise local :reconnect!))))
 
 ;;*********************************************************
 ;; Inspectors

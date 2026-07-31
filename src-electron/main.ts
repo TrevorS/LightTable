@@ -15,6 +15,7 @@
 import * as electron from 'electron';
 import * as fs from 'node:fs';
 import { parseArgs } from 'node:util';
+import { windowOptions, resolveDebugPort } from './config';
 
 const { app, BrowserWindow, ipcMain, dialog, Menu, MenuItem, shell, clipboard } = electron;
 
@@ -25,6 +26,10 @@ interface AppInfo {
     parsedArgs: ParsedArgs;
     openFiles: string[];
     argv: string[];
+    /** Where the DevTools endpoint is, or null when this run has none. The
+     *  browser tab evaluates through it, and used to hard-code 8315 in the
+     *  renderer — two places to change, one of which nothing would notice. */
+    remoteDebuggingPort: number | null;
 }
 
 /** Geometry of the window a renderer belongs to. */
@@ -89,29 +94,11 @@ const packageJSON = require(__dirname + '/package.json');
 
 // Returns Window object
 function createWindow(): electron.BrowserWindow {
-    // A fresh options object per window, built from the relative paths
-    // package.json states. Electron resolves neither the icon nor the preload
-    // relative to the app directory, so both need `__dirname` — but this used
-    // to prepend it to `packageJSON.browserWindowOptions` itself, which
-    // `require` caches and hands back the same object every time.
-    //
-    // So the second window asked for `<core>/<core>/preload.js`, its preload
-    // never loaded, `lightTable` was undefined, and the bundle threw on the
-    // first thing that reached the bridge. What you saw was a white window:
-    // the first one was fine, so nothing looked broken until you opened
-    // another.
-    const defaults = packageJSON.browserWindowOptions;
-    const browserWindowOptions = {
-        ...defaults,
-        icon: __dirname + '/' + defaults.icon,
-        webPreferences: {
-            ...defaults.webPreferences,
-            ...(defaults.webPreferences?.preload
-                ? { preload: __dirname + '/' + defaults.webPreferences.preload }
-                : {})
-        }
-    };
-    const window = new BrowserWindow(browserWindowOptions);
+    // Built fresh per window rather than by adding __dirname to the cached
+    // package.json object — see config.ts, and the white second window that
+    // taught us the difference.
+    const window = new BrowserWindow(
+        windowOptions(packageJSON.browserWindowOptions, __dirname));
     windows[window.id] = window;
     window.focus();
     window.webContents.on("will-navigate", function(e) {
@@ -222,7 +209,8 @@ function registerRendererApi(): void {
             platform: process.platform,
             parsedArgs: global.browserParsedArgs,
             openFiles: global.browserOpenFiles,
-            argv: process.argv
+            argv: process.argv,
+            remoteDebuggingPort: debugPort.port
         };
         event.returnValue = info;
     });
@@ -412,14 +400,23 @@ function readArgs(): void {
 // entry point calls start() — script/smoke-test.js requires this file and
 // drives it itself, so a switch set only in start() is one the harness never
 // gets, which is how the second of these came to be missing there.
-app.commandLine.appendSwitch('remote-debugging-port', '8315');
-// Without this, Chromium refuses that WebSocket with a 403 and the browser tab
-// cannot evaluate anything. Chromium 111 began checking the Origin header on
-// debugger connections, and Light Table's window is a file:// url — so the
-// origin is `file://`, which is exactly what has to be allowed. Not `*`: that
-// would let any page able to reach localhost:8315 drive this application's
-// debugger.
-app.commandLine.appendSwitch('remote-allow-origins', 'file://');
+//
+// Settable, and skippable, because a harness that launches the application
+// appends its own and the two then disagree. resolveDebugPort says why.
+const debugPort = resolveDebugPort(process.env);
+if (debugPort.reason === 'invalid') {
+    console.error('LT_REMOTE_DEBUGGING_PORT is not a port number; using ' + debugPort.port);
+}
+if (debugPort.port !== null) {
+    app.commandLine.appendSwitch('remote-debugging-port', String(debugPort.port));
+    // Without this, Chromium refuses that WebSocket with a 403 and the browser
+    // tab cannot evaluate anything. Chromium 111 began checking the Origin
+    // header on debugger connections, and Light Table's window is a file:// url
+    // — so the origin is `file://`, which is exactly what has to be allowed.
+    // Not `*`: that would let any page able to reach the port drive this
+    // application's debugger.
+    app.commandLine.appendSwitch('remote-allow-origins', 'file://');
+}
 
 function start(): void {
 

@@ -139,6 +139,22 @@
          sort
          last)))
 
+(defn unreachable
+  "What a background check does when it cannot reach the network.
+
+  Not `console/error`. A laptop that is offline is not a fault in the editor,
+  and `TypeError: Failed to fetch` with a stack trace under it is how a
+  console stops meaning anything — the update check runs at every startup and
+  then on a timer, so on a train it is the only thing in there.
+
+  When the user asked for the check they get an answer; when it was the timer,
+  it is a log line saying which host was not there."
+  [what notify?]
+  (fn [^js e]
+    (if notify?
+      (notifos/set-msg! (str "Could not reach " what) {:class "error"})
+      (console/log (str "Could not reach " what ": " (.-message e))))))
+
 (defn check-version [& [notify?]]
   (js-util/fetch-text tags-url
              (fn [data]
@@ -160,12 +176,10 @@
                        (should-update-popup latest-version))
                      (when notify?
                        (notifos/set-msg! (str "At latest version: " (:version version)))))))) 
-             (fn [e]
-               ;; This also runs on a timer regardless of whether the machine is
-               ;; online, so only surface a failure the user actually asked for.
-               (if notify?
-                 (console/error e)
-                 (.log js/console "Version check failed:" e)))))
+             ;; This runs at startup and then on a timer regardless of whether
+             ;; the machine is online, so a failure is only worth the user's
+             ;; attention when the user asked for it.
+             (unreachable (str repo/repo " to check for updates") notify?)))
 
 (defn binary-version
   "Binary/electron version. The two versions are in sync since binaries updates

@@ -448,7 +448,11 @@
                                      (console/error (str "Invalid JSON response from " metadata-commits ": " (pr-str data)))))]
                  (let [sha (-> (aget parsed 0)
                                (aget "sha"))]
-                   (object/raise manager :metadata.sha sha))))))
+                   (object/raise manager :metadata.sha sha))))
+             ;; The plugin manager refreshes this whenever it opens, and a
+             ;; machine with no network reported `TypeError: Failed to fetch`
+             ;; with a stack trace into the console every time.
+             (deploy/unreachable "the plugin metadata on GitHub" false)))
 
 (defn download-metadata [sha]
   (let [tmp-gz (files/lt-user-dir "metadata-temp.tar.gz")
