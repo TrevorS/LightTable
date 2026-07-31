@@ -39,6 +39,7 @@
             [lt.object :as object]
             [lt.objs.clients :as clients]
             [lt.objs.console :as console]
+            [lt.objs.files :as files]
             [lt.objs.notifos :as notifos]
             [lt.util.load :refer [node-module]]
             [cljs.reader :as reader])
@@ -48,7 +49,10 @@
 (def Buffer (js/require "buffer"))
 (def net (js/require "net"))
 
-(declare send send* interrupt! send-form! eval-message)
+(declare send send* interrupt! send-form! eval-message ensure-cljs-session! build-tool cljs-ready!)
+
+(def ^:private cljs-clone-id "lt-clone-cljs")
+(def ^:private cljs-switch-id "lt-switch-cljs")
 
 ;;*********************************************************
 ;; The wire
@@ -177,15 +181,18 @@
   [client cb data n]
   (when-let [form (nth (:forms data) n nil)]
     (let [id (str cb "-" n)]
-      (track! client id {:command :editor.eval.clj
+      (track! client id {:command (if (::session data)
+                                    :editor.eval.cljs
+                                    :editor.eval.clj)
                          :cb cb
                          :meta (:meta form)
                          :data data
                          :next (inc n)})
-      (send client (assoc (eval-message (assoc form
-                                               :ns (:buffer-ns data)
-                                               :path (:path data)))
-                          :id id)))))
+      (send client (cond-> (assoc (eval-message (assoc form
+                                                        :ns (:buffer-ns data)
+                                                        :path (:path data)))
+                                  :id id)
+                     (::session data) (assoc :session (::session data)))))))
 
 (defn- ns-form?
   "Whether `code` is an `(ns …)` form."
@@ -296,6 +303,15 @@
                           "editor.eval.clj"
                           (send-form! this cb data 0)
 
+                          ;; The same path, a different session. Everything
+                          ;; after this — forms from the parse tree, a result
+                          ;; beside each one, watches — is what Clojure
+                          ;; already does, because it is the same code.
+                          "editor.eval.cljs"
+                          (ensure-cljs-session!
+                           this (fn [session]
+                                  (send-form! this cb (assoc data ::session session) 0)))
+
                           "editor.clj.doc"
                           (let [id (str cb)]
                             ;; :result-type and :loc are the caller's, and both
@@ -372,7 +388,7 @@
   [client id {:keys [command cb meta errored?] :as record} msg]
   (forget! client id)
   (case command
-    :editor.eval.clj
+    (:editor.eval.clj :editor.eval.cljs)
     (do
       ;; The next form goes out as soon as this one is finished, whether it
       ;; produced a value or threw — a file does not stop evaluating because
@@ -384,10 +400,19 @@
       ;; orchard's frames when they arrive. Drawing twice is deliberate: the
       ;; first is instant and the second is better.
         (do (object/raise clients/clients :message
-                          [cb :editor.eval.clj.exception (->exception record)])
-            (request-stacktrace! client id record))
+                          [cb (if (= :editor.eval.cljs command)
+                                :editor.eval.cljs.exception
+                                :editor.eval.clj.exception)
+                           (->exception record)])
+            (when (= :editor.eval.clj command)
+              ;; orchard analyses the JVM's last exception; a ClojureScript one
+              ;; is not on that stack.
+              (request-stacktrace! client id record)))
         (object/raise clients/clients :message
-                      [cb :editor.eval.clj.result (->result record)])))
+                      [cb (if (= :editor.eval.cljs command)
+                            :editor.eval.cljs.result
+                            :editor.eval.clj.result)
+                       (->result record)])))
 
     ::stacktrace
     (let [{:keys [class message stacktrace]} record]
@@ -420,17 +445,75 @@
 
     nil))
 
+(def cljs-switch
+  "The form that turns a session into a ClojureScript one, per build tool.
+
+  Nobody is asked which. The project already says: a `shadow-cljs.edn` beside
+  the code means shadow, and shadow's own nREPL knows that project's builds and
+  can attach to the runtime the user already has open. Anything else gets
+  piggieback over a node environment, which needs nothing installed.
+
+  This is `::language-servers`' rule again — look at the project, act, and let
+  a behavior override — rather than a question in front of every evaluation."
+  {:shadow "(shadow.cljs.devtools.api/node-repl)"
+   :piggieback (str "(do (require 'cljs.repl.node 'cider.piggieback)"
+                    " (cider.piggieback/cljs-repl (cljs.repl.node/repl-env)))")})
+
 (behavior ::nrepl-message
           :triggers #{::message}
           :desc "Clojure: handle one nREPL reply"
           :reaction (fn [this msg]
                       (let [id (:id msg)
                             status (set (:status msg))]
-                        (when (:new-session msg)
-                          (object/raise this :new-session (:new-session msg)))
+                        (when-let [new-session (:new-session msg)]
+                          (if (= id cljs-clone-id)
+                            ;; The second session. Switch it, and only call it
+                            ;; ready when the switch has actually taken — the
+                            ;; form can fail, and a session that is still
+                            ;; Clojure would evaluate ClojureScript as Clojure
+                            ;; and report nonsense.
+                            (do (object/merge! this {::cljs-candidate new-session})
+                                (send* this {:op "eval" :id cljs-switch-id
+                                             :session new-session
+                                             :code (get cljs-switch (build-tool this))}))
+                            (object/raise this :new-session new-session)))
+
+                        ;; Only failure is decided on `done`; a switch that
+                        ;; worked is noticed by the state message above.
+                        (when (and (= id cljs-switch-id) (done? msg)
+                                   (not (::cljs-session @this))
+                                   (::cljs-error @this))
+                          (object/merge! this {::cljs-starting false ::cljs-waiting []})
+                          (console/error
+                                 (str "ClojureScript REPL: " (::cljs-error @this)))
+                          (notifos/set-msg!
+                                 (str "Could not start a ClojureScript REPL — "
+                                      (or (some-> (::cljs-error @this) string/trim
+                                                  (string/split #"\n") first)
+                                          (if (= :shadow (build-tool this))
+                                            "shadow-cljs needs a build running, or a runtime to attach to."
+                                            "see the console.")))
+                                 {:class "error"}))
 
                         (when (status "interrupted")
                           (notifos/done-working "Interrupted"))
+
+                        ;; cider-nrepl and shadow both say which language the
+                        ;; session is evaluating, on every `state` message. Read
+                        ;; rather than remembered, so a session someone switched
+                        ;; from elsewhere is noticed too.
+                        (when-let [repl-type (:repl-type msg)]
+                          (object/update! this [::repl-types]
+                                          assoc (:session msg) (keyword repl-type))
+                          ;; Readiness is decided here and not on the switch's
+                          ;; `done`, because the `state` message that carries
+                          ;; :repl-type arrives *after* it — deciding on done
+                          ;; asked whether the session was ClojureScript one
+                          ;; message before it said so.
+                          (when (and (= :cljs (keyword repl-type))
+                                     (= (:session msg) (::cljs-candidate @this))
+                                     (not (::cljs-session @this)))
+                            (cljs-ready! this (:session msg))))
 
                         ;; Printed output is drawn as it arrives rather than
                         ;; held until the form finishes. Watching a long
@@ -452,10 +535,18 @@
                             (when-not (string/blank? text)
                               (object/raise clients/clients :message
                                             [(:cb record) :editor.eval.clj.print {:out text}]))))
+                        ;; The session switch is ours rather than a user's
+                        ;; evaluation, so its output is kept for the message
+                        ;; below instead of being drawn beside somebody's code.
+                        (when (and (= id cljs-switch-id) (:err msg))
+                          (object/update! this [::cljs-error] (fnil str "") (:err msg)))
+
                         (when-let [err (:err msg)]
-                          (let [record (or (pending this id) (last-record this))]
-                            (object/raise clients/clients :message
-                                          [(:cb record) :editor.eval.clj.print.err {:out err}])))
+                          (let [record (when-not (= id cljs-switch-id)
+                                         (or (pending this id) (last-record this)))]
+                            (when record
+                              (object/raise clients/clients :message
+                                            [(:cb record) :editor.eval.clj.print.err {:out err}]))))
 
                         (when-let [record (or (pending this id)
                                               ;; An err with no id still belongs
@@ -473,6 +564,42 @@
 ;;*********************************************************
 ;; Connecting
 ;;*********************************************************
+
+;;*********************************************************
+;; A second session, for ClojureScript
+;;*********************************************************
+
+(defn- build-tool
+  "Which switch form this project wants, from what is beside the code."
+  [client]
+  (if (files/exists? (files/join (:dir @client) "shadow-cljs.edn"))
+    :shadow
+    :piggieback))
+
+(defn- cljs-ready! [client session]
+  (object/merge! client {::cljs-session session ::cljs-starting false})
+  (notifos/done-working "ClojureScript REPL ready")
+  (doseq [k (::cljs-waiting @client)] (k session))
+  (object/merge! client {::cljs-waiting []}))
+
+(defn ensure-cljs-session!
+  "Call `k` with a session that is evaluating ClojureScript, starting one if
+  there is not one yet.
+
+  A *second* session on the same connection rather than switching the one
+  there is. A project holds .clj and .cljs files and both have to keep
+  evaluating; switching would mean the Clojure half stops until someone
+  switches back, which is worse than it sounds and very hard to explain.
+  nREPL sessions are cheap and independent, so there are two."
+  [client k]
+  (if-let [s (::cljs-session @client)]
+    (k s)
+    (do
+      (object/update! client [::cljs-waiting] (fnil conj []) k)
+      (when-not (::cljs-starting @client)
+        (object/merge! client {::cljs-starting true})
+        (notifos/working "Starting a ClojureScript REPL…")
+        (send* client {:op "clone" :id cljs-clone-id})))))
 
 (behavior ::nrepl-connect
           :triggers #{::connect}
@@ -493,6 +620,7 @@
    :client-id (clients/->id this)
    :commands [:editor.eval.clj
               :editor.eval.clj.cancel
+              :editor.eval.cljs
               :editor.clj.doc
               :editor.clj.hints]})
 
@@ -538,4 +666,7 @@
 
 (defn send [client msg]
   (let [session (:session @client)]
+    ;; A message that names its own session keeps it — that is how a
+    ;; ClojureScript evaluation reaches the ClojureScript session while
+    ;; everything else stays on the Clojure one.
     (send* client (merge (when session {:session session}) msg))))

@@ -1,6 +1,7 @@
 # Evaluating ClojureScript
 
-A scouting note. Clojure evaluation works — see
+**Built.** This began as a scouting note and the measurements below are what it
+found; what it recommended is now what happens. Clojure evaluation works — see
 [plugins/Clojure/VENDORED.md](https://github.com/TrevorS/LightTable/blob/develop/plugins/Clojure/VENDORED.md)
 — and ClojureScript does not. This is what it would take, measured against a
 real shadow-cljs project and a real Leiningen one rather than read out of a
@@ -85,20 +86,32 @@ and the nREPL client does not advertise it. Advertising it once the session is
 in ClojureScript, and translating the reply the way `:editor.eval.clj` already
 is, is most of the work.
 
-## Two decisions before any code
+## The two decisions, decided
 
-**Which environment, and who chooses.** `node-repl` needs nothing and runs in
-node; a browser environment needs a page with the app loaded; `nrepl-select`
-needs a build that is already running. CIDER asks the user every time. Light
-Table has a Connect bar for exactly this kind of question, and the plugin
-already puts entries in it — "ClojureScript Browser" and "Light Table UI" are
-there now, left over from the browser-client path.
+**Nobody is asked which environment.** The project already says: a
+`shadow-cljs.edn` beside the code means shadow, anything else means piggieback
+over node. That is `::language-servers`' rule again — look at the project, act,
+and let a behavior override — rather than a question in front of every
+evaluation. Connecting a browser is still something you can *choose*, in the
+Connect bar, which is what the Connect bar is for; doing it automatically meant
+evaluating any `.cljs` file went looking for a page to attach to and threw
+before it ever reached the REPL.
 
-**What happens to the Clojure session.** Switching is per session, so a file
-of Clojure and a file of ClojureScript in the same project cannot share one.
-Either the plugin keeps two sessions on one connection — cheap, and what CIDER
-does — or switching means the `.clj` files stop evaluating until it is switched
-back, which is worse than it sounds and very hard to explain.
+**Two sessions on one connection.** Not a decision in the end: a project holds
+`.clj` and `.cljs` files and both have to keep evaluating, so switching the one
+session would mean the Clojure half stops until someone switches back. nREPL
+sessions are cheap and independent, so `lt.plugins.clojure.nrepl` clones a
+second one on the first ClojureScript evaluation and keeps both.
+
+Readiness is decided by the `:repl-type` on the `state` message, not by the
+switch form's `done` — the state message arrives *after* it, so deciding on
+done asks whether the session is ClojureScript one message before it says so.
+
+Light Table also brings what its own features need, the way it brings
+cider-nrepl: `[cider/piggieback]` and `[org.clojure/clojurescript]` are
+injected into the jack-in. A project with its own ClojureScript wins on
+Leiningen's normal resolution; a project with none gets a working REPL instead
+of a missing class.
 
 ## One trap, already paid for
 

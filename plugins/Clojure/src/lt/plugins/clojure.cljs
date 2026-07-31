@@ -47,6 +47,19 @@
 (def cider-nrepl-version "0.62.2")
 (def nrepl-version "1.7.0")
 
+;; Injected whether or not the project asked for it, the way cider-nrepl is:
+;; ClojureScript evaluation is a feature Light Table offers, so Light Table
+;; brings what it needs rather than asking the user to add a dependency to
+;; their project for the editor's benefit. shadow-cljs projects never reach
+;; this — they have their own.
+(def piggieback-version "0.7.0")
+
+;; And the compiler it drives. A project with its own ClojureScript wins on
+;; Leiningen's normal resolution, so this only matters for a project that has
+;; none — where without it the ClojureScript REPL fails with a missing class
+;; rather than a missing feature.
+(def clojurescript-version "1.12.42")
+
 ;; Forward references. This namespace is written in call order rather than
 ;; definition order throughout, which the ClojureScript compiler reports as an
 ;; undeclared var — see plugins/Clojure/VENDORED.md.
@@ -152,15 +165,22 @@
                                                                         (whole-region editor)))})))
 (behavior ::on-eval.cljs
           :triggers #{:eval}
+          ;; The same shape as ::on-eval.clj, because it is now the same path:
+          ;; forms from the parse tree, a result beside each one, watches. The
+          ;; only difference is which nREPL session evaluates them, and that is
+          ;; the client's business.
+          ;;
+          ;; The `(set! js/COMPILED true)` wrapper that used to be here belonged
+          ;; to the browser-client route, where evaluating an `ns` form in a
+          ;; page raised goog.provide errors. A real ClojureScript REPL compiles
+          ;; the form properly and does not need to be lied to.
           :reaction (fn [editor]
                       (object/raise clj-lang :eval! {:origin editor
                                                      :info (assoc (@editor :info)
                                                              :print-length (object/raise-reduce editor :clojure.print-length+ nil)
-                                                             ;; COMPILED temporarily enabled to turn off goog.provide ns errors
-                                                             :code (str
-                                                                    "(set! js/COMPILED-temp js/COMPILED) (set! js/COMPILED true) "
-                                                                    (watches/watched-range editor nil nil nil)
-                                                                    "(set! js/COMPILED js/COMPILED-temp)"))})))
+                                                             :buffer-ns (buffer-ns editor)
+                                                             :forms (or (forms-in editor)
+                                                                        (whole-region editor)))})))
 
 (behavior ::on-eval.one
           :triggers #{:eval.one}
@@ -273,15 +293,20 @@
                         (clients/send (eval/get-client! {:command command
                                                          :info info
                                                          :origin origin
-                                                         :create (fn [arg]
-                                                                   (when (contains? (set (:tags info)) :editor.cljs)
-                                                                     (let [client (if (= :auto default-cljs-client)
-                                                                                    (if (lighttable-ui-project? (:path info))
-                                                                                      "Light Table UI" "ClojureScript Browser")
-                                                                                    default-cljs-client)]
-                                                                       (when-let [connect-fn (-> @scl/clients :connectors (get client) :connect)]
-                                                                         (connect-fn))))
-                                                                   (try-connect arg))})
+                                                         ;; try-connect for ClojureScript too, rather than
+                                                         ;; reaching for a browser first. A .cljs file
+                                                         ;; evaluates in the project's REPL, the same as a
+                                                         ;; .clj one — it is a second nREPL session on the
+                                                         ;; same connection, which lt.plugins.clojure.nrepl
+                                                         ;; starts on demand.
+                                                         ;;
+                                                         ;; Connecting a browser is still a thing you can
+                                                         ;; do; it is a thing you *choose*, in the Connect
+                                                         ;; bar, which is what the Connect bar is for. Doing
+                                                         ;; it automatically meant evaluating any .cljs file
+                                                         ;; went looking for a page to attach to, and threw
+                                                         ;; before it ever reached the REPL.
+                                                         :create try-connect})
                                       command info :only origin))))
 
 (behavior ::build!
@@ -358,49 +383,69 @@
                             ev (->dottedkw :editor.eval.cljs.result type)]
                         (object/raise obj ev res))))
 
+(defn results-in
+  "The results a response carries, whichever shape it came in.
+
+  There were two. Clojure evaluation sends `:results`, a vector with one entry
+  per top-level form and the `:meta` saying which lines each belongs beside —
+  which is what makes a result appear next to the form that produced it.
+  ClojureScript sent a single `:result` at the top level, because the only
+  thing that answered it was a browser evaluating one expression.
+
+  Both go through here now, so there is one shape downstream and the browser
+  route keeps working: a response that carries no `:results` is a response with
+  one, itself."
+  [res]
+  (or (seq (:results res)) [res]))
+
 (behavior ::cljs-result.replace
           :triggers #{:editor.eval.cljs.result.replace}
           :reaction (fn [obj res]
-                      (if-let [err (or (:stack res) (:ex res))]
-                        (notifos/set-msg! err {:class "error"})
-                        (ed/replace-selection obj  (unescape-unicode (or (:result res) ""))))))
+                      (doseq [result (results-in res)]
+                        (if-let [err (or (:stack result) (:ex result))]
+                          (notifos/set-msg! err {:class "error"})
+                          (ed/replace-selection obj (unescape-unicode (or (:result result) "")))))))
 
 (behavior ::cljs-result.statusbar
           :triggers #{:editor.eval.cljs.result.statusbar}
           :reaction (fn [obj res]
-                      (if-let [err (or (:stack res) (:ex res))]
-                        (notifos/set-msg! err {:class "error"})
-                        (notifos/set-msg! (unescape-unicode (or (:result res) "")) {:class "result"}))))
+                      (doseq [result (results-in res)]
+                        (if-let [err (or (:stack result) (:ex result))]
+                          (notifos/set-msg! err {:class "error"})
+                          (notifos/set-msg! (unescape-unicode (or (:result result) "")) {:class "result"})))))
 
 (behavior ::cljs-result.inline
           :triggers #{:editor.eval.cljs.result.inline}
           :reaction (fn [obj res]
-                      (let [meta (:meta res)
-                            loc {:line (dec (:end-line meta)) :ch (:end-column meta)
-                                 :start-line (dec (:line meta))}]
-                        (if-let [err (or (:stack res) (:ex res))]
-                          (object/raise obj :editor.eval.cljs.exception res :passed)
-                          (object/raise obj :editor.result (unescape-unicode (or (:result res) "")) loc)))))
+                      (doseq [result (results-in res)
+                              :let [meta (or (:meta result) (:meta res))
+                                    loc {:line (dec (:end-line meta)) :ch (:end-column meta)
+                                         :start-line (dec (:line meta))}]]
+                        (if-let [err (or (:stack result) (:ex result))]
+                          (object/raise obj :editor.eval.cljs.exception result :passed)
+                          (object/raise obj :editor.result (unescape-unicode (or (:result result) "")) loc)))))
 
 (behavior ::cljs-result.inline-at-cursor
           :triggers #{:editor.eval.cljs.result.inline-at-cursor}
           :reaction (fn [obj res]
-                      (let [meta (:meta res)
-                            loc {:line (:start meta)
-                                 :start-line (:start meta)}]
-                        (if-let [err (or (:stack res) (:ex res))]
-                          (object/raise obj :editor.eval.cljs.exception res :passed)
-                          (object/raise obj :editor.result (unescape-unicode (or (:result res) "")) loc)))))
+                      (doseq [result (results-in res)
+                              :let [meta (or (:meta result) (:meta res))
+                                    loc {:line (or (:start meta) (dec (:end-line meta)))
+                                         :start-line (or (:start meta) (dec (:line meta)))}]]
+                        (if-let [err (or (:stack result) (:ex result))]
+                          (object/raise obj :editor.eval.cljs.exception result :passed)
+                          (object/raise obj :editor.result (unescape-unicode (or (:result result) "")) loc)))))
 
 (behavior ::cljs-result.return
           :triggers #{:editor.eval.cljs.result.return}
           :reaction (fn [obj res]
-                      (let [meta (:meta res)
-                            handler (-> meta :handler object/by-id)
-                            ev (:trigger meta)]
-                        (if-let [err (or (:stack res) (:ex res))]
-                          (object/raise obj :editor.eval.cljs.exception res :passed)
-                          (object/raise handler ev {:result (unescape-unicode (or (:result res) ""))
+                      (doseq [result (results-in res)
+                              :let [meta (:meta res)
+                                    handler (-> meta :handler object/by-id)
+                                    ev (:trigger meta)]]
+                        (if-let [err (or (:stack result) (:ex result))]
+                          (object/raise obj :editor.eval.cljs.exception result :passed)
+                          (object/raise handler ev {:result (unescape-unicode (or (:result result) ""))
                                                     :meta meta})))))
 
 (behavior ::clj-result
@@ -932,7 +977,13 @@
   to be in the argument itself."
   []
   ["update-in" ":dependencies" "conj" (str "[nrepl/nrepl \"" nrepl-version "\"]") "--"
+   "update-in" ":dependencies" "conj" (str "[cider/piggieback \"" piggieback-version "\"]") "--"
+   "update-in" ":dependencies" "conj" (str "[org.clojure/clojurescript \"" clojurescript-version "\"]") "--"
    "update-in" ":plugins" "conj" (str "[cider/cider-nrepl \"" cider-nrepl-version "\"]") "--"
+   ;; A bare symbol, not a string: the value is read by the Clojure reader, and
+   ;; a string here fails with "String cannot be cast to IFn" naming neither
+   ;; the middleware nor the quoting.
+   "update-in" ":repl-options:nrepl-middleware" "conj" "cider.piggieback/wrap-cljs-repl" "--"
    "repl" ":headless"])
 
 (defn run-lein
