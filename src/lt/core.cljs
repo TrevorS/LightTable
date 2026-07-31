@@ -24,6 +24,7 @@
             [lt.objs.jump-stack]
             [lt.objs.langs.keymap]
             [lt.objs.search]
+            [lt.objs.session]
             [lt.objs.sidebar.navigate]
             [lt.objs.sidebar.workspace]
             [lt.objs.version]

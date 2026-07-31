@@ -3,6 +3,10 @@
  [:app :lt.objs.settings/load-behaviors]
  [:app :lt.objs.proc/set-path-OSX]
  [:app :lt.objs.workspace/reconstitute-last-workspace]
+ ;; After the workspace, on the same trigger: the session is only
+ ;; applied when its folders match the workspace that was restored.
+ [:app :lt.objs.session/restore-session]
+ [:app :lt.objs.session/store-session]
  [:app :lt.objs.sidebar.command/init-commands]
  [:app :lt.objs.clients.ws/kill-on-closed]
  [:app :lt.objs.workspace/stop-watch-on-close]
@@ -603,6 +607,7 @@
  [:tabs :lt.objs.tabs/left!]
  [:tabs :lt.objs.tabs/bottom!]
 
+ [:tabset :lt.objs.session/store-session-on-tab-change]
  [:tabset :lt.objs.tabs/set-width-final!]
  [:tabset :lt.objs.tabs/tabset-active]
  [:tabset :lt.objs.tabs/next-tab]
