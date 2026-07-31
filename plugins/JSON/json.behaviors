@@ -1,0 +1,13 @@
+{;; JSON, as data. No code in this plugin.
+ ;;
+ ;; From vscode-langservers-extracted, which is the same server VS Code uses.
+ ;; SchemaStore gives package.json, tsconfig.json and several hundred others
+ ;; completion and validation without configuring anything.
+ :+ {:lsp.client [(:lt.objs.editor.lsp/language-servers
+                   [{:tags [:editor.json]
+                     :language-id "json"
+                     :root ["package.json" ".git"]
+                     :command "vscode-json-language-server"
+                     :args ["--stdio"]
+                     :install "npm i -g vscode-langservers-extracted"
+                     :init-options {:provideFormatter true}}])]}}

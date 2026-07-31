@@ -1,0 +1,9 @@
+{:name "Zig"
+ :version "0.1.0"
+ :author "Light Table"
+ :desc "Zig support, through zls."
+ :source "https://github.com/TrevorS/LightTable"
+ :behaviors "zig.behaviors"
+
+ ;; None. The editor spawns the language server, not this plugin.
+ :capabilities #{}}

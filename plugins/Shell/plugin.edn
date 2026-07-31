@@ -1,0 +1,9 @@
+{:name "Shell"
+ :version "0.1.0"
+ :author "Light Table"
+ :desc "Shell support, through bash-language-server."
+ :source "https://github.com/TrevorS/LightTable"
+ :behaviors "shell.behaviors"
+
+ ;; None. The editor spawns the language server, not this plugin.
+ :capabilities #{}}

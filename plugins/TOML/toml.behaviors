@@ -1,0 +1,11 @@
+{;; TOML, as data. No code in this plugin.
+ ;;
+ ;; taplo formats and validates, and knows Cargo.toml and pyproject.toml
+ ;; specifically.
+ :+ {:lsp.client [(:lt.objs.editor.lsp/language-servers
+                   [{:tags [:editor.toml]
+                     :language-id "toml"
+                     :root [".git"]
+                     :command "taplo"
+                     :args ["lsp" "stdio"]
+                     :install "cargo install taplo-cli --features lsp, or brew install taplo"}])]}}

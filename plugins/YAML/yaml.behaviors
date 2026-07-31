@@ -1,0 +1,15 @@
+{;; YAML, as data. No code in this plugin.
+ ;;
+ ;; SchemaStore is on, which is most of the value here: GitHub workflows,
+ ;; docker-compose and Kubernetes manifests validate and complete without
+ ;; being told what they are.
+ :+ {:lsp.client [(:lt.objs.editor.lsp/language-servers
+                   [{:tags [:editor.yaml]
+                     :language-id "yaml"
+                     :root [".git"]
+                     :command "yaml-language-server"
+                     :args ["--stdio"]
+                     :install "npm i -g yaml-language-server"
+                     :init-options {:yaml {:schemaStore {:enable true}
+                                           :validate true
+                                           :format {:enable true}}}}])]}}

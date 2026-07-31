@@ -1,0 +1,12 @@
+{;; Shell scripts, as data. No code in this plugin.
+ ;;
+ ;; One tag covers .sh, .bash, .zsh and the dotfiles, so one entry does too.
+ ;; bash-language-server uses shellcheck for diagnostics when it is installed,
+ ;; and says less when it is not.
+ :+ {:lsp.client [(:lt.objs.editor.lsp/language-servers
+                   [{:tags [:editor.shell]
+                     :language-id "shellscript"
+                     :root [".git"]
+                     :command "bash-language-server"
+                     :args ["start"]
+                     :install "npm i -g bash-language-server (and shellcheck for diagnostics)"}])]}}

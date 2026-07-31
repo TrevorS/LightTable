@@ -32,6 +32,17 @@
       (or "")
       (string/split #"\n")))
 
+(defn- in-dir?
+  "Is `frame` a path inside `dir`?
+
+  The separator matters. A plain substring test says plugins/C is where
+  plugins/Clojure's code lives, because one path is a prefix of the other —
+  so the Clojure plugin was refused `net` on the grounds that a plugin called
+  C had not asked for it, and failed to load. Any plugin whose name is a
+  prefix of another's would have done it."
+  [frame dir]
+  (string/includes? frame (str dir "/")))
+
 (defn plugin-for-frames
   "The plugin whose directory appears in `frames`, given `plugins` by name.
 
@@ -41,7 +52,7 @@
   (first (for [frame frames
                plugin (vals plugins)
                :let [dir (:dir plugin)]
-               :when (and dir (string/includes? frame dir))]
+               :when (and dir (in-dir? frame dir))]
            plugin)))
 
 (defn allowed-for

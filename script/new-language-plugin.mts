@@ -48,10 +48,27 @@ function usage(message?: string): never {
     process.exit(1);
 }
 
-/** Is `tag` something core's file-types table actually puts on an editor? */
+/**
+ * Is `tag` something an editor actually carries?
+ *
+ * Core's file-types table is not the only source: the CSS plugin declares
+ * :editor.css and the Javascript plugin declares :editor.json, so a plugin's
+ * behaviors count too.
+ */
 function tagIsKnown(tag: string): boolean {
-    if (!fs.existsSync(BEHAVIORS)) return true;
-    return fs.readFileSync(BEHAVIORS, 'utf8').includes(`:${tag}]`);
+    const files = [BEHAVIORS];
+    const plugins = path.join(ROOT, 'plugins');
+    if (fs.existsSync(plugins)) {
+        for (const name of fs.readdirSync(plugins)) {
+            const dir = path.join(plugins, name);
+            if (!fs.statSync(dir).isDirectory()) continue;
+            for (const f of fs.readdirSync(dir)) {
+                if (f.endsWith('.behaviors')) files.push(path.join(dir, f));
+            }
+        }
+    }
+    return files.some((f) => fs.existsSync(f) &&
+                            fs.readFileSync(f, 'utf8').includes(`:${tag}`));
 }
 
 function edn(strings: string[]): string {

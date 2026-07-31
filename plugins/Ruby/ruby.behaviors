@@ -1,0 +1,11 @@
+{;; Ruby, as data. No code in this plugin.
+ ;;
+ ;; ruby-lsp is Shopify's and is what most setups use now. It formats too,
+ ;; through RuboCop when the project has it.
+ :+ {:lsp.client [(:lt.objs.editor.lsp/language-servers
+                   [{:tags [:editor.ruby]
+                     :language-id "ruby"
+                     :root ["Gemfile" ".git"]
+                     :command "ruby-lsp"
+                     :args []
+                     :install "gem install ruby-lsp"}])]}}

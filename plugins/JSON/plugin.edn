@@ -1,0 +1,9 @@
+{:name "JSON"
+ :version "0.1.0"
+ :author "Light Table"
+ :desc "JSON support, through vscode-json-language-server."
+ :source "https://github.com/TrevorS/LightTable"
+ :behaviors "json.behaviors"
+
+ ;; None. The editor spawns the language server, not this plugin.
+ :capabilities #{}}

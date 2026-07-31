@@ -1187,7 +1187,9 @@ async function main(): Promise<void> {
             r.search.firstText === 'SMOKENEEDLE here'],
         ['the matches were rendered into the results list', r.search.rendered === 4],
         // plaintext is the one deliberate no-mode: it exists so a file can be
-        // opened with no highlighting at all.
+        // opened with no highlighting at all. Zig and Elixir share it — they
+        // have a language server and no CodeMirror mode, so they are readable
+        // and not coloured until a grammar covers them.
         ['every mapped file type has a mode that tokenizes', r.modes.broken.length === 0],
         ['only plaintext resolves to no mode',
             r.modes.noMode.length === 1 && r.modes.noMode[0] === 'plaintext'],

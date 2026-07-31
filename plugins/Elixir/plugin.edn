@@ -1,0 +1,9 @@
+{:name "Elixir"
+ :version "0.1.0"
+ :author "Light Table"
+ :desc "Elixir support, through elixir-ls."
+ :source "https://github.com/TrevorS/LightTable"
+ :behaviors "elixir.behaviors"
+
+ ;; None. The editor spawns the language server, not this plugin.
+ :capabilities #{}}

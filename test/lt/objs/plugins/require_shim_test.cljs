@@ -14,7 +14,10 @@
               :capabilities [:network]}
    "HelloTS" {:name "HelloTS" :dir "/home/u/LightTable/deploy/plugins/HelloTS"
               :capabilities []}
-   "Legacy" {:name "Legacy" :dir "/home/u/LightTable/deploy/plugins/Legacy"}})
+   "Legacy" {:name "Legacy" :dir "/home/u/LightTable/deploy/plugins/Legacy"}
+   ;; A one-letter name, which is a prefix of "Clojure" as a path.
+   "C" {:name "C" :dir "/home/u/LightTable/deploy/plugins/C"
+        :capabilities []}})
 
 (defn- infer
   "Stands in for reading a plugin's code, which lt.objs.plugins does."
@@ -43,6 +46,21 @@
   (let [frames ["Error"
                 "    at lt.objs.files.open_sync (file:///home/u/LightTable/deploy/core/lighttable/bootstrap.js:1:1)"]]
     (is (nil? (shim/plugin-for-frames plugins frames)))))
+
+(deftest a-plugin-whose-name-prefixes-another-is-not-blamed-for-it
+  ;; plugins/C is a prefix of plugins/Clojure as a string, so a substring test
+  ;; said Clojure's frames were C's. What that looked like: the Clojure plugin
+  ;; refused `net` because a plugin called C had not declared :network, and
+  ;; failed to load half way through — leaving lt.plugins.clojure.nrepl with a
+  ;; bencode and no encode.
+  (let [frames ["Error"
+                "    at f (/home/u/LightTable/deploy/plugins/Clojure/clojure_compiled.js:9:1)"]]
+    (is (= "Clojure" (:name (shim/plugin-for-frames plugins frames))))))
+
+(deftest and-the-short-named-plugin-is-still-found-for-its-own-frames
+  (let [frames ["Error"
+                "    at f (/home/u/LightTable/deploy/plugins/C/c_compiled.js:9:1)"]]
+    (is (= "C" (:name (shim/plugin-for-frames plugins frames))))))
 
 (deftest a-plugin-without-a-directory-is-never-matched
   (is (nil? (shim/plugin-for-frames {"Broken" {:name "Broken"}}

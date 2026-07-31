@@ -1,0 +1,15 @@
+{;; C and C++, as data. No code in this plugin.
+ ;;
+ ;; clangd reads compile_commands.json. Without one it falls back to guessing
+ ;; flags, which works for a single file and not for a project — CMake writes
+ ;; it with CMAKE_EXPORT_COMPILE_COMMANDS=ON, and bear(1) makes one from a
+ ;; Makefile build.
+ ;;
+ ;; clangd also formats, using the project's .clang-format.
+ :+ {:lsp.client [(:lt.objs.editor.lsp/language-servers
+                   [{:tags [:editor.c :editor.cpp]
+                     :language-id "c"
+                     :root ["compile_commands.json" ".clangd" "CMakeLists.txt" "Makefile" ".git"]
+                     :command "clangd"
+                     :args ["--background-index" "--clang-tidy"]
+                     :install "brew install llvm, or your package manager"}])]}}

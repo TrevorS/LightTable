@@ -4,4 +4,21 @@
      :editor.css [:lt.plugins.css/on-eval :lt.plugins.css/eval-on-save]
      :files [(:lt.objs.files/file-types [{:name "CSS" :exts [:css] :mime "text/css" :tags [:editor.css]}
                                          {:name "SCSS" :exts [:scss] :mime "text/x-scss" :tags [:editor.scss]}])]
-     }}
+     ;; From vscode-langservers-extracted, the same server VS Code uses. It
+     ;; handles SCSS and Less through their own language ids; only CSS and
+     ;; SCSS have tags here.
+     :lsp.client [(:lt.objs.editor.lsp/language-servers
+                   [{:tags [:editor.css]
+                     :language-id "css"
+                     :root [".git"]
+                     :command "vscode-css-language-server"
+                     :args ["--stdio"]
+                     :install "npm i -g vscode-langservers-extracted"
+                     :init-options {:provideFormatter true}}
+                    {:tags [:editor.scss]
+                     :language-id "scss"
+                     :root [".git"]
+                     :command "vscode-css-language-server"
+                     :args ["--stdio"]
+                     :install "npm i -g vscode-langservers-extracted"
+                     :init-options {:provideFormatter true}}])]}}

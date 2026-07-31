@@ -1,0 +1,9 @@
+{:name "Ruby"
+ :version "0.1.0"
+ :author "Light Table"
+ :desc "Ruby support, through ruby-lsp."
+ :source "https://github.com/TrevorS/LightTable"
+ :behaviors "ruby.behaviors"
+
+ ;; None. The editor spawns the language server, not this plugin.
+ :capabilities #{}}

@@ -1,0 +1,9 @@
+{:name "C"
+ :version "0.1.0"
+ :author "Light Table"
+ :desc "C and C++: clangd, with clang-tidy."
+ :source "https://github.com/TrevorS/LightTable"
+ :behaviors "c.behaviors"
+
+ ;; None. The editor spawns the language server, not this plugin.
+ :capabilities #{}}

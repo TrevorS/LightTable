@@ -15,5 +15,16 @@
 
  [:files :lt.objs.files/file-types [{:exts [:html :htm :shtml], :mime "htmlmixed", :tags [:editor.html], :name "HTML"}]]
 
+ ;; From vscode-langservers-extracted, the same server VS Code uses.
+ [:lsp.client :lt.objs.editor.lsp/language-servers
+  [{:tags [:editor.html]
+    :language-id "html"
+    :root [".git"]
+    :command "vscode-html-language-server"
+    :args ["--stdio"]
+    :install "npm i -g vscode-langservers-extracted"
+    :init-options {:provideFormatter true
+                   :embeddedLanguages {:css true :javascript true}}}]]
+
  [:html.lang :lt.plugins.html/eval!]
 ]

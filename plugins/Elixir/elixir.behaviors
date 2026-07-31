@@ -1,0 +1,15 @@
+{;; Elixir, as data. No code in this plugin.
+ ;;
+ ;; elixir-ls, which is what most editors still default to. Expert is the
+ ;; official merge of ElixirLS, Lexical and Next LS and is worth switching to
+ ;; when it ships; changing this is one line in user.behaviors.
+ ;;
+ ;; There is no CodeMirror mode for Elixir, so a .ex file has a language
+ ;; server and no highlighting until a grammar is added.
+ :+ {:lsp.client [(:lt.objs.editor.lsp/language-servers
+                   [{:tags [:editor.elixir]
+                     :language-id "elixir"
+                     :root ["mix.exs" ".git"]
+                     :command "elixir-ls"
+                     :args []
+                     :install "see github.com/elixir-lsp/elixir-ls"}])]}}
