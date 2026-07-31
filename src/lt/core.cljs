@@ -15,6 +15,7 @@
             [lt.objs.browser]
             [lt.objs.clients.local]
             [lt.objs.connector]
+            [lt.objs.control]
             [lt.objs.dev]
             [lt.objs.editor.treesitter]
             [lt.objs.editor.lsp]

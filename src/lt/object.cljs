@@ -109,7 +109,37 @@
 (defn- trigger->behaviors [trig ts]
   (get (->triggers (tags->behaviors ts)) trig))
 
+;; The last errors a behavior raised, newest first.
+;;
+;; raise* catches what a reaction throws, which is what stops one broken
+;; behavior from taking the editor down. The cost is that a behavior which
+;; threw and one which decided not to act look identical to anyone asking
+;; whether something worked. Keeping them makes that a question with an answer
+;; — for a person reading the console, and for anything driving the editor
+;; from outside, which cannot read a console at all.
+;;
+;; Bounded: an editor left open for a week with a misbehaving plugin should not
+;; accumulate a megabyte of stack traces.
+(defonce errors (atom []))
+
+(def ^:private error-limit 50)
+
+(defn- remember-error! [e]
+  (swap! errors
+         (fn [es]
+           (vec (take error-limit
+                      (cons {:message (if (string? e) e (str (.-message ^js e)))
+                             :stack (when-not (string? e) (.-stack ^js e))
+                             :at (.now js/Date)}
+                            es))))))
+
+(defn clear-errors!
+  "Forget the errors seen so far, for a caller about to try something."
+  []
+  (reset! errors []))
+
 (defn safe-report-error [e]
+  (remember-error! e)
   ;; This check is necessary because this can be called before
   ;; the console ns has been loaded
   (if js/lt.objs.console

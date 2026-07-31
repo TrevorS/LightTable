@@ -361,6 +361,31 @@ async function shot(out: string, settleSeconds: number): Promise<void> {
     console.log(out + '  ' + fs.statSync(out).size + ' bytes');
 }
 
+/**
+ * Call the control surface and print what it said.
+ *
+ * `poll` is for the operations that return a job: MCP's Tasks shape, where a
+ * slow call hands back a handle and the caller polls until it is terminal.
+ * Doing that here means `clj` reads like a REPL rather than like a protocol.
+ */
+async function control(op: string, arg: unknown, poll = false): Promise<void> {
+    const call = (o: string, a: unknown) =>
+        evaluate(`JSON.stringify(lt.objs.control.request(${JSON.stringify(o)}, ${JSON.stringify(a)}))`);
+
+    let out = JSON.parse(String(await call(op, arg)));
+    if (poll && out.id) {
+        const deadline = Date.now() + 120000;
+        while (out.status === 'working' && Date.now() < deadline) {
+            await new Promise((r) => setTimeout(r, 100));
+            out = JSON.parse(String(await call('job', { job: out.id })));
+        }
+    }
+    // A value on its own reads better than a job wrapped around it.
+    if (out.status === 'completed' && out.result !== undefined) console.log(out.result);
+    else if (out.status === 'failed') fail(String(out.error));
+    else console.log(JSON.stringify(out, null, 1));
+}
+
 async function main(): Promise<void> {
     const [command, ...rest] = process.argv.slice(2);
     if (command === 'start') return await start();
@@ -368,10 +393,24 @@ async function main(): Promise<void> {
     if (command === 'boot-log') return await bootLog(Number(rest[0]) || 20);
     if (command === 'shot') return await shot(rest[0], Number(rest[1]) || 0);
 
+    // The control surface — see src/lt/objs/control.cljs. Data in, data out,
+    // and the same operations an MCP wrapper would expose.
+    if (command === 'clj') return await control('eval', { source: rest.join(' ') }, true);
+    if (command === 'state') return await control('snapshot', {});
+    if (command === 'errors') return await control('errors', {});
+    if (command === 'prompts') return await control('prompts', {});
+    if (command === 'answer') return await control('answer', { prompt: Number(rest[0]), choice: rest[1] ?? null });
+    if (command === 'job') return await control('job', { job: rest[0] });
+    if (command === 'open') return await control('open', { path: path.resolve(rest[0] || '') }, true);
+
     if (command !== 'eval' && command !== 'cljs') {
-        fail('usage: script/lt-repl.sh start | eval [-t ms] <js> | eval -f <file> | cljs <expr>\n' +
-             '                          | shot <out.png> [settle-seconds]\n' +
-             '                          | boot-log [seconds] | stop');
+        fail('usage: script/lt-repl.sh start | stop\n' +
+             '  clj <expr>            evaluate ClojureScript, get a value back\n' +
+             '  state | errors | prompts | job <id>\n' +
+             '  answer <prompt-id> [choice]\n' +
+             '  open <file>\n' +
+             '  eval [-t ms] <js> | eval -f <file> | cljs <expr>\n' +
+             '  shot <out.png> [settle-seconds] | boot-log [seconds]');
     }
     let args = rest;
     let timeout = 0;
