@@ -87,13 +87,30 @@
       (or (clients/by-name local-name)
           (run-local-server (clients/client! :nrepl.client))))))
 
+(defn form-code
+  "The text of one form, with any watches inside it wrapped.
+
+  `watches/watched-range` and not `ed/range`, which is what this used and which
+  quietly dropped every watch: the wrapping is what turns a watched expression
+  into one that reports its value, and it happens here or not at all.
+
+  It takes an *inclusive* end and tree-sitter gives an exclusive one, hence the
+  `dec` — it adds one back."
+  [editor start end]
+  (let [inclusive (if (pos? (:ch end))
+                    (update end :ch dec)
+                    ;; A form ending at column 0 ends on the line before, and
+                    ;; decrementing into -1 is not a position.
+                    end)]
+    (watches/watched-range editor start inclusive nil)))
+
 (defn ->form
   "One top-level form, as the evaluator and the renderers both want it.
 
   `:meta` is 1-based, because that is what `::clj-result.inline` and the rest
   subtract from to find the line to draw beside."
   [editor {:keys [start end]}]
-  {:code (ed/range editor start end)
+  {:code (form-code editor start end)
    :pos start
    :meta {:line (inc (:line start))
           :end-line (inc (:line end))
@@ -153,7 +170,7 @@
                             forms (if (ed/selection? editor)
                                     (let [start (ed/->cursor editor "start")
                                           end (ed/->cursor editor "end")]
-                                      [{:code (ed/selection editor)
+                                      [{:code (watches/watched-range editor start end nil)
                                         :pos start
                                         :meta {:line (inc (:line start))
                                                :end-line (inc (:line end))

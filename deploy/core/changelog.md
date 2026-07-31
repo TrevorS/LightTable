@@ -29,7 +29,7 @@ working at all.
 * FIXED: An nREPL status Light Table did not recognise was drawn as a result of `nil`. Any error status is an error now, so a request that never ran says so instead of looking like it returned nothing
 * FIXED: `jump-to` moved the cursor in whichever editor was last *focused* rather than the one holding the file it had just opened. They are usually the same and `last-active` is nil when the window has never been focused, which is every automated run
 * FIXED: Asking for documentation with the cursor past the end of a line took the behavior down — `symbol-token?` called `re-seq` on a nil token string, and `lt.object` swallowed the exception
-* CHANGED: Watches survived losing the middleware that carried them. A watch wraps its expression to print one tagged line, and the client takes the tag off the output it is already receiving — no server-side code, so watches work against any nREPL
+* CHANGED: Watches survived losing the middleware that carried them. A watch wraps its expression to print one tagged line, and the client takes the tag off the output it is already receiving — no server-side code, so watches work against any nREPL. Verified inline: a watch on `(range 5)` reports `(0 1 2 3 4)` beside it
 * FIXED: The Clojure plugin called `.write` on `lt.objs.console/core-log`, which is a path in this fork rather than a write stream. Two of the three calls are in the behaviors that read the REPL process's output, so the notifier threw on the first line the server printed and nothing could ever have connected
 * FIXED: `script/lt-repl.sh start` could not start Light Table on macOS. It asked for `xvfb` whenever `DISPLAY` was unset, which on a Mac is always
 
