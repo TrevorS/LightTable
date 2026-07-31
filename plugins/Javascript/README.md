@@ -4,7 +4,7 @@ The official JavaScript language plugin for Light Table.
 
 ### For Committers
 
-* See package.json for node dependencies. `script/install-plugin-deps.js`
+* See package.json for node dependencies. `script/install-plugin-deps.mts`
   installs them at build time; node_modules is not committed. See VENDORED.md.
 * The CodeMirror mode this used to ship is gone — Light Table bundles all of
   CodeMirror's modes now.

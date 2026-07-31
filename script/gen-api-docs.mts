@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-'use strict';
 
 // Generates the plugin API reference into doc/api/ as markdown.
 //
@@ -17,15 +16,15 @@
 //     node script/gen-api-docs.js
 //     node script/gen-api-docs.js --check   # exit 1 if the output would change
 
-const { execFileSync } = require('node:child_process');
-const fs = require('node:fs');
-const path = require('node:path');
+import { execFileSync } from 'node:child_process';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 // The same pinned binary `npm run lint:cljs` uses. This used to shell out to
 // `npx --no-install clj-kondo`, which stopped resolving the day the npm
 // wrapper was dropped for a checksummed download.
-const cljKondo = require('./fetch-clj-kondo.js');
+import { ensure as ensureCljKondo } from './fetch-clj-kondo.mts';
+import { ROOT } from './lib/paths.mts';
 
-const ROOT = path.join(__dirname, '..');
 const OUT_DIR = path.join(ROOT, 'doc', 'api');
 const REPO = 'TrevorS/LightTable';
 const REF = 'develop';
@@ -35,7 +34,22 @@ const REF = 'develop';
 // it, not because it happens to be public. It is the set codox published,
 // unchanged, so the published API does not silently grow or shrink with this
 // change.
-const NAMESPACES = [
+interface NamespaceEntry { ns: string; file: string; }
+
+/** One var, as clj-kondo's analysis reports it. */
+interface Analyzed {
+  ns?: string;
+  name: string;
+  filename?: string;
+  row?: number;
+  doc?: string;
+  arglists?: string[] | string;
+  private?: boolean;
+  'defined-by'?: string;
+  [key: string]: unknown;
+}
+
+const NAMESPACES: NamespaceEntry[] = [
   { ns: 'lt.macros', file: 'src/lt/macros.cljc' },
   { ns: 'lt.object', file: 'src/lt/object.cljs' },
   { ns: 'lt.objs.command', file: 'src/lt/objs/command.cljs' },
@@ -45,7 +59,7 @@ const NAMESPACES = [
   { ns: 'lt.objs.notifos', file: 'src/lt/objs/notifos.cljs' },
 ];
 
-const KIND = {
+const KIND: Record<string, string> = {
   'clojure.core/defmacro': 'macro',
   'cljs.core/defmacro': 'macro',
   'lt.macros/defui': 'ui',
@@ -55,7 +69,7 @@ const KIND = {
   'cljs.core/def': 'var',
 };
 
-function analyze() {
+function analyze(): { 'var-definitions'?: Analyzed[]; 'namespace-definitions'?: Analyzed[] } {
   const args = [
     '--lint', NAMESPACES.map((n) => n.file).join(':'),
     '--config',
@@ -64,7 +78,7 @@ function analyze() {
     // ever been able to reach.
     '{:skip-comments true :output {:analysis {:arglists true} :format :json} :linters {}}',
   ];
-  const out = execFileSync(cljKondo.ensure(), args, {
+  const out = execFileSync(ensureCljKondo(), args, {
     cwd: ROOT,
     encoding: 'utf8',
     maxBuffer: 64 * 1024 * 1024,
@@ -78,8 +92,8 @@ function analyze() {
 // A .cljc file is analysed once per dialect, so every var in lt.macros arrives
 // twice. Keyed by namespace and name, first wins — the two are identical for
 // everything this documents.
-function dedupe(items) {
-  const seen = new Map();
+function dedupe<T extends Analyzed>(items: T[]): T[] {
+  const seen = new Map<string, T>();
   for (const item of items) {
     const key = `${item.ns || item.name}/${item.name}`;
     if (!seen.has(key)) seen.set(key, item);
@@ -91,9 +105,9 @@ function dedupe(items) {
 // collides: `cursor` and `->cursor` reduce to the same thing, as do
 // `selection` and `+selection`. Slugs are therefore assigned per page, with a
 // counter on anything already taken, so a link never lands on the wrong var.
-function slugger() {
-  const taken = new Map();
-  return (name) => {
+function slugger(): (name: string) => string {
+  const taken = new Map<string, number>();
+  return (name: string): string => {
     const base = `var-${name.replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'x'}`;
     const n = (taken.get(base) || 0) + 1;
     taken.set(base, n);
@@ -101,7 +115,7 @@ function slugger() {
   };
 }
 
-function sourceUrl(file, line) {
+function sourceUrl(file: string, line?: number): string {
   return `https://github.com/${REPO}/blob/${REF}/${file}${line ? `#L${line}` : ''}`;
 }
 
@@ -110,13 +124,13 @@ function sourceUrl(file, line) {
 // four-space run makes markdown render the rest of the docstring as a code
 // block. Strip the common indent and keep the relative shape, which is what
 // the nested bullet lists in these docstrings need.
-function dedent(doc) {
+function dedent(doc: string): string {
   const lines = doc.replace(/\t/g, '  ').split('\n');
   const rest = lines.slice(1).filter((l) => l.trim());
   const indent = rest.length
-    ? Math.min(...rest.map((l) => l.match(/^ */)[0].length))
+    ? Math.min(...rest.map((l) => (l.match(/^ */) || [''])[0].length))
     : 0;
-  return [lines[0].trim(), ...lines.slice(1).map((l) => l.slice(indent).trimEnd())]
+  return [(lines[0] || '').trim(), ...lines.slice(1).map((l) => l.slice(indent).trimEnd())]
     .join('\n')
     .trim();
 }
@@ -125,14 +139,14 @@ function dedent(doc) {
 // renders verbatim. A name defined on the same page becomes a real link; a
 // name from elsewhere — `[[lt.objs.plugins/scan]]` — becomes code, because
 // pointing at a page that is not generated would be a dead link.
-function wikilinks(text, anchorFor) {
+function wikilinks(text: string, anchorFor: (name: string) => string | undefined): string {
   return text.replace(/\[\[([^\][\s]+)\]\]/g, (_, name) => {
     const anchor = anchorFor(name);
     return anchor ? `[\`${name}\`](#${anchor})` : `\`${name}\``;
   });
 }
 
-function summary(doc) {
+function summary(doc: string): string {
   if (!doc) return '';
   const body = dedent(doc);
   const first = body.split('\n')[0].trim();
@@ -145,17 +159,17 @@ function summary(doc) {
   return text.replace(/\s*[,;:]…$/, '…').replace(/\|/g, '\\|');
 }
 
-function renderVar(v, file, anchor, anchorFor) {
+function renderVar(v: Analyzed, file: string, anchor: string, anchorFor: (name: string) => string | undefined): string {
   const lines = [];
   lines.push(`<a id="${anchor}"></a>`);
   lines.push('');
   lines.push(`### \`${v.name}\``);
   lines.push('');
 
-  const kind = KIND[v['defined-by']];
+  const kind = v['defined-by'] ? KIND[v['defined-by']] : undefined;
   if (kind && kind !== 'var') lines.push(`*${kind}*`, '');
 
-  const arglists = v['arglist-strs'] || [];
+  const arglists = (v['arglist-strs'] as string[] | undefined) || [];
   if (arglists.length) {
     lines.push('```clojure');
     for (const a of arglists) lines.push(`(${v.name} ${a.replace(/^\[|\]$/g, '')})`.replace(/ \)$/, ')'));
@@ -165,12 +179,12 @@ function renderVar(v, file, anchor, anchorFor) {
 
   lines.push(v.doc ? wikilinks(dedent(v.doc), anchorFor) : '*Undocumented.*');
   lines.push('');
-  lines.push(`[source](${sourceUrl(file, v['name-row'])})`);
+  lines.push(`[source](${sourceUrl(file, v['name-row'] as number | undefined)})`);
   lines.push('');
   return lines.join('\n');
 }
 
-function renderNamespace(entry, nsDoc, vars) {
+function renderNamespace(entry: NamespaceEntry, nsDoc: string, vars: Analyzed[]): string {
   const lines = [];
   lines.push(`# ${entry.ns}`);
   lines.push('');
@@ -190,14 +204,14 @@ function renderNamespace(entry, nsDoc, vars) {
   const anchors = vars.map((v) => next(v.name));
   // First definition wins where a name was slugged twice, which is the one a
   // docstring saying [[cursor]] means.
-  const byName = new Map();
-  vars.forEach((v, i) => { if (!byName.has(v.name)) byName.set(v.name, anchors[i]); });
-  const anchorFor = (name) => byName.get(name);
+  const byName = new Map<string, string>();
+  vars.forEach((v, i) => { if (!byName.has(v.name)) byName.set(v.name, anchors[i] as string); });
+  const anchorFor = (name: string): string | undefined => byName.get(name);
 
   lines.push('| | |');
   lines.push('|---|---|');
   vars.forEach((v, i) => {
-    lines.push(`| [\`${v.name}\`](#${anchors[i]}) | ${wikilinks(summary(v.doc), anchorFor) || '—'} |`);
+    lines.push(`| [\`${v.name}\`](#${anchors[i]}) | ${wikilinks(summary(v.doc || ''), anchorFor) || '—'} |`);
   });
   lines.push('');
   lines.push('## Vars');
@@ -206,7 +220,7 @@ function renderNamespace(entry, nsDoc, vars) {
   return lines.join('\n');
 }
 
-function renderIndex(pages) {
+function renderIndex(pages: { ns: string; doc?: string; count: number }[]): string {
   const lines = [];
   lines.push('# API reference');
   lines.push('');
@@ -234,34 +248,34 @@ function renderIndex(pages) {
   return lines.join('\n');
 }
 
-function build() {
+function build(): Map<string, string> {
   const analysis = analyze();
   const wanted = new Set(NAMESPACES.map((n) => n.ns));
 
-  const nsDocs = new Map();
+  const nsDocs = new Map<string, string>();
   for (const n of analysis['namespace-definitions'] || []) {
     if (wanted.has(n.name) && n.doc && !nsDocs.has(n.name)) nsDocs.set(n.name, n.doc);
   }
 
-  const byNs = new Map(NAMESPACES.map((n) => [n.ns, []]));
+  const byNs = new Map<string, Analyzed[]>(NAMESPACES.map((n) => [n.ns, []]));
   for (const v of dedupe(analysis['var-definitions'] || [])) {
-    if (v.private || !byNs.has(v.ns)) continue;
-    byNs.get(v.ns).push(v);
+    if (v.private || !v.ns || !byNs.has(v.ns)) continue;
+    byNs.get(v.ns)!.push(v);
   }
 
-  const files = new Map();
-  const pages = [];
+  const files = new Map<string, string>();
+  const pages: { ns: string; doc?: string; count: number }[] = [];
   for (const entry of NAMESPACES) {
-    const vars = byNs.get(entry.ns).sort((a, b) => a.name.localeCompare(b.name, 'en'));
+    const vars = (byNs.get(entry.ns) || []).sort((a, b) => a.name.localeCompare(b.name, 'en'));
     const doc = nsDocs.get(entry.ns);
-    files.set(`${entry.ns}.md`, renderNamespace(entry, doc, vars));
+    files.set(`${entry.ns}.md`, renderNamespace(entry, doc || '', vars));
     pages.push({ ns: entry.ns, doc, count: vars.length });
   }
   files.set('README.md', renderIndex(pages));
   return files;
 }
 
-function main() {
+function main(): void {
   const check = process.argv.includes('--check');
   const files = build();
 

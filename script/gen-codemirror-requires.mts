@@ -1,6 +1,4 @@
 #!/usr/bin/env node
-/*jshint esversion: 8 */
-"use strict";
 
 // Generates the ClojureScript namespace that pulls every CodeMirror mode and
 // fold addon into the bundle.
@@ -18,11 +16,11 @@
 //
 // Run by `npm run build:cljs`, before shadow-cljs.
 
-const fs = require('fs');
-const path = require('path');
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import { ROOT, CORE } from './lib/paths.mts';
 
-const ROOT = path.join(__dirname, '..');
-const CM = path.join(ROOT, 'deploy', 'core', 'node_modules', 'codemirror');
+const CM = path.join(CORE, 'node_modules', 'codemirror');
 const OUT = path.join(ROOT, 'src-gen', 'lt', 'editor', 'codemirror_modes.cljs');
 
 // There is no blacklist any more, and removing it is the point.
@@ -45,7 +43,7 @@ const OUT = path.join(ROOT, 'src-gen', 'lt', 'editor', 'codemirror_modes.cljs');
 // resolve, which is the only way to see this: a mime nothing defines falls back
 // to the null mode, silently.
 
-function modes() {
+function modes(): string[] {
     const dir = path.join(CM, 'mode');
     if (!fs.existsSync(dir)) return [];
     const found = [];
@@ -61,7 +59,7 @@ function modes() {
     return found;
 }
 
-function foldAddons() {
+function foldAddons(): string[] {
     const dir = path.join(CM, 'addon', 'fold');
     if (!fs.existsSync(dir)) return [];
     return fs.readdirSync(dir).sort()
@@ -85,7 +83,7 @@ function foldAddons() {
  * Listed rather than globbed, and emitted before the modes, because the order
  * is the point: an addon has to have registered before a mode reaches for it.
  */
-function modeAddons() {
+function modeAddons(): string[] {
     const dir = path.join(CM, 'addon', 'mode');
     if (!fs.existsSync(dir)) return [];
     return ['simple', 'overlay', 'multiplex']
@@ -93,7 +91,7 @@ function modeAddons() {
         .map((name) => `codemirror/addon/mode/${name}`);
 }
 
-function main() {
+function main(): void {
     if (!fs.existsSync(CM)) {
         console.error(`CodeMirror is missing at ${CM}. Run npm ci in deploy/core first.`);
         process.exit(1);

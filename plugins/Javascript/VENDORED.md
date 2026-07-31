@@ -14,7 +14,7 @@ build artifacts that nothing rebuilt. Here the ClojureScript is a module of the
 |---|---|
 | `javascript_compiled.js`, `.js.map` | build output; rebuilt from `src/` |
 | `project.clj`, `plugin.json` | upstream's build and manifest; `plugin.edn` says the same and can carry `:capabilities`, which JSON cannot express as a set |
-| `codemirror/javascript.js` | CodeMirror 4.8.0's mode. Core bundles a current one — see `script/gen-codemirror-requires.js` — so this was an old mode overwriting a new one at load. |
+| `codemirror/javascript.js` | CodeMirror 4.8.0's mode. Core bundles a current one — see `script/gen-codemirror-requires.mts` — so this was an old mode overwriting a new one at load. |
 | `node_modules/` | see below |
 | `CHANGELOG.md`, `CONTRIBUTING.md` | upstream process, not this plugin |
 
@@ -25,7 +25,7 @@ run by `node` in the child process rather than in the window, so it is source.
 
 Upstream committed `node_modules/` with `acorn@0.9` and `harbor@0.2` in it.
 Here they are ordinary dependencies in `package.json`, installed at build time
-by `script/install-plugin-deps.js` into a gitignored `node_modules/`, at
+by `script/install-plugin-deps.mts` into a gitignored `node_modules/`, at
 `acorn@8` and `harbor@0.3`. Nothing in the source had to change: both are
 reached through `lt.objs.plugins/local-module`, which resolves relative to the
 plugin's own directory, and `lt.objs.plugins.local-modules` implements Node's

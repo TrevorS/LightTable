@@ -39,7 +39,7 @@ behind: a tab pointing at a file that has since been deleted, a workspace full
 of scratch directories. That is not hypothetical; it is why a suite that took
 twelve seconds took fifteen minutes the next time and then failed.
 
-**Leave it in the smoke test if it is about the assembly.** `script/smoke-test.js`
+**Leave it in the smoke test if it is about the assembly.** `script/smoke-test.mts`
 boots once and asserts eighty-odd things in sequence: plugins loaded, modes
 registered, the worker connected, the bridge intact. That shape is right for
 "is this application wired together" and wrong for everything else. New
@@ -84,18 +84,18 @@ offline, and a devtools client that polled a port that was not there.
 - **A blank second window.** `test-electron/config.test.ts` pins the defect —
   a shared options object mutated per window — and `test-e2e/windows.spec.ts`
   pins the consequence. Neither could have been written against the old
-  `main.ts`, and `script/smoke-test.js` had passed 80 checks while it shipped,
+  `main.ts`, and `script/smoke-test.mts` had passed 80 checks while it shipped,
   because every one of them ran in a first window.
 - **Stale plugin artifacts.** shadow-cljs numbers its shared constant table per
   build, so a plugin module built against one `bootstrap.js` fails to load
   against another with `ReferenceError: cljs$cst$2661$eval_BANG_ is not
-  defined`. Rebuilding the app without re-running `script/place-plugins.js`
+  defined`. Rebuilding the app without re-running `script/place-plugins.mts`
   produces exactly that, and the startup-console assertion is what says so.
 
 ## The linter is a pinned binary
 
 `npm run lint:cljs` fetches clj-kondo from its GitHub release, checks it
-against a digest pinned in [`script/fetch-clj-kondo.js`](../script/fetch-clj-kondo.js),
+against a digest pinned in [`script/fetch-clj-kondo.mts`](../script/fetch-clj-kondo.mts),
 and caches it in `.tools/`. That replaced the `clj-kondo` npm package, which
 wrapped `binwrap`, which depends on `request`, which has been deprecated since
 2020 — eight advisories reached this repository through it, three critical, all
@@ -106,6 +106,45 @@ without the binary it exists to install.
 Fetching the binary ourselves is what the repository's own policy already
 allowed — source in the repository, binaries fetched at build time, pinned and
 checksummed.
+
+## Headless, and how to watch
+
+Both windowed layers run headless: `LT_HEADLESS` makes `createWindow` build
+its windows with `show: false`. They still lay out, still run scripts, and
+`getComputedStyle` still answers — they just never appear or take focus. A
+suite that opens sixteen windows across your desktop and steals focus from
+whatever you were typing into is a suite people stop running.
+
+Hidden is not the same as displayless. Electron has no headless mode —
+Chromium's is not exposed — so Linux without a display still goes through
+`xvfb-run`, which both wrappers arrange.
+
+To watch a run, which is the only way to see what a failing check was looking
+at:
+
+```
+script/smoke-test.sh --headed
+script/e2e.sh --headed --grep "second window"
+make smoke ARGS=--headed
+```
+
+`LT_HEADED` beats `LT_HEADLESS`, so exporting it turns any run visible without
+editing the script that set the other one.
+
+## The scripts are TypeScript
+
+Everything in `script/` is `.mts`, which node runs directly by stripping the
+types — so there is no build step between the source and what runs, and
+`npm run typecheck` says whether the types were worth writing. `.mts` rather
+than `.ts` because these are ES modules: a `.ts` file in this package would be
+CommonJS, where `require` returns `any` and the types buy nothing.
+
+Two things to know before editing `script/smoke-test.mts`. Its harness is one
+long template literal that gets appended to a copy of the compiled `main.js`,
+so a backtick anywhere in it — including in a comment — ends the string, and
+the parse error is reported hundreds of lines later. And `__dirname` inside
+that harness is the *window's*, which one check exists to assert is undefined;
+the script's own is `SCRIPT_DIR` from `script/lib/paths.mts`.
 
 ## Running one thing
 

@@ -1,0 +1,27 @@
+{
+  // The build and test tooling. Checked but never emitted: node runs these
+  // .mts files directly by stripping the types, so there is nothing between
+  // the source and what runs — and `npm run typecheck` is what says the types
+  // were worth writing.
+  "compilerOptions": {
+    "target": "ES2023",
+    "lib": ["ES2023", "DOM"],
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+
+    "strict": true,
+    "noImplicitOverride": true,
+    // noUncheckedIndexedAccess and exactOptionalPropertyTypes are on for
+    // everything Light Table ships and off here. This is tooling that indexes
+    // regex captures and argv constantly, where they buy a non-null assertion
+    // on almost every line — which is the same unchecked access with more
+    // punctuation. `strict` still holds, so the types are still worth having.
+
+    "noEmit": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true
+  },
+  "include": ["script/**/*.mts"]
+}

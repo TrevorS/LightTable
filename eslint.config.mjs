@@ -78,6 +78,24 @@ export default [
         files: ['src-window/cm-*.ts'],
         rules: { 'no-var': 'off', 'prefer-const': 'off' }
     },
+    ...ts.configs.recommended.map((config) => ({
+        ...config,
+        files: ['script/**/*.mts']
+    })),
+    {
+        files: ['script/**/*.mts'],
+        rules: {
+            '@typescript-eslint/no-unused-vars': ['warn', { args: 'none', caughtErrors: 'none' }],
+            // The probes evaluated inside the window reach ClojureScript, and
+            // the harness strings are JavaScript in a template literal. There
+            // are no types on the other side of either.
+            '@typescript-eslint/no-explicit-any': 'off',
+            '@typescript-eslint/no-require-imports': 'off',
+            // `catch (e) {}` is deliberate in several probes: the failure is
+            // the answer.
+            'no-empty': ['error', { allowEmptyCatch: true }]
+        }
+    },
     {
         files: ['script/**/*.js'],
         ...js.configs.recommended,

@@ -50,6 +50,34 @@ export function windowOptions(
     return { ...resolved, ...extra };
 }
 
+/**
+ * Should windows be created hidden?
+ *
+ * Electron has no headless mode — Chromium's is not exposed — so the closest
+ * thing is a window that is never shown. It still lays out, still runs
+ * scripts, and `getComputedStyle` still answers; it just does not appear or
+ * take focus.
+ *
+ * That matters for test runs. A suite that opens sixteen windows across your
+ * desktop and steals focus from whatever you were typing into is a suite
+ * people stop running locally, and on a CI runner the windows are invisible
+ * anyway.
+ *
+ * Opt-in rather than opt-out: the application shows its window, and a harness
+ * says otherwise. `LT_HEADED` wins over `LT_HEADLESS`, so a single variable
+ * turns a debugging run back into a visible one without editing anything.
+ */
+export function headless(env: Record<string, string | undefined>): boolean {
+    if (truthy(env.LT_HEADED)) return false;
+    return truthy(env.LT_HEADLESS);
+}
+
+function truthy(value: string | undefined): boolean {
+    if (value === undefined) return false;
+    const v = value.trim().toLowerCase();
+    return v !== '' && v !== '0' && v !== 'false' && v !== 'off' && v !== 'no';
+}
+
 /** What `resolveDebugPort` decided, and why, so a caller can log it. */
 export interface DebugPort {
     port: number | null;

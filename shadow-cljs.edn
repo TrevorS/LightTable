@@ -161,7 +161,7 @@
 
   ;; Runs under node, so only namespaces that load without a DOM or an Electron
   ;; runtime can be exercised here. Anything needing the real app is covered by
-  ;; script/smoke-test.js instead.
+  ;; script/smoke-test.mts instead.
   :test
   {:target    :node-test
    :output-to "target/test.js"

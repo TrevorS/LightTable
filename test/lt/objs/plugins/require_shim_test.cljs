@@ -4,7 +4,7 @@
   This is the half of the shim with the judgement in it, and it is deliberately
   free of the bridge so that it can be exercised here rather than only in a
   running editor. The modules themselves are in lt.objs.plugins.node-modules,
-  which is bridge-backed by definition and covered by script/smoke-test.js."
+  which is bridge-backed by definition and covered by script/smoke-test.mts."
   (:require [cljs.test :refer [deftest is testing]]
             [lt.objs.plugins.capabilities :as caps]
             [lt.objs.plugins.require-shim :as shim]))

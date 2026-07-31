@@ -33,7 +33,7 @@ plugins/
 `npm run build:plugins` places everything in `deploy/plugins/`, where the loader
 looks. The two languages get there differently: TypeScript compiles straight
 into the plugin's directory, while ClojureScript is a module of the `:app` build
-— so shadow writes it beside the bundle and `script/place-plugins.js` moves it
+— so shadow writes it beside the bundle and `script/place-plugins.mts` moves it
 next to its `plugin.edn`. Run `npm run build:cljs` first, or it will say so.
 
 A directory is a plugin when it has a `plugin.edn`. A ClojureScript one also
@@ -41,14 +41,14 @@ needs its `src` on `:source-paths` and a `:modules` entry in
 `shadow-cljs.edn` — every namespace its `.behaviors` file names has to be an
 entry, because behaviors are resolved by name at load and a namespace nothing
 requires is one the module would not contain — plus a line in `CLJS_PLUGINS` in
-`script/place-plugins.js` saying which module file its `plugin.edn` expects.
+`script/place-plugins.mts` saying which module file its `plugin.edn` expects.
 
 ### What a plugin may bring with it
 
 | | |
 |---|---|
 | its own source | committed, and compiled here |
-| a third-party npm package | a dependency in the plugin's `package.json`, installed at build time by `script/install-plugin-deps.js` into a gitignored `node_modules`. The lockfile is committed |
+| a third-party npm package | a dependency in the plugin's `package.json`, installed at build time by `script/install-plugin-deps.mts` into a gitignored `node_modules`. The lockfile is committed |
 | compiled output | never. `.gitignore` covers `/plugins/*/*_compiled.js` and its map |
 | a binary | **none.** There is no binary in `plugins/`, and nothing is downloaded at build time but npm packages |
 

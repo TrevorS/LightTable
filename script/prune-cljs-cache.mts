@@ -1,6 +1,4 @@
 #!/usr/bin/env node
-/*jshint esversion: 8 */
-"use strict";
 
 // Drop what the in-window ClojureScript compiler will never read.
 //
@@ -26,11 +24,11 @@
 // so reading it here means this script and the loader cannot disagree about
 // which files are dead — they are reading the same list.
 
-const fs = require('fs');
-const path = require('path');
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import { CORE } from './lib/paths.mts';
 
-const ROOT = path.join(__dirname, '..');
-const LIGHTTABLE = path.join(ROOT, 'deploy', 'core', 'lighttable');
+const LIGHTTABLE = path.join(CORE, 'lighttable');
 const CACHE = path.join(LIGHTTABLE, 'cljs-cache');
 
 /**
@@ -41,8 +39,8 @@ const CACHE = path.join(LIGHTTABLE, 'cljs-cache');
  * unoptimized build the other. Both are read here; matching only the array
  * was worth 7 files instead of 300 and looked like a working prune.
  */
-function provided() {
-    const names = new Set();
+function provided(): Set<string> {
+    const names = new Set<string>();
     const call = /shadow\.cljs\.bootstrap\.env\.set_loaded\(\s*(\[[\s\S]*?\]|"(?:[^"\\]|\\.)*")/g;
     for (const file of fs.readdirSync(LIGHTTABLE)) {
         if (!file.endsWith('.js')) continue;
@@ -64,16 +62,16 @@ function provided() {
  * shadow's bundled npm output does not — it is `shadow$provide[n]=` — but for
  * those the filename is the provide symbol, which is how shadow names them.
  */
-function providesOf(file, head) {
+function providesOf(file: string, head: string): string[] {
     const goog = [...head.matchAll(/goog\.provide\(['"]([^'"]+)['"]\)/g)].map((m) => m[1]);
     if (goog.length) return goog;
     const name = file.replace(/^[0-9a-f]{8}\./, '').replace(/\.js$/, '');
     return name.startsWith('module$') ? [name] : [];
 }
 
-function bytes(n) { return (n / (1024 * 1024)).toFixed(1) + 'MB'; }
+function bytes(n: number): string { return (n / (1024 * 1024)).toFixed(1) + 'MB'; }
 
-function rmDir(dir) {
+function rmDir(dir: string): number {
     if (!fs.existsSync(dir)) return 0;
     let total = 0;
     for (const f of fs.readdirSync(dir)) total += fs.statSync(path.join(dir, f)).size;
@@ -90,13 +88,13 @@ function rmDir(dir) {
  * A duplicate only exists because this build rewrote one, so the newest is
  * the live one.
  */
-function dropStale(dir) {
+function dropStale(dir: string): number {
     if (!fs.existsSync(dir)) return 0;
-    const byNs = new Map();
+    const byNs = new Map<string, string[]>();
     for (const file of fs.readdirSync(dir)) {
         const ns = file.replace(/^[0-9a-f]{8}\./, '');
         if (!byNs.has(ns)) byNs.set(ns, []);
-        byNs.get(ns).push(file);
+        byNs.get(ns)!.push(file);
     }
     let freed = 0;
     for (const files of byNs.values()) {
@@ -111,7 +109,7 @@ function dropStale(dir) {
     return freed;
 }
 
-function main() {
+function main(): void {
     if (!fs.existsSync(CACHE)) {
         console.error('No cljs-cache. Run `shadow-cljs release bootstrap` first.');
         process.exit(1);

@@ -29,7 +29,7 @@ read when a REPL starts with no project around the file being evaluated.
 Dropped. Upstream's `clojure.behaviors` loaded `codemirror/clojure.js` ahead of
 the plugin, from the days when `lt.objs.editor/mode-blacklist` stopped the
 editor bundling a mode any plugin shipped. That list is gone —
-`script/gen-codemirror-requires.js` says why — and Light Table now bundles all
+`script/gen-codemirror-requires.mts` says why — and Light Table now bundles all
 131 of CodeMirror's modes, including a current `clojure`. Keeping the copy meant
 a decade-old mode overwriting a fresh one at load, which is worse than nothing.
 Light Table also has tree-sitter highlighting for Clojure on top of that.

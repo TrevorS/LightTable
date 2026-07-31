@@ -43,6 +43,9 @@ export async function launch(extraEnv: Record<string, string> = {}): Promise<Ele
         executablePath: ELECTRON,
         args: [CORE, '--no-sandbox'],
         env: {
+            // Headless unless something says otherwise — script/e2e.sh sets
+            // it, and LT_HEADED turns a debugging run visible again.
+            LT_HEADLESS: '1',
             ...process.env,
             LT_USER_DIR: home,
             LT_REMOTE_DEBUGGING_PORT: 'off',

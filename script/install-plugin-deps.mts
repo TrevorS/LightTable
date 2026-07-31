@@ -1,6 +1,4 @@
 #!/usr/bin/env node
-/*jshint esversion: 8 */
-"use strict";
 
 // Installs the third-party npm packages a plugin in this repository depends on.
 //
@@ -16,18 +14,18 @@
 // tree already matches the lockfile it was installed from, because `npm ci`
 // deletes node_modules before every run and this sits in the inner build loop.
 
-const fs = require('fs');
-const path = require('path');
-const crypto = require('crypto');
-const { execFileSync } = require('child_process');
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import * as crypto from 'node:crypto';
+import { execFileSync } from 'node:child_process';
+import { ROOT } from './lib/paths.mts';
 
-const ROOT = path.join(__dirname, '..');
 const PLUGINS = path.join(ROOT, 'plugins');
 
 // Written into node_modules so it disappears with the tree it describes.
 const STAMP = '.lt-lockfile-sha256';
 
-function main() {
+function main(): void {
     if (!fs.existsSync(PLUGINS)) return;
 
     for (const name of fs.readdirSync(PLUGINS).sort()) {
@@ -35,7 +33,8 @@ function main() {
         const lock = path.join(dir, 'package-lock.json');
         if (!fs.existsSync(path.join(dir, 'package.json'))) continue;
         if (!fs.existsSync(lock)) {
-            console.error(`${name}: package.json without package-lock.json. Run \`npm install\` in ${dir} and commit the lockfile.`);
+            console.error(`${name}: package.json without package-lock.json. ` +
+                          `Run \`npm install\` in ${dir} and commit the lockfile.`);
             process.exit(1);
         }
 

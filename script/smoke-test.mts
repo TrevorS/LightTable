@@ -1,6 +1,4 @@
 #!/usr/bin/env node
-/*jshint esversion: 8 */
-"use strict";
 
 // Boots the real application, opens a file, and checks that the things which
 // have actually broken here in the past still work.
@@ -14,17 +12,20 @@
 // Run with:  script/smoke-test.sh
 // (it needs a display; the wrapper supplies one via xvfb when there isn't one)
 
-const path = require('path');
-const { spawn } = require('child_process');
-const fs = require('fs');
-const os = require('os');
+import * as path from 'node:path';
+import { spawn } from 'node:child_process';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import { createRequire } from 'node:module';
+import { ROOT, CORE, SCRIPT_DIR, electronBinary } from './lib/paths.mts';
 
-const ROOT = path.join(__dirname, '..');
-const CORE = path.join(ROOT, 'deploy', 'core');
+// deploy/core/package.json is data this reads, and an ES module has no
+// `require` to read JSON with.
+const require = createRequire(import.meta.url);
 // The electron package reports where its own binary is, which differs by
 // platform: dist/electron on Linux, dist/Electron.app/Contents/MacOS/Electron
 // on a Mac. Hard-coding the Linux one worked here and nowhere else.
-const ELECTRON = require(path.join(ROOT, 'deploy', 'electron', 'node_modules', 'electron'));
+const ELECTRON = await electronBinary();
 const SAMPLE = path.join(ROOT, 'src', 'lt', 'objs', 'platform.cljs');
 // A page for the browser tab to navigate to. A file:// url rather than a real
 // site, so the check tests Light Table rather than the network.
@@ -91,7 +92,7 @@ fs.writeFileSync(BINARY_PROBE, Buffer.from([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 
 // server is resolved relative to the project rather than to Light Table, on
 // purpose, and a check that skipped it would not be checking the rule.
 //
-// The server is script/fixtures/fake-language-server.js, which reports back
+// The server is script/fixtures/fake-language-server.mts, which reports back
 // what it was told. That is what makes this able to assert on synchronisation
 // instead of on a message merely arriving: both bugs in the first diagnostics
 // slice produced a document version that incremented correctly while
@@ -166,9 +167,11 @@ fs.mkdirSync(path.join(LSP_DIR, 'src'), { recursive: true });
 fs.mkdirSync(path.join(LSP_DIR, 'node_modules', '.bin'), { recursive: true });
 fs.writeFileSync(path.join(LSP_DIR, 'tsconfig.json'), '{"compilerOptions":{"strict":true}}\n');
 fs.writeFileSync(LSP_PROBE, 'export const first = 1;\nexport const second = 2;\nexport const third = 3;\n');
-fs.copyFileSync(path.join(__dirname, 'fixtures', 'fake-language-server.js'),
-                path.join(LSP_DIR, 'node_modules', '.bin', 'fake-language-server'));
-fs.chmodSync(path.join(LSP_DIR, 'node_modules', '.bin', 'fake-language-server'), 0o755);
+// Spawned as `node <file>.mts` rather than copied to an extensionless shim in
+// .bin. Node decides whether to strip types by the extension, so a TypeScript
+// fixture has to keep one — and this is closer to how a real server is
+// declared anyway, which is a command and its arguments.
+const FAKE_SERVER = path.join(SCRIPT_DIR, 'fixtures', 'fake-language-server.mts');
 
 // The three snippets the LSP check evaluates in the renderer.
 //
@@ -191,10 +194,10 @@ const LSP_START = `(function () {
     entry = assoc(entry, kw('tags'), vec(kw('editor.typescript')));
     entry = assoc(entry, kw('language-id'), 'typescript');
     entry = assoc(entry, kw('root'), vec('tsconfig.json'));
-    // The bare name. lt.objs.editor.lsp looks for it under the project's
-    // node_modules/.bin first, then on PATH.
-    entry = assoc(entry, kw('command'), 'fake-language-server');
-    entry = assoc(entry, kw('args'), cljs.core.PersistentVector.EMPTY);
+    // node, and the fixture as its argument. lt.objs.editor.lsp looks the
+    // command up under the project's node_modules/.bin first, then on PATH.
+    entry = assoc(entry, kw('command'), 'node');
+    entry = assoc(entry, kw('args'), vec(${JSON.stringify(FAKE_SERVER)}));
     lt.object.call_behavior_reaction.call(
         null, kw('lt.objs.editor.lsp/language-servers'),
         lt.objs.editor.lsp.lsp_client, vec(entry));
@@ -290,7 +293,11 @@ process.on('uncaughtException', function (e) { report.failure = 'main process th
 app.on('ready', function () {
     registerRendererApi();
     const pkg = require(CORE + '/package.json');
-    const opts = Object.assign({}, pkg.browserWindowOptions, { show: false, width: 1280, height: 820 });
+    // show comes from the environment the same way createWindow's does, so
+    // smoke-test.sh --headed shows this window too. No backticks in here:
+    // this whole harness is a template literal, and one ends it.
+    const opts = Object.assign({}, pkg.browserWindowOptions,
+                               { show: !!process.env.LT_HEADED, width: 1280, height: 820 });
     opts.icon = CORE + '/' + pkg.browserWindowOptions.icon;
     // Electron resolves neither of these relative to the app directory, the
     // same way createWindow() does not.
@@ -998,7 +1005,7 @@ app.on('ready', function () {
 });
 `;
 
-function fail(message, detail) {
+function fail(message: string, detail?: string): never {
     console.error('FAIL  ' + message);
     if (detail) console.error(detail);
     process.exit(1);
@@ -1013,7 +1020,7 @@ function fail(message, detail) {
  * is. script/lt-repl.sh keeps an editor running on the same port, so this is
  * the normal way to hit it.
  */
-function portInUse(port) {
+function portInUse(port: number): Promise<boolean> {
     return new Promise(function (resolve) {
         const socket = require('net').connect({ port: port, host: '127.0.0.1' });
         socket.on('connect', function () { socket.destroy(); resolve(true); });
@@ -1022,7 +1029,7 @@ function portInUse(port) {
     });
 }
 
-async function main() {
+async function main(): Promise<void> {
     if (await portInUse(8315)) {
         fail('something is already listening on port 8315',
              'That is the debugging port this test needs. If you have an editor open from ' +
@@ -1070,7 +1077,7 @@ async function main() {
     }));
     fs.writeFileSync(path.join(appDir, 'main.js'),
         fs.readFileSync(path.join(CORE, 'main.js'), 'utf8').replace(/^start\(\);$/m, '') + HARNESS);
-    // Everything else in core, symlinked, so that __dirname here behaves like
+    // Everything else in core, symlinked, so that __dirname there behaves like
     // the shipped application directory: main.js resolves the preload, the
     // html and the plugins against it, and the second-window check calls the
     // real createWindow rather than reimplementing what it does.
@@ -1107,7 +1114,7 @@ async function main() {
     // the grammars, and this is what says when it has not.
     const themeCss = fs.readFileSync(path.join(CORE, 'css', 'treesitter.css'), 'utf8');
     const unstyledCaptures = (r.treesitter.classes || []).filter(
-        (c) => !new RegExp('\\.' + c + '\\s*[,{]').test(themeCss));
+        (c: string) => !new RegExp('\\.' + c + '\\s*[,{]').test(themeCss));
 
     // The fixture server states what it has been told in its first diagnostic,
     // so this one string carries the whole synchronisation answer.
@@ -1269,7 +1276,10 @@ async function main() {
         // wins, which is the rule lt.objs.editor.lsp.registry states and the
         // reason a server can be pointed somewhere else without editing source.
         ['a later declaration beats the plugin that came before it',
-         !!lsp.before && lsp.before.command === 'fake-language-server' &&
+         // `node`, because the fixture is a TypeScript file run by it. What
+         // matters is that it is not typescript-language-server, which the
+         // TypeScript plugin declared for this tag first.
+         !!lsp.before && lsp.before.command === 'node' &&
          lsp.before.declared >= 3],
         ['its file is addressed as a uri', !!lsp.before &&
          String(lsp.before.uri || '').startsWith('file:///')],
@@ -1314,7 +1324,7 @@ async function main() {
     // Still present, because nodeIntegration is on for plugins. Light Table's
     // own code no longer touches any of it, so this is what changes on the day
     // contextIsolation is turned on.
-    console.log('\nwindow globals (require, process, __dirname, module): ' + r.noNodeInTheWindow);
+    console.log('\nwindow globals (require, process, SCRIPT_DIR, module): ' + r.noNodeInTheWindow);
     console.log('browser devtools client: ' + r.browserDevtools);
     console.log('capability reports: ' + JSON.stringify(r.capabilities));
     console.log('behaviors registered: ' + r.behaviors);
@@ -1343,10 +1353,10 @@ async function main() {
                 : 'no report' + (lsp.before && lsp.before.error ? ' — ' + lsp.before.error : '')));
     if (r.errors && r.errors.length) {
         console.error('\nErrors reported by Light Table:');
-        r.errors.forEach(function (e) { console.error('  - ' + e.split('\n')[0]); });
+        r.errors.forEach(function (e: string) { console.error('  - ' + e.split('\n')[0]); });
     }
     if (failed) fail(failed + ' of ' + checks.length + ' checks failed');
     console.log('\nAll ' + checks.length + ' checks passed.');
 }
 
-main().catch(function (e) { fail('smoke test crashed', e.stack); });
+main().catch(function (e: Error) { fail('smoke test crashed', e.stack); });

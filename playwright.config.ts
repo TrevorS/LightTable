@@ -1,6 +1,6 @@
 // Integration tests: the real application, one instance per test file.
 //
-// This is the layer script/smoke-test.js could not be. That harness boots one
+// This is the layer script/smoke-test.mts could not be. That harness boots one
 // window and asserts eighty-odd things against it in sequence, which is a good
 // answer to "is the assembled application wired together" and a bad one to
 // everything else — a test cannot arrange its own state, a failure halfway

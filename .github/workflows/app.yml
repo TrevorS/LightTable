@@ -77,7 +77,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .tools
-          key: clj-kondo-${{ runner.os }}-${{ hashFiles('script/fetch-clj-kondo.js') }}
+          key: clj-kondo-${{ runner.os }}-${{ hashFiles('script/fetch-clj-kondo.mts') }}
 
       - name: Install build tooling
         run: npm ci

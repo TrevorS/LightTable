@@ -7,6 +7,11 @@
 #
 #   make            what you probably want: build and run
 #   make help       every target, with what it does
+#
+# The test targets run headless. To watch one:
+#
+#   make smoke ARGS=--headed
+#   make test-e2e ARGS="--headed --grep window"
 
 .DEFAULT_GOAL := run
 .PHONY: help deps build build-cljs build-main build-plugins run check test \
@@ -72,10 +77,10 @@ test-electron: ## Main-process units, under plain node
 	npm run test:electron
 
 test-e2e: ## Integration tests: the real app, driven by Playwright — needs a build
-	script/e2e.sh
+	script/e2e.sh $(ARGS)
 
 smoke: ## Boot the real application and check it — needs a build first
-	script/smoke-test.sh
+	script/smoke-test.sh $(ARGS)
 
 docs: ## Regenerate doc/api from the source docstrings
 	npm run --silent docs:api

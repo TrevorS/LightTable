@@ -10,12 +10,12 @@
 
 // Imported as a namespace and destructured, rather than with named imports, so
 // that the emitted JavaScript keeps local bindings called `app`, `BrowserWindow`
-// and so on. script/smoke-test.js appends a harness to the compiled output and
+// and so on. script/smoke-test.mts appends a harness to the compiled output and
 // refers to them by those names.
 import * as electron from 'electron';
 import * as fs from 'node:fs';
 import { parseArgs } from 'node:util';
-import { windowOptions, resolveDebugPort } from './config';
+import { windowOptions, resolveDebugPort, headless } from './config';
 
 const { app, BrowserWindow, ipcMain, dialog, Menu, MenuItem, shell, clipboard } = electron;
 
@@ -97,8 +97,11 @@ function createWindow(): electron.BrowserWindow {
     // Built fresh per window rather than by adding __dirname to the cached
     // package.json object — see config.ts, and the white second window that
     // taught us the difference.
+    // A hidden window under LT_HEADLESS, which is how a test run stops opening
+    // windows across somebody's desktop. See config.ts.
     const window = new BrowserWindow(
-        windowOptions(packageJSON.browserWindowOptions, __dirname));
+        windowOptions(packageJSON.browserWindowOptions, __dirname,
+                      headless(process.env) ? { show: false } : {}));
     windows[window.id] = window;
     window.focus();
     window.webContents.on("will-navigate", function(e) {
@@ -195,7 +198,7 @@ function buildMenu(sender: electron.WebContents, items: (MenuDescription | null)
 
 /**
  * Everything the main process has to set up before a window can work. This is
- * the seam script/smoke-test.js drives, so anything a real window depends on
+ * the seam script/smoke-test.mts drives, so anything a real window depends on
  * belongs in here rather than in onReady() — otherwise the test boots an
  * application that differs from the one that ships.
  */
@@ -397,7 +400,7 @@ function readArgs(): void {
 //
 // At module scope rather than inside start(), and the pair has to stay
 // together. Switches must be appended before the app is ready, and not every
-// entry point calls start() — script/smoke-test.js requires this file and
+// entry point calls start() — script/smoke-test.mts requires this file and
 // drives it itself, so a switch set only in start() is one the harness never
 // gets, which is how the second of these came to be missing there.
 //

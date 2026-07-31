@@ -1,6 +1,4 @@
 #!/usr/bin/env node
-/*jshint esversion: 8 */
-"use strict";
 
 // Boots Light Table, opens files, and writes a PNG of the window per file.
 //
@@ -14,17 +12,15 @@
 //
 // PNGs are written to builds/screenshots/, named after each file.
 
-const path = require('path');
-const { spawn } = require('child_process');
-const fs = require('fs');
-const os = require('os');
-
-const ROOT = path.join(__dirname, '..');
-const CORE = path.join(ROOT, 'deploy', 'core');
+import * as path from 'node:path';
+import { spawn } from 'node:child_process';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import { ROOT, CORE, electronBinary } from './lib/paths.mts';
 // The electron package reports where its own binary is, which differs by
 // platform: dist/electron on Linux, dist/Electron.app/Contents/MacOS/Electron
 // on a Mac. Hard-coding the Linux one worked here and nowhere else.
-const ELECTRON = require(path.join(ROOT, 'deploy', 'electron', 'node_modules', 'electron'));
+const ELECTRON = await electronBinary();
 const OUT = path.join(ROOT, 'builds', 'screenshots');
 
 const files = process.argv.slice(2).map(function (f) { return path.resolve(f); });
@@ -101,7 +97,7 @@ app.on('ready', function () {
 });
 `;
 
-async function main() {
+async function main(): Promise<void> {
     for (const [what, where] of [['Electron', ELECTRON],
                                  ['the compiled bundle', path.join(CORE, 'lighttable', 'bootstrap.js')],
                                  ['the compiled main process', path.join(CORE, 'main.js')]]) {
@@ -122,7 +118,7 @@ async function main() {
     fs.symlinkSync(path.join(CORE, 'node_modules'), path.join(appDir, 'node_modules'));
     fs.symlinkSync(path.join(CORE, 'browserInjection.js'), path.join(appDir, 'browserInjection.js'));
 
-    const code = await new Promise(function (resolve) {
+    const code = await new Promise<number | null>(function (resolve) {
         spawn(ELECTRON, [appDir, '--no-sandbox'], { stdio: 'inherit' }).on('exit', resolve);
     });
     if (code !== 0) process.exit(code || 1);

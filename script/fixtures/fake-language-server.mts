@@ -1,6 +1,4 @@
 #!/usr/bin/env node
-/*jshint esversion: 8 */
-"use strict";
 
 // A language server that exists to be talked to.
 //
@@ -19,6 +17,13 @@
 //
 // It speaks stdio, like every server Light Table spawns.
 
+/** Just enough of a JSON-RPC message for what this answers. */
+interface LspMessage {
+    id?: number;
+    method?: string;
+    params?: any;
+}
+
 const CHANGE_INCREMENTAL = 2;
 
 let buffer = Buffer.alloc(0);
@@ -26,7 +31,7 @@ let changes = 0;
 let lastText = '';
 let lastVersion = 0;
 
-function send(message) {
+function send(message: Record<string, unknown>): void {
     const body = Buffer.from(JSON.stringify(Object.assign({ jsonrpc: '2.0' }, message)), 'utf8');
     // Bytes, not characters — the trap this whole layer exists to avoid.
     process.stdout.write('Content-Length: ' + body.length + '\r\n\r\n');
@@ -34,7 +39,7 @@ function send(message) {
 }
 
 /** One diagnostic per line, saying what this server has been told so far. */
-function publish(uri) {
+function publish(uri: string): void {
     send({
         method: 'textDocument/publishDiagnostics',
         params: {
@@ -69,7 +74,7 @@ function publish(uri) {
     });
 }
 
-function handle(msg) {
+function handle(msg: LspMessage): void {
     switch (msg.method) {
     case 'initialize':
         return send({

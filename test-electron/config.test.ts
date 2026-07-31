@@ -14,6 +14,7 @@ import assert from 'node:assert/strict';
 import {
     windowOptions,
     resolveDebugPort,
+    headless,
     DEFAULT_DEBUG_PORT,
     type WindowOptionDefaults
 } from '../src-electron/config.ts';
@@ -134,5 +135,30 @@ describe('resolveDebugPort', function() {
 
     test('and falls back to the default when it cannot use one', function() {
         assert.equal(resolveDebugPort({ LT_REMOTE_DEBUGGING_PORT: 'eight' }).port, DEFAULT_DEBUG_PORT);
+    });
+});
+
+describe('headless', function() {
+    test('shows windows when nothing says otherwise', function() {
+        assert.equal(headless({}), false);
+    });
+
+    test('hides them when a harness asks', function() {
+        for (const value of ['1', 'true', 'yes', 'on', 'anything']) {
+            assert.equal(headless({ LT_HEADLESS: value }), true, value);
+        }
+    });
+
+    test('treats the ways of saying no as no', function() {
+        for (const value of ['', '0', 'false', 'off', 'no', ' OFF ']) {
+            assert.equal(headless({ LT_HEADLESS: value }), false, value);
+        }
+    });
+
+    // So that one variable turns a debugging run visible without editing the
+    // script that set the other one.
+    test('and LT_HEADED wins, whatever LT_HEADLESS says', function() {
+        assert.equal(headless({ LT_HEADLESS: '1', LT_HEADED: '1' }), false);
+        assert.equal(headless({ LT_HEADLESS: '1', LT_HEADED: '0' }), true);
     });
 });

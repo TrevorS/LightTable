@@ -106,13 +106,13 @@ overrides it.
 prune step below reads what the app says it provides:
 
 ```
-shadow-cljs release app worker bootstrap && node script/prune-cljs-cache.js
+shadow-cljs release app worker bootstrap && node script/prune-cljs-cache.mts
 ```
 
 `:target :bootstrap` emits three directories and the window reads one and a
 half of them — `ana/` entirely, `js/` only for namespaces the window does not
 already have, and `src/` never. Left alone that is 16MB shipped to read 4MB of,
-so [`script/prune-cljs-cache.js`](../script/prune-cljs-cache.js) deletes the
+so [`script/prune-cljs-cache.mts`](../script/prune-cljs-cache.mts) deletes the
 rest. It works out which by reading the same `set_loaded` call the loader
 reads, so the two cannot disagree about what is dead.
 

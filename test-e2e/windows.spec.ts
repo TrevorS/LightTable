@@ -1,7 +1,7 @@
 // Windows, and what every one of them is owed.
 //
 // This file exists because of a bug that shipped: the second window a user
-// opened was blank, and every check in script/smoke-test.js passed throughout,
+// opened was blank, and every check in script/smoke-test.mts passed throughout,
 // because they all ran in a first window and the harness built its window
 // options itself instead of calling the code that ships.
 //

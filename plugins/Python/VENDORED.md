@@ -13,7 +13,7 @@ build, so it compiles against the editor it extends.
 |---|---|
 | `python_compiled.js`, `.js.map` | build output; rebuilt from `src/` |
 | `project.clj`, `plugin.json` | upstream's build and manifest; `plugin.edn` says the same and can carry `:capabilities`, which JSON cannot express as a set |
-| `codemirror/python.js` | core bundles a current `python` mode now — see `script/gen-codemirror-requires.js` — so the copy was an old mode overwriting a new one at load |
+| `codemirror/python.js` | core bundles a current `python` mode now — see `script/gen-codemirror-requires.mts` — so the copy was an old mode overwriting a new one at load |
 | `CHANGELOG.md`, `CONTRIBUTING.md` | upstream process, not this plugin |
 
 `py-src/` is kept. It is the plugin's own Python — the client Light Table starts

@@ -200,7 +200,7 @@ crossed twice and arrived as something else both times.
 
 Driven against a bencode-speaking server that splits replies mid-message and
 mid-character, the plugin's own captured modules complete the exchange:
-connect, encode, write, two chunks, concatenate, decode. `script/smoke-test.js`
+connect, encode, write, two chunks, concatenate, decode. `script/smoke-test.mts`
 checks the pieces of this on every run.
 
 Trying it also turned up two things that had nothing to do with isolation:

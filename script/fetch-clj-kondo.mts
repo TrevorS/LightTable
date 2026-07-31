@@ -1,6 +1,4 @@
 #!/usr/bin/env node
-/*jshint esversion: 8 */
-"use strict";
 
 // Fetch the clj-kondo binary this repository lints with, pinned and verified.
 //
@@ -27,18 +25,20 @@
 //     node script/fetch-clj-kondo.js --force  fetch again
 //     node script/fetch-clj-kondo.js --path   print the path and exit
 
-const fs = require('node:fs');
-const os = require('node:os');
-const path = require('node:path');
-const crypto = require('node:crypto');
-const { execFileSync } = require('node:child_process');
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
+import * as crypto from 'node:crypto';
+import { execFileSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+import { ROOT } from './lib/paths.mts';
 
 const VERSION = '2025.10.23';
 
 // From clj-kondo-<version>-<asset>.zip.sha256 in the GitHub release. Update
 // both together: a version bump with stale digests fails the check, which is
 // the intended outcome.
-const DIGESTS = {
+const DIGESTS: Record<string, string> = {
     'linux-aarch64':      '75c90f734caac87e1cabb163fbe2201a2e985f6be72eb1e0f132a7f774b33fcb',
     'linux-amd64':        '7d3e563668ec4e8da164c78ed1a9264b5f442a2933c4934c6d0a06652bbfe494',
     'linux-static-amd64': '78800fe62fb20be046067e7b90e0066a4cdf0e96b5dde1e0d73c8e141fa70663',
@@ -47,13 +47,12 @@ const DIGESTS = {
     'windows-amd64':      '0a72b26b6cd0b80089285a845b1428b6636eb2a77fbf581a78f417d1e5557c27'
 };
 
-const ROOT = path.join(__dirname, '..');
 const TOOLS = path.join(ROOT, '.tools');
 const BINARY = path.join(TOOLS, process.platform === 'win32' ? 'clj-kondo.exe' : 'clj-kondo');
 
 /** Which release asset this machine wants. */
-function asset() {
-    const arch = { x64: 'amd64', arm64: 'aarch64' }[process.arch];
+function asset(): string {
+    const arch = ({ x64: 'amd64', arm64: 'aarch64' } as Record<string, string>)[process.arch];
     if (!arch) throw new Error(`no clj-kondo build for ${process.arch}`);
     if (process.platform === 'darwin') return `macos-${arch}`;
     if (process.platform === 'win32') return 'windows-amd64';
@@ -61,17 +60,17 @@ function asset() {
     throw new Error(`no clj-kondo build for ${process.platform}`);
 }
 
-function sha256(buffer) {
+function sha256(buffer: Buffer): string {
     return crypto.createHash('sha256').update(buffer).digest('hex');
 }
 
-async function download(url) {
+async function download(url: string): Promise<Buffer> {
     const res = await fetch(url, { redirect: 'follow' });
     if (!res.ok) throw new Error(`GET ${url} failed: ${res.status} ${res.statusText}`);
     return Buffer.from(await res.arrayBuffer());
 }
 
-async function main() {
+async function main(): Promise<void> {
     if (process.argv.includes('--path')) { console.log(BINARY); return; }
 
     if (fs.existsSync(BINARY) && !process.argv.includes('--force')) {
@@ -80,7 +79,7 @@ async function main() {
         try {
             const have = execFileSync(BINARY, ['--version'], { encoding: 'utf8' }).trim();
             if (have.includes(VERSION)) { console.log(`clj-kondo ${VERSION} already fetched`); return; }
-        } catch (e) { /* unusable; fetch it again */ }
+        } catch { /* unusable; fetch it again */ }
     }
 
     const name = asset();
@@ -122,15 +121,17 @@ async function main() {
 }
 
 /** Where the binary is, fetching it first if it is not there yet. */
-function ensure() {
+export function ensure(): string {
     if (!fs.existsSync(BINARY)) {
-        execFileSync(process.execPath, [__filename], { stdio: 'inherit' });
+        execFileSync(process.execPath, [fileURLToPath(import.meta.url)], { stdio: 'inherit' });
     }
     return BINARY;
 }
 
-module.exports = { BINARY, VERSION, ensure };
+export { BINARY, VERSION };
 
-if (require.main === module) {
-    main().catch(function (e) { console.error(String(e.message)); process.exit(1); });
+// `require.main === module` has no ES module equivalent; comparing argv[1] to
+// this file's own path is the documented one.
+if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
+    main().catch(function (e: Error) { console.error(String(e.message)); process.exit(1); });
 }

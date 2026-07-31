@@ -1,6 +1,4 @@
 #!/usr/bin/env node
-/*jshint esversion: 8 */
-"use strict";
 
 // A REPL against a running Light Table.
 //
@@ -29,23 +27,26 @@
 // hang instead of taking the session with it. That is not hypothetical: it is
 // what this was written to diagnose.
 
-const path = require('path');
-const { spawn } = require('child_process');
-const fs = require('fs');
-const os = require('os');
+import * as path from 'node:path';
+import { spawn } from 'node:child_process';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import { CORE, electronBinary } from './lib/paths.mts';
 
-const ROOT = path.join(__dirname, '..');
-const CORE = path.join(ROOT, 'deploy', 'core');
-// The electron package reports where its own binary is, which differs by
-// platform: dist/electron on Linux, dist/Electron.app/Contents/MacOS/Electron
-// on a Mac. Hard-coding the Linux one worked here and nowhere else.
-const ELECTRON = require(path.join(ROOT, 'deploy', 'electron', 'node_modules', 'electron'));
+const ELECTRON = await electronBinary();
 // main.js appends --remote-debugging-port=8315 itself.
+/** One entry from Chromium's /json listing. */
+interface CdpTarget {
+    type: string;
+    url: string;
+    webSocketDebuggerUrl: string;
+}
+
 const PORT = 8315;
 const STATE = path.join(os.tmpdir(), 'lt-repl.json');
 const EVAL_TIMEOUT_MS = 15000;
 
-function fail(msg) { console.error(msg); process.exit(1); }
+function fail(msg: string): never { console.error(msg); process.exit(1); }
 
 /**
  * Helpers defined in the window before every evaluation, idempotently.
@@ -128,20 +129,20 @@ if (typeof window.LT === 'undefined') {
 }
 `;
 
-async function targets() {
+async function targets(): Promise<CdpTarget[]> {
     const res = await fetch(`http://127.0.0.1:${PORT}/json`);
     return await res.json();
 }
 
 /** The window, once it exists. Rejects rather than hanging if it never does. */
-async function window_(timeoutMs) {
+async function window_(timeoutMs: number): Promise<CdpTarget> {
     const deadline = Date.now() + timeoutMs;
     for (;;) {
         try {
             const page = (await targets()).find((t) =>
                 t.type === 'page' && String(t.url).includes('LightTable.html'));
             if (page) return page;
-        } catch (e) { /* not listening yet */ }
+        } catch { /* not listening yet */ }
         if (Date.now() > deadline) throw new Error('Light Table never opened a window');
         await new Promise((r) => setTimeout(r, 250));
     }
@@ -152,11 +153,12 @@ async function window_(timeoutMs) {
  *
  * Promises are awaited, so an async capability can be probed directly.
  */
-async function evaluate(expression, timeoutMs) {
+async function evaluate(expression: string, timeoutMs?: number): Promise<unknown> {
     const limit = timeoutMs || EVAL_TIMEOUT_MS;
     const page = await window_(2000);
     const ws = new WebSocket(page.webSocketDebuggerUrl);
-    const send = (id, method, params) => ws.send(JSON.stringify({ id, method, params }));
+    const send = (id: number, method: string, params: unknown) =>
+        ws.send(JSON.stringify({ id, method, params }));
 
     return await new Promise((resolve, reject) => {
         const timer = setTimeout(() => {
@@ -165,7 +167,7 @@ async function evaluate(expression, timeoutMs) {
                              (timeoutMs ? '' : ' (raise it with -t)')));
         }, limit);
 
-        ws.addEventListener('error', (e) => { clearTimeout(timer); reject(new Error('devtools socket error')); });
+        ws.addEventListener('error', () => { clearTimeout(timer); reject(new Error('devtools socket error')); });
         ws.addEventListener('open', () => {
             send(1, 'Runtime.evaluate', {
                 // The prelude is a closed block statement, so the completion
@@ -201,7 +203,7 @@ async function evaluate(expression, timeoutMs) {
  * lt.objs.files.cwd, and `-` becomes `_` — which is most of what made hand
  * written probes tedious and wrong.
  */
-function cljs(expression) {
+function cljs(expression: string): string {
     // Only outside string literals: a path like '/home/user/x' is full of
     // slashes that look exactly like namespace separators, and rewriting them
     // produces an expression that runs and quietly answers about nothing.
@@ -215,7 +217,7 @@ function cljs(expression) {
 }
 
 /** Applies `f` to the parts of `src` that are not inside a string literal. */
-function outsideStrings(src, f) {
+function outsideStrings(src: string, f: (chunk: string) => string): string {
     let out = '', i = 0;
     while (i < src.length) {
         const next = src.slice(i).search(/['"`]/);
@@ -230,7 +232,7 @@ function outsideStrings(src, f) {
     return out;
 }
 
-function munge(name) {
+function munge(name: string): string {
     return name.replace(/-/g, '_').replace(/\?$/, '_QMARK_').replace(/!$/, '_BANG_')
                .replace(/\*$/, '_STAR_').replace(/^\*/, '_STAR_');
 }
@@ -243,29 +245,30 @@ function munge(name) {
  * the things that never got built. This attaches before the page settles and
  * prints what the renderer actually said.
  */
-async function bootLog(seconds) {
+async function bootLog(seconds: number): Promise<void> {
     stop();
     await new Promise((r) => setTimeout(r, 500));
     const child = spawnApp();
     const page = await window_(60000);
     const ws = new WebSocket(page.webSocketDebuggerUrl);
-    const lines = [];
+    const lines: string[] = [];
     let id = 10;
 
-    await new Promise((resolve) => {
+    await new Promise<void>((resolve) => {
         ws.addEventListener('open', () => {
             ws.send(JSON.stringify({ id: id++, method: 'Runtime.enable' }));
             ws.send(JSON.stringify({ id: id++, method: 'Log.enable' }));
             resolve();
         });
-        ws.addEventListener('error', resolve);
+        ws.addEventListener('error', () => resolve());
     });
 
     ws.addEventListener('message', (ev) => {
         const msg = JSON.parse(ev.data);
         if (msg.method === 'Runtime.consoleAPICalled') {
             const text = (msg.params.args || [])
-                .map((a) => a.value !== undefined ? a.value : (a.description || a.type)).join(' ');
+                .map((a: { value?: unknown; description?: string; type?: string }) =>
+                    a.value !== undefined ? a.value : (a.description || a.type)).join(' ');
             lines.push(`[${msg.params.type}] ${text}`);
         } else if (msg.method === 'Log.entryAdded') {
             lines.push(`[${msg.params.entry.level}] ${msg.params.entry.text}`);
@@ -279,12 +282,12 @@ async function bootLog(seconds) {
     await new Promise((r) => setTimeout(r, seconds * 1000));
     ws.close();
     console.log(lines.length ? lines.join('\n') : '(the renderer logged nothing)');
-    if (child) { try { process.kill(-child.pid, 'SIGTERM'); } catch (e) {} }
+    if (child.pid) { try { process.kill(-child.pid, 'SIGTERM'); } catch { /* already gone */ } }
     fs.rmSync(STATE, { force: true });
 }
 
 /** Starts the application detached, and records its pid for stop(). */
-function spawnApp() {
+function spawnApp(): ReturnType<typeof spawn> {
     // macOS has no DISPLAY and does not want one: Electron talks to the window
     // server directly, so asking for xvfb there fails on a machine that works
     // perfectly. script/smoke-test.sh already draws this line; this did not,
@@ -299,11 +302,11 @@ function spawnApp() {
     return child;
 }
 
-async function start() {
+async function start(): Promise<void> {
     if (!fs.existsSync(ELECTRON)) fail('Electron is missing. Run script/build.sh first.');
     if (!fs.existsSync(path.join(CORE, 'lighttable', 'bootstrap.js'))) fail('No bundle. Run npm run build:cljs.');
 
-    try { await window_(0); console.log('already running'); return; } catch (e) { /* not up */ }
+    try { await window_(0); console.log('already running'); return; } catch { /* not up */ }
 
     spawnApp();
     await window_(60000);
@@ -318,11 +321,11 @@ async function start() {
     console.log('ready');
 }
 
-function stop() {
+function stop(): void {
     if (!fs.existsSync(STATE)) { console.log('not running'); return; }
     const { pid } = JSON.parse(fs.readFileSync(STATE, 'utf8'));
     // xvfb-run leaves a process group; kill the group so nothing is orphaned.
-    try { process.kill(-pid, 'SIGTERM'); } catch (e) { try { process.kill(pid, 'SIGTERM'); } catch (e2) {} }
+    try { process.kill(-pid, 'SIGTERM'); } catch { try { process.kill(pid, 'SIGTERM'); } catch { /* already gone */ } }
     fs.rmSync(STATE, { force: true });
     console.log('stopped');
 }
@@ -334,7 +337,7 @@ function stop() {
  * fixed set of files and wrong for a window you have spent several evaluations
  * arranging. This captures whatever is on screen now.
  */
-async function shot(out, settleSeconds) {
+async function shot(out: string, settleSeconds: number): Promise<void> {
     if (!out) fail('usage: script/lt-repl.sh shot <out.png> [settle-seconds]');
     const page = await window_(2000);
     if (settleSeconds) await new Promise((r) => setTimeout(r, settleSeconds * 1000));
@@ -354,11 +357,11 @@ async function shot(out, settleSeconds) {
         });
     });
     fs.mkdirSync(path.dirname(path.resolve(out)), { recursive: true });
-    fs.writeFileSync(out, Buffer.from(data, 'base64'));
+    fs.writeFileSync(out, Buffer.from(String(data), 'base64'));
     console.log(out + '  ' + fs.statSync(out).size + ' bytes');
 }
 
-async function main() {
+async function main(): Promise<void> {
     const [command, ...rest] = process.argv.slice(2);
     if (command === 'start') return await start();
     if (command === 'stop') return stop();
@@ -384,7 +387,7 @@ async function main() {
         const value = await evaluate(expression, timeout);
         console.log(typeof value === 'string' ? value : JSON.stringify(value, null, 1));
     } catch (e) {
-        fail(String(e.message).split('\n').slice(0, 12).join('\n'));
+        fail(String((e as Error).message).split('\n').slice(0, 12).join('\n'));
     }
 }
 
