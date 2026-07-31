@@ -30,6 +30,15 @@ interface AppInfo {
      *  browser tab evaluates through it, and used to hard-code 8315 in the
      *  renderer — two places to change, one of which nothing would notice. */
     remoteDebuggingPort: number | null;
+    /** Where this user's settings, plugins, logs and caches belong.
+     *
+     *  Not appPath. Light Table used appPath for both, which in a packaged
+     *  build is Contents/Resources/app — so the first run wrote User/, logs/
+     *  and ltcache/ inside the .app and broke its own code signature. It also
+     *  meant an application in /Applications could not start for anyone
+     *  without write access to it, and that upgrading discarded your
+     *  settings. */
+    userDataPath: string;
 }
 
 /** Geometry of the window a renderer belongs to. */
@@ -213,7 +222,8 @@ function registerRendererApi(): void {
             parsedArgs: global.browserParsedArgs,
             openFiles: global.browserOpenFiles,
             argv: process.argv,
-            remoteDebuggingPort: debugPort.port
+            remoteDebuggingPort: debugPort.port,
+            userDataPath: app.getPath('userData')
         };
         event.returnValue = info;
     });

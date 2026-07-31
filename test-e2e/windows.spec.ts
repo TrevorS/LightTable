@@ -57,3 +57,31 @@ test('and its preload ran, which is what the blank one was missing', async ({ ap
 test('a window reports no errors while starting', async ({ ltErrors }) => {
     expect(await ltErrors()).toEqual([]);
 });
+
+test('user data is written outside the application, not inside it', async ({ app, window }) => {
+    // Light Table used appPath for both what it reads and what it writes. In a
+    // packaged build appPath is Contents/Resources/app, so the first run wrote
+    // User/, logs/ and ltcache/ into the .app — `codesign --verify` then said
+    // "a sealed resource is missing or invalid", and an application installed
+    // where the user cannot write could not start at all.
+    const info = await window.evaluate(`(function () {
+        var kw = function (n) { return cljs.core.keyword.call(null, n); };
+        var i = lt.util.bridge.app_info;
+        return {
+            appPath: String(cljs.core.get.call(null, i, kw('appPath'))),
+            userDataPath: String(cljs.core.get.call(null, i, kw('userDataPath'))),
+            userDir: String(lt.objs.files.lt_user_dir.cljs$core$IFn$_invoke$arity$1('')),
+            home: String(lt.objs.files.lt_home.cljs$core$IFn$_invoke$arity$1(''))
+        };
+    })()`) as { appPath: string; userDataPath: string; userDir: string; home: string };
+
+    expect(info.userDataPath.length).toBeGreaterThan(0);
+    // userData is somewhere of the user's, not somewhere of the application's.
+    expect(info.userDataPath.startsWith(info.appPath)).toBe(false);
+    // The fixture sets LT_USER_DIR, which wins over both — that is the escape
+    // hatch every test here relies on. What matters is that what gets written
+    // is never inside the application.
+    expect(info.userDir.startsWith(info.appPath)).toBe(false);
+    // Reading is a different directory, and still the application's.
+    expect(info.home.length).toBeGreaterThan(0);
+});
