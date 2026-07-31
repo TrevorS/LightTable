@@ -206,6 +206,12 @@ const LSP_EDIT = `(function () {
     lt.objs.editor.__GT_cm_ed(ed).replaceRange('X', { line: 0, ch: 0 });
 })()`;
 
+const LSP_FORMAT = `(function () {
+    var kw = function (n) { return cljs.core.keyword.call(null, n); };
+    var ed = cljs.core.first.call(null, lt.objs.editor.pool.by_path(${JSON.stringify(LSP_PROBE)}));
+    lt.object.raise.call(null, ed, kw('editor.format!'));
+})()`;
+
 const LSP_REPORT = `JSON.stringify((function () {
     var kw = function (n) { return cljs.core.keyword.call(null, n); };
     var out = {};
@@ -227,6 +233,9 @@ const LSP_REPORT = `JSON.stringify((function () {
         out.uri = doc ? String(cljs.core.get.call(null, doc, kw('uri'))) : null;
         // One widget per line with a diagnostic, not one per diagnostic.
         out.widgets = widgets ? cljs.core.count(widgets) : -1;
+        out.tags = cljs.core.pr_str(cljs.core.get.call(null, st, kw('tags')));
+        out.formattable = out.tags.indexOf(':formattable') !== -1;
+        out.firstLine = String(lt.objs.editor.__GT_val(ed)).split('\\n')[0];
         var el = lt.object.__GT_content(ed);
         out.messages = Array.from(el.querySelectorAll('.inline-diagnostic')).map(function (n) {
             return n.className.replace('inline-diagnostic ', '') + ': ' +
@@ -481,6 +490,15 @@ app.on('ready', function () {
                     after: JSON.parse(
                         await w.webContents.executeJavaScript(${JSON.stringify(LSP_REPORT)}))
                 };
+
+                // Formatting: the one LSP surface that changes the buffer the
+                // user is looking at, so it goes into the editor rather than
+                // through lt.objs.workspace-edit.
+                step = 'formatting through the language server';
+                await w.webContents.executeJavaScript(${JSON.stringify(LSP_FORMAT)});
+                await new Promise(function (r) { setTimeout(r, 2500); });
+                lsp.formatted = JSON.parse(
+                    await w.webContents.executeJavaScript(${JSON.stringify(LSP_REPORT)}));
 
                 // Back to the sample, so the checks that read the visible
                 // editor still see what every other step set up.
@@ -1063,9 +1081,19 @@ async function main() {
     // That loop already covers browserInjection.js, which main.js pins to the
     // webview guest relative to its own directory.
 
+    // A home directory of its own. Settings, the workspace, the session and
+    // every cache live under LT_USER_DIR, so without this the smoke test runs
+    // against whatever the developer left in ~/.lighttable — and once Light
+    // Table started restoring sessions, that meant it reopened their files and
+    // started language servers for their projects before a single check ran.
+    const smokeHome = fs.mkdtempSync(path.join(os.tmpdir(), 'lt-smoke-home-'));
+
     await new Promise(function (resolve) {
         const child = spawn(ELECTRON, [appDir, '--no-sandbox'],
-            { env: Object.assign({}, process.env, { LT_SMOKE_REPORT: reportPath }), stdio: 'ignore' });
+            { env: Object.assign({}, process.env, {
+                LT_SMOKE_REPORT: reportPath,
+                LT_USER_DIR: smokeHome
+              }), stdio: 'ignore' });
         child.on('exit', resolve);
     });
 
@@ -1262,6 +1290,16 @@ async function main() {
          lsp.after.version === lsp.before.version + 1 && /version=2 /.test(lspFirst)],
         ['and redrawing rather than accumulating',
          !!lsp.after && lsp.after.widgets === 2 && lsp.after.messages.length === 3],
+        // Formatting. The fixture replaces the first line with a fixed string
+        // that echoes the options back, so this says both that the edit was
+        // applied and that the client sent what the editor is configured with
+        // rather than a guess.
+        ['an editor is tagged formattable when its server formats',
+         !!lsp.formatted && lsp.formatted.formattable === true],
+        ['and formatting applies the edit to the buffer',
+         !!lsp.formatted && /^FORMATTED /.test(lsp.formatted.firstLine || '')],
+        ['carrying this editor\'s own indent settings',
+         !!lsp.formatted && /tabSize=\d+ insertSpaces=(true|false)$/.test(lsp.formatted.firstLine || '')],
         ['a second window builds the editor too', r.secondWindow === 'built'],
         ['and creating one leaves the shared window options alone',
          r.preloadStillRelative === 'preload.js'],
@@ -1299,6 +1337,7 @@ async function main() {
                 JSON.stringify(r.preloadStillRelative));
     console.log('self-eval: ' + ((r.selfEval && r.selfEval.compiler) || 'no report') +
                 ', results ' + ((r.selfEval && r.selfEval.results) || '-'));
+    console.log('formatting: ' + ((lsp.formatted && lsp.formatted.firstLine) || 'no report'));
     console.log('language server: ' + (lsp.after ? lsp.after.widgets + ' widgets, ' +
                 lsp.after.messages.length + ' diagnostics, said "' + lspFirst + '"'
                 : 'no report' + (lsp.before && lsp.before.error ? ' — ' + lsp.before.error : '')));

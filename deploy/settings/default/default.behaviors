@@ -213,6 +213,9 @@
  [:editor :lt.objs.editor.lsp/find-references]
  [:editor :lt.objs.editor.lsp/document-symbols]
  [:editor :lt.objs.editor.lsp/rename]
+ [:editor :lt.objs.editor.lsp/format]
+ ;; ::format-on-save is deliberately not here. Formatting somebody's
+ ;; file on save is a strong opinion, so it is a line they add.
  [:app :lt.objs.editor.lsp/shutdown-servers-on-close]
  [:editor :lt.objs.editor.treesitter/use-treesitter]
  [:editor :lt.objs.editor.treesitter/reparse-on-change]

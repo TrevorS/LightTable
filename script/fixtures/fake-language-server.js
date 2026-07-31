@@ -75,7 +75,12 @@ function handle(msg) {
         return send({
             id: msg.id,
             result: {
-                capabilities: { textDocumentSync: { openClose: true, change: CHANGE_INCREMENTAL } },
+                capabilities: {
+                    textDocumentSync: { openClose: true, change: CHANGE_INCREMENTAL },
+                    // Enough for the client to earn its :formattable tag and
+                    // send a request worth answering.
+                    documentFormattingProvider: true
+                },
                 serverInfo: { name: 'fake-language-server' }
             }
         });
@@ -93,6 +98,23 @@ function handle(msg) {
         lastText = last && last.range ? last.text : '(full text)';
         return publish(msg.params.textDocument.uri);
     }
+    case 'textDocument/formatting':
+        // One edit, replacing the first line, so a test can tell the
+        // difference between "applied" and "did nothing" without depending on
+        // anybody's formatting opinion. The options are echoed back through
+        // the edit text, because the client is supposed to send what the
+        // editor is configured with rather than a guess.
+        return send({
+            id: msg.id,
+            result: [{
+                // Past the end of the line on purpose: a character offset
+                // beyond it clamps, and the alternative is a fixture that
+                // breaks whenever the file it formats gains a character.
+                range: { start: { line: 0, character: 0 }, end: { line: 0, character: 10000 } },
+                newText: 'FORMATTED tabSize=' + msg.params.options.tabSize +
+                         ' insertSpaces=' + msg.params.options.insertSpaces
+            }]
+        });
     case 'shutdown':
         return send({ id: msg.id, result: null });
     case 'exit':

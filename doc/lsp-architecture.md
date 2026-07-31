@@ -103,6 +103,16 @@ The reason this is worth doing once: nothing here is new UI.
 | `references` | the search sidebar | `lt.objs.search` results list | **built** |
 | `documentSymbol` | the search sidebar | `lt.objs.search` results list | **built** |
 | `rename` | a workspace edit | `lt.objs.workspace-edit` | **built** |
+| `formatting` | the buffer itself | CodeMirror's own undo | **built** |
+
+`formatting` is the one surface that does not go through
+`lt.objs.workspace-edit`, and the difference is worth stating. That
+namespace is for changing files nobody is looking at: it refuses a buffer
+with unsaved changes, and replaces whole files. Formatting is the opposite
+— the buffer is in front of you, it is dirty because you have been typing
+in it, and the edits are small and positional. So they go into the editor
+last-first inside one `editor/operation`, and one undo takes the whole
+format back.
 
 `documentSymbol` was going to be the navigate bar and is the search sidebar
 instead. Both are lists of places in the project, Light Table already has one,

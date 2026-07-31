@@ -45,6 +45,7 @@
             [lt.objs.sidebar.command :as scmd]
             [lt.objs.tabs :as tabs]
             [lt.objs.workspace-edit :as we]
+            [lt.objs.workspace-edit.text :as we-text]
             [lt.plugins.auto-complete :as auto-complete]
             [lt.util.bridge :as bridge])
   (:require-macros [lt.macros :refer [behavior defui]]))
@@ -424,7 +425,9 @@
   [capabilities]
   (cond-> #{}
     (:hoverProvider capabilities) (conj :docable)
-    (:documentSymbolProvider capabilities) (conj :navigable)))
+    (:documentSymbolProvider capabilities) (conj :navigable)
+    (:documentFormattingProvider capabilities) (conj :formattable)
+    (:documentRangeFormattingProvider capabilities) (conj :range-formattable)))
 
 (behavior ::tag-from-capabilities
           :triggers #{:lsp.ready}
@@ -681,6 +684,120 @@
                                     " in " (:files outcome) " file"
                                     (when-not (= 1 (:files outcome)) "s")
                                     " — Editor: Undo workspace edit to take it back")))))))))
+
+(defn- apply-to-editor!
+  "Apply LSP text edits to the buffer `ed` is showing, as one undoable change.
+
+  Not through [[lt.objs.workspace-edit]], and the difference is the point.
+  That namespace is for changing files the user is not looking at: it refuses
+  a buffer with unsaved changes and replaces whole files, because what it is
+  protecting against is a tab and a disk disagreeing. Formatting is the
+  opposite situation — the buffer is in front of you, it is usually dirty
+  because you have just been typing in it, and the edits are small and
+  positional.
+
+  So these go straight into the editor, last-first, inside one
+  `editor/operation`: CodeMirror's own undo takes the whole format back in one
+  keystroke, and applying in reverse means no edit moves the range of the next
+  one. `we-text/ordered` is the same sort the file path uses — the arithmetic
+  that gets edits wrong is worth having in exactly one place."
+  [ed edits]
+  (when (seq edits)
+    (editor/operation
+     ed
+     (fn []
+       (doseq [{:keys [from to text]} (we-text/ordered edits)]
+         (editor/replace ed from to text))))
+    (count edits)))
+
+(defn- ->text-edits
+  "`TextEdit[]` from a server, in the shape [[apply-to-editor!]] takes."
+  [result]
+  (vec (for [{:keys [range newText]} result]
+         {:from (sync/->loc (:start range))
+          :to (sync/->loc (:end range))
+          :text newText})))
+
+(defn- formatting-options
+  "What the server should format to, taken from the editor rather than guessed.
+
+  A server that indents with four spaces in a project that uses two is a
+  formatter people turn off, so this reports what this editor is actually
+  configured with — which is what `:lt.objs.editor/tab-settings` sets."
+  [ed]
+  {:tabSize (or (editor/option ed "tabSize") 4)
+   :insertSpaces (not (editor/option ed "indentWithTabs"))})
+
+(defn- format!
+  "Format the whole buffer, or the selection when there is one.
+
+  Range formatting when something is selected, because that is what the
+  selection means, and only when the server offers it — a server with just
+  `documentFormattingProvider` formats the file, which is a surprise worth
+  avoiding when the user asked about four lines."
+  [ed]
+  (when-let [conn (::conn @ed)]
+    (let [selection? (and (editor/selection? ed)
+                          (object/has-tag? ed :range-formattable))
+          method (if selection?
+                   "textDocument/rangeFormatting"
+                   "textDocument/formatting")
+          params (cond-> {:textDocument {:uri (:uri (::doc @ed))}
+                          :options (formatting-options ed)}
+                   selection?
+                   (assoc :range {:start (sync/->position (editor/->cursor ed "start"))
+                                  :end (sync/->position (editor/->cursor ed "end"))}))]
+      (notifos/working "Formatting")
+      (lsp/request!
+       conn method params
+       (fn [{:keys [result error]}]
+         (notifos/done-working)
+         (cond
+           error
+           (notifos/set-msg! (str "Formatting failed: " (:message error)) {:class "error"})
+
+           ;; A server with nothing to change answers with an empty list, and
+           ;; one that declined answers null. Both mean the same thing here.
+           (empty? result)
+           (notifos/set-msg! "Nothing to format.")
+
+           :else
+           (let [n (apply-to-editor! ed (->text-edits result))]
+             (notifos/set-msg! (str "Formatted — " n " change"
+                                    (when-not (= 1 n) "s"))))))))))
+
+(behavior ::format
+          :triggers #{:editor.format!}
+          :type :user
+          :desc "Editor: Format with the language server"
+          :doc "Formats the buffer, or the selection when there is one and the
+                server offers range formatting. One undo takes it back."
+          :reaction (fn [ed]
+                      (cond
+                        (not (::conn @ed))
+                        (notifos/set-msg! "No language server for this editor.")
+
+                        (not (object/has-tag? ed :formattable))
+                        (notifos/set-msg! "This language server does not format.")
+
+                        :else (format! ed))))
+
+(behavior ::format-on-save
+          :triggers #{:save}
+          :type :user
+          :desc "Editor: Format with the language server on save"
+          :doc "Off by default. Formatting on save is a strong opinion about
+                somebody else's project, so it is a line in user.behaviors
+                rather than a default — which is what behaviors are for."
+          :reaction (fn [ed]
+                      (when (and (::conn @ed) (object/has-tag? ed :formattable))
+                        (format! ed))))
+
+(cmd/command {:command :editor.format
+              :desc "Editor: Format"
+              :exec (fn []
+                      (when-let [ed (pool/last-active)]
+                        (object/raise ed :editor.format!)))})
 
 (behavior ::rename
           :triggers #{:editor.rename!}
