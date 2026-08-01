@@ -22,15 +22,15 @@ async function openFile(window: Page, file: string): Promise<void> {
         }, [file], { timeout: 30_000 });
 }
 
-test('multiple cursors select, edit and clear', async ({ window, ltErrors }) => {
-    // On CodeMirror 5, explicitly. Multiple cursors here are the sublime keymap
-    // addon — `selectNextOccurrence` and its neighbours are CodeMirror 5 code
-    // registered on the CodeMirror 5 global, operating on a CodeMirror 5 editor
-    // — and none of it applies to a CodeMirror 6 one. CodeMirror 6 has multiple
-    // selections natively and `@codemirror/search` has the command, so this is
-    // work not yet done rather than a thing that cannot be done. Until it is,
-    // the feature is a reason to keep the old engine and this says so.
-    await window.evaluate("lt.objs.editor.set_engine_BANG_(cljs.core.keyword.call(null, 'cm5'))");
+for (const engine of [':cm5', ':cm6']) {
+test(`multiple cursors select, edit and clear, on ${engine}`, async ({ window, ltErrors }) => {
+    // Both engines, which was not true until the sublime commands were ported.
+    // They were a CodeMirror 5 addon registering on the CodeMirror 5 global;
+    // CodeMirror 6 keeps multiple selections in the state, so most of them turn
+    // out to be a few lines about `EditorSelection` — but they had to be
+    // written, because nothing carries them over.
+    await window.evaluate(
+        `lt.objs.editor.set_engine_BANG_(cljs.core.keyword.call(null, '${engine.slice(1)}'))`);
 
     const dir = scratchDir('cursors');
     const file = path.join(dir, 'probe.js');
@@ -72,6 +72,7 @@ test('multiple cursors select, edit and clear', async ({ window, ltErrors }) => 
 
     fs.rmSync(dir, { recursive: true, force: true });
 });
+}
 
 test('and every one of them is reachable from a key', async ({ window }) => {
     // The gap this whole file is about: a command nothing can invoke is a

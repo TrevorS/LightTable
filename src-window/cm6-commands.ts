@@ -12,7 +12,11 @@
 import type { EditorView } from '@codemirror/view';
 import type { StateCommand } from '@codemirror/state';
 import { EditorSelection } from '@codemirror/state';
+import { EditorState } from '@codemirror/state';
+import { selectNextOccurrence } from '@codemirror/search';
 import {
+    undoSelection, redoSelection, simplifySelection, selectParentSyntax,
+    selectMatchingBracket, copyLineDown, moveLineUp, moveLineDown,
     cursorCharLeft, cursorCharRight, cursorLineUp, cursorLineDown,
     cursorLineStart, cursorLineEnd, cursorLineBoundaryBackward, cursorLineBoundaryForward,
     cursorDocStart, cursorDocEnd, cursorPageUp, cursorPageDown,
@@ -192,6 +196,166 @@ const toggleOverwrite: Command = () => {
 
 export const isOverwriting = (): boolean => overwriting;
 
+
+// --- multiple selections ---------------------------------------------------
+//
+// CodeMirror 5 got these from the sublime keymap: an addon registering commands
+// on the global, operating on a CodeMirror 5 editor. CodeMirror 6 has multiple
+// selections in the state itself, so most of these are a few lines about
+// `EditorSelection` rather than a feature to build — but they do have to be
+// written, because nothing carries them over.
+
+/** Every selection, sorted the way the document reads. */
+const ranges = (view: EditorView) =>
+    [...view.state.selection.ranges].sort((a, b) => a.from - b.from);
+
+/**
+ * Keep only the first selection, which is the top one in the document.
+ *
+ * Not CodeMirror 6's `simplifySelection`: that keeps the *main* range, and the
+ * main range is the one added last. Pressing this after selecting four
+ * occurrences downward would leave you at the bottom instead of back where you
+ * started, which is the opposite of what the key is for.
+ */
+const singleSelectionTop: Command = (view) => {
+    const first = ranges(view)[0];
+    if (!first) return false;
+    view.dispatch({ selection: EditorSelection.single(first.anchor, first.head), scrollIntoView: true });
+    return true;
+};
+
+/** A cursor on the line above or below every existing one. */
+const addCursorToLine = (down: boolean): Command => (view) => {
+    const doc = view.state.doc;
+    const added = [];
+    for (const range of view.state.selection.ranges) {
+        const line = doc.lineAt(range.head);
+        const n = line.number + (down ? 1 : -1);
+        if (n < 1 || n > doc.lines) continue;
+        const target = doc.line(n);
+        const column = range.head - line.from;
+        added.push(EditorSelection.cursor(Math.min(target.from + column, target.to)));
+    }
+    if (!added.length) return false;
+    view.dispatch({
+        selection: EditorSelection.create([...view.state.selection.ranges, ...added],
+                                          view.state.selection.mainIndex),
+        scrollIntoView: true
+    });
+    return true;
+};
+
+/** One cursor per line of the selection, at the end of each. */
+const splitSelectionByLine: Command = (view) => {
+    const doc = view.state.doc;
+    const out = [];
+    for (const range of view.state.selection.ranges) {
+        if (range.empty) { out.push(range); continue; }
+        const first = doc.lineAt(range.from).number;
+        const last = doc.lineAt(range.to).number;
+        for (let n = first; n <= last; n++) {
+            const line = doc.line(n);
+            out.push(EditorSelection.cursor(Math.min(line.to, Math.max(line.from, range.to))));
+        }
+    }
+    if (!out.length) return false;
+    view.dispatch({ selection: EditorSelection.create(out), scrollIntoView: true });
+    return true;
+};
+
+/** Leave this occurrence behind and take the next one instead. */
+const skipAndSelectNextOccurrence: Command = (view) => {
+    if (!selectNextOccurrence(view)) return false;
+    const all = view.state.selection.ranges;
+    if (all.length < 2) return true;
+    // The one just added is the main range; drop the one before it.
+    const main = view.state.selection.main;
+    const kept = all.filter((r) => r !== all[view.state.selection.mainIndex - 1]);
+    view.dispatch({
+        selection: EditorSelection.create(kept.length ? kept : [main],
+                                          Math.max(0, kept.indexOf(main))),
+        scrollIntoView: true
+    });
+    return true;
+};
+
+/** Open a line before or after each selection, and put the cursor on it. */
+const insertLine = (after: boolean): Command => (view) => {
+    const doc = view.state.doc;
+    const changes = [];
+    for (const range of view.state.selection.ranges) {
+        const line = doc.lineAt(range.head);
+        changes.push(after
+            ? { from: line.to, insert: '\n' }
+            : { from: line.from, insert: '\n' });
+    }
+    if (!changes.length) return false;
+    const tr = view.state.update({ changes, scrollIntoView: true });
+    view.dispatch(tr);
+    // After the insert, sit on the new line rather than where the text moved to.
+    const at = view.state.selection.main.head;
+    const line = view.state.doc.lineAt(at);
+    view.dispatch({
+        selection: EditorSelection.cursor(after ? line.to : Math.max(0, line.from - 1))
+    });
+    return true;
+};
+
+/** Sort the lines the selection covers, or the whole document when it is empty. */
+const sortLines = (caseSensitive: boolean): Command => (view) => {
+    const doc = view.state.doc;
+    const range = view.state.selection.main;
+    const first = doc.lineAt(range.empty ? 0 : range.from);
+    const last = doc.lineAt(range.empty ? doc.length : range.to);
+    if (first.number === last.number) return false;
+
+    const lines = [];
+    for (let n = first.number; n <= last.number; n++) lines.push(doc.line(n).text);
+    const key = (x: string) => (caseSensitive ? x : x.toLowerCase());
+    lines.sort((a, b) => (key(a) < key(b) ? -1 : key(a) > key(b) ? 1 : 0));
+
+    // And the sorted region stays selected, with the head on the line *after*
+    // it — which is where CodeMirror 5 leaves it, so sorting twice in a row
+    // sorts the same lines rather than a region that crept by one each time.
+    const end = Math.min(doc.length, last.to + 1);
+    view.dispatch({
+        changes: { from: first.from, to: last.to, insert: lines.join('\n') },
+        selection: EditorSelection.range(first.from, end),
+        scrollIntoView: true
+    });
+    return true;
+};
+
+/**
+ * Join each selected line with the one after it.
+ *
+ * Written out because CodeMirror 6 has no such command, and the interesting
+ * part is not the join: it is that the leading whitespace of the next line goes
+ * with the newline. Joining an indented block otherwise leaves a gutter of
+ * spaces in the middle of the line, which is not what anyone means by joining.
+ */
+const joinLines: Command = (view) => {
+    const doc = view.state.doc;
+    const changes = [];
+    for (const range of view.state.selection.ranges) {
+        const first = doc.lineAt(range.from).number;
+        const last = Math.max(first, doc.lineAt(range.to).number - (range.empty ? 0 : 1));
+        for (let n = first; n <= last; n++) {
+            if (n >= doc.lines) continue;
+            const line = doc.line(n);
+            const next = doc.line(n + 1);
+            const indent = next.text.length - next.text.trimStart().length;
+            changes.push({ from: line.to, to: next.from + indent, insert: ' ' });
+        }
+    }
+    if (!changes.length) return false;
+    view.dispatch({ changes, scrollIntoView: true });
+    return true;
+};
+
+/** The state extension multiple selections need to exist at all. */
+export const multipleSelections = EditorState.allowMultipleSelections.of(true);
+
 /** CodeMirror 5's name → the CodeMirror 6 command that does the same thing. */
 export const commands: Record<string, Command | StateCommand> = {
     // Moving
@@ -236,7 +400,44 @@ export const commands: Record<string, Command | StateCommand> = {
     newlineAndIndent: insertNewlineAndIndent,
     selectAll,
     transposeChars: transposeCharsLikeCm5,
-    toggleOverwrite
+    toggleOverwrite,
+
+    // The sublime keymap's, which is where Light Table's multiple cursors came
+    // from. Three are missing and named at the bottom of this file.
+    selectNextOccurrence,
+    skipAndSelectNextOccurrence,
+    singleSelectionTop,
+    splitSelectionByLine,
+    undoSelection,
+    redoSelection,
+    simplifySelection,
+    addCursorToNextLine: addCursorToLine(true),
+    addCursorToPrevLine: addCursorToLine(false),
+    selectLinesDownward: addCursorToLine(true),
+    selectLinesUpward: addCursorToLine(false),
+    selectScope: selectParentSyntax,
+    selectBetweenBrackets: selectMatchingBracket,
+    duplicateLine: copyLineDown,
+    swapLineUp: moveLineUp,
+    swapLineDown: moveLineDown,
+    joinLines,
+    insertLineAfter: insertLine(true),
+    insertLineBefore: insertLine(false),
+    sortLines: sortLines(true),
+    sortLinesInsensitive: sortLines(false)
+};
+
+/**
+ * Sublime commands with no CodeMirror 6 equivalent here, and why.
+ *
+ * One left of the three. `selectScope` is `selectParentSyntax` — selecting the
+ * enclosing syntax node is exactly what that is — and `selectBetweenBrackets`
+ * is `selectMatchingBracket`. `goToBracket` only *moves* to the match, and
+ * CodeMirror 6 has no command that does, so it wants writing against the
+ * bracket-matching extension rather than mapping to a name.
+ */
+export const UNSUPPORTED_COMMANDS: Record<string, string> = {
+    goToBracket: 'moves to the match rather than selecting to it; wants matchBrackets'
 };
 
 /** Run a CodeMirror 5 command by name. False when there is no such command. */
@@ -249,4 +450,4 @@ declare global {
     interface Window { ltCm6Commands?: unknown }
 }
 
-window.ltCm6Commands = { commands, runCommand, isOverwriting };
+window.ltCm6Commands = { commands, runCommand, isOverwriting, UNSUPPORTED_COMMANDS };

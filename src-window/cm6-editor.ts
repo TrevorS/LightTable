@@ -34,7 +34,7 @@ import {
     replaceNext, replaceAll, highlightSelectionMatches
 } from '@codemirror/search';
 import { modeExtension } from './cm6-modes.js';
-import { runCommand } from './cm6-commands.js';
+import { runCommand, multipleSelections } from './cm6-commands.js';
 import { bandField, setBands } from './cm6.js';
 import type { Band } from './cm6.js';
 
@@ -192,6 +192,7 @@ export class Cm6Editor {
                     // bar of its own and two would be one too many.
                     search(),
                     highlightSelectionMatches(),
+                    multipleSelections,
                     keymap.of([...defaultKeymap, ...historyKeymap]),
                     bandField,
                     markerField,
@@ -332,6 +333,44 @@ export class Cm6Editor {
 
     getSelections(): string[] {
         return this.view.state.selection.ranges.map((r) => this.view.state.sliceDoc(r.from, r.to));
+    }
+
+    /** Every selection, as CodeMirror 5's `{anchor, head}` pairs. */
+    listSelections(): { anchor: Pos, head: Pos }[] {
+        return this.view.state.selection.ranges.map((r) => ({
+            anchor: this.position(r.anchor),
+            head: this.position(r.head)
+        }));
+    }
+
+    setSelections(selections: { anchor: Pos, head?: Pos }[], primary?: number): void {
+        if (!selections.length) return;
+        this.view.dispatch({
+            selection: EditorSelection.create(
+                selections.map((s) => EditorSelection.range(
+                    this.offset(s.anchor), this.offset(s.head ?? s.anchor))),
+                primary ?? selections.length - 1),
+            scrollIntoView: true
+        });
+    }
+
+    /**
+     * Replace each selection with the matching entry of `texts`.
+     *
+     * One string per selection, in the order `listSelections` gave them — which
+     * is what makes multiple cursors worth having rather than a way to select
+     * several things and then edit one.
+     */
+    replaceSelections(texts: string[]): void {
+        const ranges = this.view.state.selection.ranges;
+        this.view.dispatch(this.view.state.changeByRange((range) => {
+            const at = ranges.indexOf(range);
+            const insert = texts[at] ?? texts[texts.length - 1] ?? '';
+            return {
+                changes: { from: range.from, to: range.to, insert },
+                range: EditorSelection.cursor(range.from + insert.length)
+            };
+        }));
     }
 
     setSelection(anchor: Pos, head?: Pos): void {
