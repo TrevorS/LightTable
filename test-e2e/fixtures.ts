@@ -29,7 +29,8 @@ const ELECTRON: string = require(path.join(ROOT, 'deploy', 'electron', 'node_mod
  * The browser tab is the only feature that reads the port, so a test needing
  * it should launch its own instance with a port set.
  */
-export async function launch(extraEnv: Record<string, string> = {}): Promise<ElectronApplication> {
+export async function launch(extraEnv: Record<string, string> = {},
+                             core: string = CORE): Promise<ElectronApplication> {
     // A home directory of its own. Settings, the workspace, logs and caches all
     // live under LT_USER_DIR, so without this a test inherits whatever the last
     // one — or the developer — left behind: an open tab pointing at a file that
@@ -41,7 +42,7 @@ export async function launch(extraEnv: Record<string, string> = {}): Promise<Ele
 
     return await electron.launch({
         executablePath: ELECTRON,
-        args: [CORE, '--no-sandbox'],
+        args: [core, '--no-sandbox'],
         env: {
             // Headless unless something says otherwise — script/e2e.sh sets
             // it, and LT_HEADED turns a debugging run visible again.
@@ -66,7 +67,7 @@ export async function launch(extraEnv: Record<string, string> = {}): Promise<Ele
  * Everything here is best-effort. A test that failed by crashing the window
  * should report that failure, not a teardown error on top of it.
  */
-async function teardown(app: ElectronApplication): Promise<void> {
+export async function teardown(app: ElectronApplication): Promise<void> {
     try {
         await app.evaluate(({ BrowserWindow }) => {
             for (const w of BrowserWindow.getAllWindows()) w.destroy();

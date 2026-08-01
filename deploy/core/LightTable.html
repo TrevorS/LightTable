@@ -27,19 +27,43 @@
     </div>
     <script src="lighttable/util/keyevents.js" type="text/javascript"> </script>
     <script type="text/javascript">
+        // Say it on the page. Until the editor raises :show nothing is visible
+        // but this loader, so a failure before that point left a dark screen
+        // with a logo on it and the reason in a developer console the released
+        // app does not open. "It's just white" is what that looks like to the
+        // person it happens to, and it is not enough to go on.
+        function bootFailed(what, e) {
+            console.error(what, e);
+            var loader = document.getElementById("loader");
+            if (!loader) return;
+            var said = document.createElement("pre");
+            said.style.cssText = "margin:0;padding:40px;text-align:left;" +
+                "font:13px/1.6 monospace;white-space:pre-wrap;overflow:auto;height:100vh;" +
+                "box-sizing:border-box;";
+            said.textContent = "Light Table could not start.\n\n" + what + "\n\n" +
+                ((e && (e.stack || e.message)) || String(e)) +
+                "\n\nThis is usually an incomplete or mismatched build.";
+            loader.style.display = "block";
+            loader.replaceChildren(said);
+        }
+
         var script = document.createElement("script");
         script.type = "text/javascript";
         script.async = false;
         script.src= "lighttable/bootstrap.js";
-        document.body.appendChild(script);
+        script.onerror = function () {
+            // Nothing else reports this one: onload never fires, so without it
+            // the loader simply stays up forever.
+            bootFailed("lighttable/bootstrap.js did not load.", "The file is missing or unreadable.");
+        };
         script.onload = function() {
             try {
                 lt.objs.app.init();
             } catch (e) {
-                console.error(e);
-                console.log(e.stack);
+                bootFailed("lt.objs.app.init() threw.", e);
             }
         }
+        document.body.appendChild(script);
     </script>
 </body>
 </html>
