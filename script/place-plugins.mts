@@ -49,6 +49,8 @@ function main(): void {
     if (!fs.existsSync(SRC)) return;
     fs.mkdirSync(DEST, { recursive: true });
 
+    const placed = new Set<string>();
+
     for (const name of fs.readdirSync(SRC).sort()) {
         const dir = path.join(SRC, name);
         // types/ and lib/ are shared sources, not plugins. A plugin.edn is what
@@ -75,7 +77,18 @@ function main(): void {
         // symbolic link in bundle", followed by "the signature did not verify;
         // the app may not launch".
         fs.cpSync(dir, dest, { recursive: true, verbatimSymlinks: true });
+        placed.add(name);
         console.log('placed ' + name);
+    }
+
+    // A plugin renamed or deleted in plugins/ is still here, because nothing
+    // ever removed it — and it would be packaged, shipped, and loaded. The
+    // rename case is the bad one: both names present, both declaring the same
+    // behaviors, one of them compiled against a build that no longer exists.
+    for (const name of fs.readdirSync(DEST)) {
+        if (placed.has(name)) continue;
+        fs.rmSync(path.join(DEST, name), { recursive: true, force: true });
+        console.log('removed ' + name + ' (no longer in plugins/)');
     }
 }
 
