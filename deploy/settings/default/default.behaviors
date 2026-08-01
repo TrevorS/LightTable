@@ -169,7 +169,6 @@
 
  [:editor :lt.ui.window/sync-from-objects]
  [:editor :lt.ui.window/track-cursor]
- [:editor :lt.ui.window/retire-bands]
  [:editor :lt.objs.document/close-document-on-editor-close]
  [:editor :lt.objs.editor/active-on-focus]
  ;; The language-server client object, which is one per window and receives

@@ -16,7 +16,6 @@
   (:require [clojure.string :as string]
             [lt.ui.band :as band]
             [lt.ui.chrome :as chrome]
-            [lt.ui.pane :as pane]
             [lt.ui.row :as row]))
 
 (defn- leaf [path]
@@ -211,12 +210,17 @@
 
   The one place a view returns something Replicant must not describe. It is a
   keyed empty element with a mount hook; everything inside it belongs to the
-  editor. See [[lt.ui.pane]]."
+  editor.
+
+  The alias is named by keyword rather than required, because requiring
+  `lt.ui.pane` loads an editor and everything under it — see the docstring
+  there. This namespace stays a pure function of a value, which is what lets it
+  be tested without a DOM."
   [{:keys [tabsets editors]}]
   (let [{:keys [tabs active]} (first tabsets)
         path (get (vec tabs) (or active 0))]
     (when (contains? editors path)
-      (pane/pane path))))
+      [:lt.ui.pane/pane {:path path}])))
 
 (defn multibuffer
   "Excerpts assembled by run rather than by file.

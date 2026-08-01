@@ -501,6 +501,9 @@ test('an editor is hosted inside the chrome, and never diffed', async ({ window 
     // foreign DOM we must never diff. The hiccup is an empty keyed element and
     // a mount hook; everything inside belongs to CodeMirror.
     //
+    // Asked for by keyword, the way `lt.ui.view` asks: an alias rather than a
+    // function is what keeps the view layer loadable without a DOM.
+    //
     // Rendered into a root of its own rather than through the whole window,
     // because that is the mechanism — the window adds a projection whose
     // timing has nothing to do with what is being asserted here.
@@ -511,7 +514,7 @@ test('an editor is hosted inside the chrome, and never diffed', async ({ window 
     await evalClj(window, `
         (do (def host (js/document.createElement "div"))
             (js/document.body.appendChild host)
-            (replicant.dom/render host [:div.probe-chrome (lt.ui.pane/pane "${file}")])
+            (replicant.dom/render host [:div.probe-chrome [:lt.ui.pane/pane {:path "${file}"}]])
             :mounted)`);
 
     // A real editor, with the real content, inside a view.
@@ -526,7 +529,7 @@ test('an editor is hosted inside the chrome, and never diffed', async ({ window 
     await evalClj(window, `
         (do (replicant.dom/render host [:div.probe-chrome
                                         [:span.noise "something changed"]
-                                        (lt.ui.pane/pane "${file}")])
+                                        [:lt.ui.pane/pane {:path "${file}"}]])
             :rendered)`);
     expect(await evalClj(window, '(count (lt.ui.pane/mounted))')).toBe('1');
     expect(await pane.locator('.CodeMirror').count()).toBe(1);

@@ -169,7 +169,11 @@
       (is (seq (find-all w :lt.ui.chrome/tab)))
       (is (seq (find-all w :lt.ui.row/list-row)))
       (is (seq (find-all w :lt.ui.chrome/connection-row)))
-      (is (seq (find-all w :lt.ui.band/proposed-edit)))))
+      ;; The pane, not the multibuffer: the window shows one or the other, and
+      ;; this state has an editor open. What the multibuffer contains is
+      ;; `the-multibuffer-is-a-window-onto-the-edits` below.
+      (is (seq (find-all w :lt.ui.pane/pane)))
+      (is (empty? (find-all w :lt.ui.band/proposed-edit)))))
   (testing "an empty state renders rather than throwing, which is what a new window is"
     (is (vector? (view/window {})))))
 

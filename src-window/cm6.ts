@@ -11,9 +11,11 @@
 // else built here — hiccup from state, bands from state — and it means the
 // bookkeeping stops being code.
 //
-// This is the spike that says so with a running editor rather than an argument.
-// It does not replace `lt.objs.editor`; it proves the mechanism that a port
-// would be built on, so the decision rests on something observed.
+// This is the field that does it, and `lt.ui.bands` is now written against it:
+// that namespace answers "which bands exist" and hands the answer over whole.
+// The CodeMirror 5 half of the bookkeeping still exists, but it lives in
+// `lt.objs.editor.bands` where the engine that needs it is, and it goes when
+// that engine does.
 
 import { EditorState, StateField, StateEffect, RangeSet } from '@codemirror/state';
 import type { Extension } from '@codemirror/state';
@@ -26,31 +28,74 @@ export interface Band {
     line: number;
     /** Identity, so a band that stays is not rebuilt. Usually `[path line kind]`. */
     key: string;
-    /** Who fills the node. Called once per distinct key. */
+    /**
+     * What the band is showing, if the caller can say.
+     *
+     * Two bands with the same key and equal content are the same widget and no
+     * work happens. Same key, different content is the same *node* showing
+     * something new — see `updateDOM`. Leave it undefined and every declaration
+     * refills the node, which is correct and merely less lazy.
+     */
+    content?: unknown;
+    /** How to compare content. Defaults to `Object.is`; ClojureScript passes `=`. */
+    equals?: (a: unknown, b: unknown) => boolean;
+    /** Who fills the node. Called to create it, and again when content changes. */
     mount: (node: HTMLElement) => void;
 }
 
 /**
  * A block widget whose content someone else owns.
  *
- * `eq` is what makes this worth doing: two widgets with the same key are the
- * same widget, so CodeMirror keeps the existing DOM and whatever was rendered
- * into it. Replicant patches inside; CodeMirror never looks.
+ * Two methods carry the whole arrangement. `eq` says when two declarations mean
+ * the same widget, so an unchanged band is not touched at all. `updateDOM` says
+ * what happens when they differ but share a key: the *existing node* is refilled
+ * rather than replaced, so Replicant patches into the DOM it already rendered
+ * and CodeMirror never looks inside.
+ *
+ * Without `updateDOM` the choice would be between a key that includes the
+ * content — every change rebuilding the node and discarding Replicant's work —
+ * and a key that does not, which would never show a new value at all.
  */
 class BandWidget extends WidgetType {
-    constructor(readonly key: string, readonly mount: (node: HTMLElement) => void) {
+    constructor(
+        readonly key: string,
+        readonly mount: (node: HTMLElement) => void,
+        readonly content?: unknown,
+        readonly equals?: (a: unknown, b: unknown) => boolean
+    ) {
         super();
     }
 
     override eq(other: BandWidget): boolean {
-        return other.key === this.key;
+        if (other.key !== this.key) return false;
+        if (this.content === undefined && other.content === undefined) return false;
+        return (this.equals ?? Object.is)(other.content, this.content);
     }
 
     override toDOM(): HTMLElement {
         const node = document.createElement('div');
-        node.className = 'cm6-band';
+        node.className = 'lt-band';
+        // Which band this node is, so `updateDOM` can tell "the same band with a
+        // new value" from "a different band at the same place" — CodeMirror
+        // hands over the old node and not the old widget, so the key has to be
+        // on the node to be asked about. Useful to a person reading the DOM too.
+        node.dataset['band'] = this.key;
         this.mount(node);
         return node;
+    }
+
+    /**
+     * Same band, new content: keep the node and refill it.
+     *
+     * A *different* band declines, and CodeMirror builds a fresh node — because
+     * a proposed edit replaced by a conflict on the same line is not the edit
+     * with a new value, and the node it was rendered into belongs to the band
+     * that left.
+     */
+    override updateDOM(node: HTMLElement): boolean {
+        if (node.dataset['band'] !== this.key) return false;
+        this.mount(node);
+        return true;
     }
 
     // The band is not editable text and the cursor should not enter it.
@@ -72,7 +117,7 @@ function decorationsFor(state: EditorState, bands: Band[]): DecorationSet {
             .filter((b) => b.line >= 0 && b.line < lines)
             .sort((a, b) => a.line - b.line)
             .map((b) => Decoration.widget({
-                widget: new BandWidget(b.key, b.mount),
+                widget: new BandWidget(b.key, b.mount, b.content, b.equals),
                 block: true,
                 side: 1
             }).range(state.doc.line(b.line + 1).to)),

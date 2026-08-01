@@ -700,3 +700,23 @@
               :desc "Editor: Split selection into cursors per line"
               :exec (fn []
                       (cmd/exec! :editor.codemirror.command "splitSelectionByLine"))})
+
+;; Which engine new editors are built on. Both are runnable in one session, on
+;; purpose: the way to find out whether CodeMirror 6 handles a file the same is
+;; to open it twice.
+;;
+;; Editors already open keep the engine they were made with — there is no
+;; migrating one, because the document, the history and the marks all belong to
+;; the engine that holds them.
+
+(cmd/command {:command :editor.engine.codemirror6
+              :desc "Editor: Build new editors on CodeMirror 6"
+              :exec (fn []
+                      (editor/set-engine! :cm6)
+                      (notifos/set-msg! "New editors will use CodeMirror 6"))})
+
+(cmd/command {:command :editor.engine.codemirror5
+              :desc "Editor: Build new editors on CodeMirror 5"
+              :exec (fn []
+                      (editor/set-engine! :cm5)
+                      (notifos/set-msg! "New editors will use CodeMirror 5"))})

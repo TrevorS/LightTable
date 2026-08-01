@@ -164,11 +164,16 @@
       (rest content))
     content)))
 
-(def create-elem (if (.-createElementNS js/document)
-                   (fn [nsp tag]
-                     (.createElementNS js/document nsp tag))
-                   (fn [_ tag]
-                     (.createElement js/document tag))))
+;; The feature test is per call rather than once at load, and deliberately.
+;; Reading `js/document` while this namespace loads makes the namespace — and
+;; everything that requires it, which is most of the editor — impossible to load
+;; anywhere without a DOM. That included `node target/test.js`, so the whole
+;; ClojureScript unit suite failed at import as soon as a test reached a view
+;; that reached an editor. One property read per element is the price.
+(defn create-elem [nsp tag]
+  (if (.-createElementNS js/document)
+    (.createElementNS js/document nsp tag)
+    (.createElement js/document tag)))
 
 (defn elem-factory [tag-def]
   (binding [bindings (atom [])]

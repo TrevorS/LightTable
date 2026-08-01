@@ -100,7 +100,9 @@ export class Cm6Editor {
     private readonly listeners = new Map<string, Listener[]>();
     private readonly language = new Compartment();
     private readonly options: Record<string, unknown> = {};
+    private declared: Band[] = [];
     private widgets: Band[] = [];
+    private widgetId = 0;
     private cleanAt = 0;
     private generation = 0;
     private markerId = 0;
@@ -273,24 +275,71 @@ export class Cm6Editor {
     // --- bands -------------------------------------------------------------
 
     /**
-     * The one place this is not a translation but a replacement.
+     * Declare the whole set of bands. The declarative path, and the reason for
+     * the port.
      *
-     * CodeMirror 5 hands back a widget object you must remember and remove.
-     * Here the set of bands is state, so adding one is declaring the new set —
-     * and `lt.ui.bands` keeping a table of what is drawn becomes unnecessary
-     * rather than merely cheaper. The CodeMirror 5 shape is kept so the
-     * existing caller works today; the point of the port is to delete it.
+     * `lt.ui.bands` computes what should be under which line from `lt.state` and
+     * hands the answer over; what is on screen and no longer wanted goes away
+     * because it is absent from the new set, not because anyone removed it.
+     * That is a table of drawn widgets, an orphan sweep and a
+     * close-the-editor cleanup that stop existing — see `lt.objs.editor.bands`,
+     * where the CodeMirror 5 half still has all three.
+     */
+    setBands(bands: Band[]): void {
+        this.declared = bands;
+        this.pushBands();
+    }
+
+    /**
+     * A line widget, the CodeMirror 5 way.
+     *
+     * This is not a leftover. `line-widget` is published plugin API — the
+     * Clojure plugin's collapsible exception uses it, as do `lt.objs.eval` and
+     * the LSP diagnostics — so an editor that could not do this would break
+     * plugins that are not ours to rewrite. It keeps its own list, and the two
+     * are merged rather than one overwriting the other.
      */
     addLineWidget(line: number, node: HTMLElement): Band {
-        const band: Band = { line, key: `w${this.widgets.length}-${line}`, mount: (n) => n.appendChild(node) };
+        const band: Band = {
+            line,
+            key: `widget-${++this.widgetId}`,
+            // The node is the identity: handed the same one twice, nothing
+            // happens, which is what an imperative widget nobody redeclared
+            // should cost.
+            content: node,
+            mount: (n) => n.appendChild(node)
+        };
         this.widgets = [...this.widgets, band];
-        this.view.dispatch({ effects: setBands.of(this.widgets) });
+        this.pushBands();
         return band;
     }
 
     removeLineWidget(widget: Band): void {
         this.widgets = this.widgets.filter((w) => w !== widget);
-        this.view.dispatch({ effects: setBands.of(this.widgets) });
+        this.pushBands();
+    }
+
+    /** Both sets, as the one thing the field holds. */
+    private pushBands(): void {
+        this.view.dispatch({ effects: setBands.of([...this.declared, ...this.widgets]) });
+    }
+
+    /**
+     * The declared bands that are actually drawn, as keys.
+     *
+     * Declared and drawn are not the same set — a band whose line is past the
+     * end of the document is dropped — and this reports the second, because
+     * that is the question anyone asking has.
+     */
+    bandKeys(): string[] {
+        const declared = new Set(this.declared.map((b) => b.key));
+        const out: string[] = [];
+        const doc = this.view.state.doc;
+        this.view.state.field(bandField).decorations.between(0, doc.length, (_from, _to, deco) => {
+            const key = (deco.spec.widget as { key?: string }).key;
+            if (key !== undefined && declared.has(key)) out.push(key);
+        });
+        return out;
     }
 
     // --- events ------------------------------------------------------------

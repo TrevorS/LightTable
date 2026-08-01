@@ -28,6 +28,7 @@
             [lt.util.dom :as dom]
             [lt.util.load :as load]
             [lt.objs.platform :as platform]
+            [lt.window.modules :as modules]
             ;; CodeMirror and the addons Light Table always wants. These used to
             ;; be read off disk and eval'd; requiring them lets the compiler and
             ;; the module system see them like anything else. Addons have no
@@ -116,10 +117,44 @@
 ;; Creating
 ;;*********************************************************
 
+(defonce ^:private engine-override (atom nil))
+
+(defn engine
+  "Which engine new editors are built on: `:cm5` or `:cm6`.
+
+  `window.ltEditorEngine` chooses at startup and [[set-engine!]] changes it
+  afterwards, so both can be running in one session and a test can compare
+  them. Existing editors keep the engine they were made with — this is read
+  once, when one is created."
+  []
+  (or @engine-override
+      (if (= "cm6" (some-> js/window .-ltEditorEngine)) :cm6 :cm5)))
+
+(defn set-engine!
+  "Build subsequent editors on `k` (`:cm5` or `:cm6`), or on the default again
+  when given anything else."
+  [k]
+  (reset! engine-override (#{:cm5 :cm6} k)))
+
+(defn cm6?
+  "True when `e` is a CodeMirror 6 editor.
+
+  Asked of the object rather than of [[engine]], because the setting can change
+  under an editor that was already made and the object is the fact."
+  [e]
+  (instance? (.-Cm6Editor modules/cm6-editor) (->cm-ed e)))
+
 (defn- headless
-  "Create a headless CodeMirror object using `opts`."
+  "Create a detached editor using `opts`, on whichever engine [[engine]] names.
+
+  CodeMirror 5 takes a function instead of a parent and leaves its element
+  detached; CodeMirror 6 requires a parent, so it gets one nobody keeps. Either
+  way the element that matters is the one [[->elem]] finds, which the pane then
+  moves where it belongs."
   [opts]
-  (-> (js/CodeMirror. (fn []))
+  (-> (if (= :cm6 (engine))
+        (.makeCm6Editor modules/cm6-editor (js/document.createElement "div") #js {})
+        (js/CodeMirror. (fn [])))
       (set-options opts)))
 
 (defn- make [context]
@@ -135,8 +170,15 @@
     (when-let [c (:content context)]
       (set-val e c)
       (clear-history e))
-    (when (:doc context)
-      (.swapDoc ^js e (-> (:doc context) deref :doc)))
+    (when-let [doc (:doc context)]
+      (if (cm6? e)
+        ;; A CodeMirror 5 Doc is a *shared* buffer: two editors on the same one
+        ;; see each other's edits. CodeMirror 6 has no such object, so this
+        ;; takes the text and the sharing is lost — the divergence is named
+        ;; here and at `swapDoc` rather than discovered by whoever opens the
+        ;; same file twice.
+        (set-val e (.getValue ^js (:doc @doc)))
+        (.swapDoc ^js e (:doc @doc))))
     e))
 
 (defn on
