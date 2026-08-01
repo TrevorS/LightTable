@@ -550,6 +550,22 @@
   [name func]
   (.defineExtension js/CodeMirror name func))
 
+(defn exec-command!
+  "Run the CodeMirror command named `cmd` on editor `e`.
+
+  The global `CodeMirror.commands` table belongs to CodeMirror 5 and its
+  functions reach into a CodeMirror 5 editor, so calling one on a CodeMirror 6
+  editor is a TypeError in whichever feature happens to reach it. This is the
+  one place that knows which table to look in — see `cm6-commands.ts` for the
+  other one, and [[lt.objs.editor.pool]] for the fifty-odd commands that used to
+  each make this decision by not making it."
+  [e cmd & args]
+  (let [cm (->cm-ed e)]
+    (if (cm6? e)
+      (.execCommand cm cmd)
+      (when-let [f (aget js/CodeMirror.commands cmd)]
+        (apply f cm args)))))
+
 (defn find!
   "Search editor `e` for `query` and move to the first match.
 
