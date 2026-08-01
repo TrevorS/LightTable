@@ -453,16 +453,11 @@ app.on('ready', function () {
                 // know a type from a value or a parameter from a local — so
                 // their presence is proof the parser is driving the colours.
                 step = 'highlighting a TypeScript file with tree-sitter';
-                // On CodeMirror 5, explicitly. Tree-sitter highlighting here is
-                // a CodeMirror 5 *mode* — src-window/treesitter.ts builds one with
-                // CodeMirror.StringStream and installs it with extendMode — and
-                // CodeMirror 6 has no such thing. Porting it means a Lezer
-                // parser or a decoration field driven by the tree, which is
-                // real work not yet done. Until then this is a reason to keep
-                // the old engine, and pinning the check says so rather than
-                // quietly asserting less.
-                await w.webContents.executeJavaScript(
-                    'lt.objs.editor.set_engine_BANG_(cljs.core.keyword.call(null,"cm5"))');
+                // On whichever engine the application defaults to. This step
+                // was pinned to CodeMirror 5 while tree-sitter existed only as
+                // a CodeMirror 5 mode; it is decorations on the other engine
+                // now, from the same spans, and a check that named an engine
+                // would stop noticing the one people run.
                 await w.webContents.executeJavaScript(
                     'lt.objs.command.exec_BANG_(cljs.core.keyword.call(null,"open-path"),' +
                     JSON.stringify(${JSON.stringify(TS_PROBE)}) + ')');
@@ -481,25 +476,20 @@ app.on('ready', function () {
                         if (!ed) { out.error = 'no editor for ' + PROBE_TS; return JSON.stringify(out); }
                         out.report = cljs.core.clj__GT_js(lt.objs.editor.treesitter.report(ed));
                         var cm = lt.objs.editor.__GT_cm_ed(ed);
-                        out.modeName = cm.getMode().name;
-                        // Asserted on what the mode tokenizes rather than on
-                        // the painted DOM. The harness window is created with
-                        // show:false, so nothing drives a repaint and the
-                        // rendered lines keep the tokens they had before the
-                        // mode was swapped in — getLineTokens asks the mode
-                        // directly and does not care whether anything is
-                        // visible.
-                        var seen = {};
-                        var lineCount = cm.lineCount();
-                        for (var l = 0; l < lineCount; l++) {
-                            cm.getLineTokens(l, true).forEach(function (t) {
-                                if (!t.type) return;
-                                t.type.split(' ').forEach(function (c) {
-                                    if (c) seen['cm-' + c] = true; });
-                            });
-                        }
-                        out.classes = Object.keys(seen).sort();
-                        out.lines = lineCount;
+                        out.engine = lt.objs.editor.cm6_QMARK_(ed) ? 'cm6' : 'cm5';
+                        // Asserted on the span table rather than on the painted
+                        // DOM. The harness window is created with show:false, so
+                        // nothing drives a repaint: on CodeMirror 5 the rendered
+                        // lines keep the tokens they had before the mode was
+                        // swapped in, and on CodeMirror 6 there is no viewport
+                        // to decorate. line-classes asks what both engines draw
+                        // from, and does not care whether anything is visible.
+                        // What reaches the screen is asserted in
+                        // test-e2e/cm6-treesitter.spec.ts, in a window that has
+                        // one.
+                        out.classes = cljs.core.clj__GT_js(
+                            lt.objs.editor.treesitter.line_classes(ed)) || [];
+                        out.lines = cm.lineCount();
                     } catch (e) { out.error = String((e && e.message) || e); }
                     return JSON.stringify(out);
                 })()\`));
@@ -1253,6 +1243,11 @@ async function main(): Promise<void> {
             r.treesitter.classes.includes('cm-ts-punctuation-bracket')],
         ['it distinguishes far more than a CodeMirror mode managed',
             r.treesitter.classes.length >= 12],
+        // On the engine the application ships with, whichever that is. This
+        // check was pinned to CodeMirror 5 for as long as tree-sitter was a
+        // CodeMirror 5 mode, and pinning it now would mean testing the engine
+        // nobody runs.
+        ['it highlights on the default engine', r.treesitter.engine === 'cm6'],
         // A capture the parser emits and the stylesheet never heard of renders
         // as body text, which is the bug this whole change exists to fix.
         ['every capture it emits has a rule in treesitter.css', unstyledCaptures.length === 0],
@@ -1456,7 +1451,8 @@ async function main(): Promise<void> {
                 r.modes.broken.length + ' broken' +
                 (r.modes.broken.length ? ': ' + r.modes.broken.join('; ') : ''));
     console.log('tree-sitter: ' + r.treesitter.classes.length + ' capture classes (' +
-                (r.treesitter.report ? r.treesitter.report.grammar : '?') + ')' +
+                (r.treesitter.report ? r.treesitter.report.grammar : '?') + ', ' +
+                r.treesitter.engine + ')' +
                 (r.treesitter.error ? ' — ' + r.treesitter.error : '') +
                 (unstyledCaptures.length ? ' UNSTYLED: ' + unstyledCaptures.join(', ') : ''));
     console.log('process stdio: ' + r.stdio.bytesLen + ' bytes back, decoded "' + r.stdio.decoded +

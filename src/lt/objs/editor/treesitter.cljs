@@ -1,9 +1,11 @@
 (ns lt.objs.editor.treesitter
   "Tree-sitter syntax highlighting, wired into editors by tag.
 
-  The parsing and the CodeMirror mode are `src-window/treesitter.ts`; this is
-  the part that knows about Light Table — which grammar goes with which editor,
-  where the `.wasm` files are, and when to reparse.
+  The parsing is `src-window/treesitter.ts` and the drawing is per engine — a
+  mode at the bottom of that file for CodeMirror 5, decorations in
+  `cm6-treesitter.ts` for CodeMirror 6, both reading the same spans. This is the
+  part that knows about Light Table: which grammar goes with which editor, where
+  the `.wasm` files are, and when to reparse.
 
   **Why bother, when 130 CodeMirror modes already work.** A mode is a per-line
   state machine. It can tell you `foo` is an identifier and cannot tell you
@@ -23,9 +25,12 @@
   keystroke, both measured. Grammars are ~400KB of WebAssembly each and load on
   first use, not at startup — opening a Python file should not pay for Rust.
 
-  Turn it off with the `::use-treesitter` behavior and the CodeMirror mode takes
-  over again; nothing here replaces the mime table, which still decides
-  indentation, comment syntax, bracket matching and folding."
+  Turn it off with the `::use-treesitter` behavior and the language's own
+  colouring takes over again. Only the colouring is replaced: the mime still
+  decides indentation, comment syntax, bracket matching and folding. On
+  CodeMirror 6 that is now literally true — the language stays configured and
+  only its highlighting is switched off — where CodeMirror 5 has to swap the
+  whole mode out, because a mode is one object doing all of it."
   (:require [clojure.string :as string]
             [lt.object :as object]
             [lt.objs.editor :as editor]
@@ -170,17 +175,30 @@
 (defn- highlighter-for [grammar]
   (.then @runtime (fn [_] (.highlighterFor ts read-bytes (spec grammar)))))
 
-(defn- install-mode!
-  "Point the editor's CodeMirror at the tree-sitter mode, carrying `hl`.
+(defn- install-highlighter!
+  "Draw `ed` from `hl`, or from its own mode again when `hl` is nil.
 
-  A fresh spec object each time is what makes CodeMirror re-tokenize: it
-  compares specs, and handing back the identical one is a no-op. That matters
-  on reparse, where the spans have changed underneath a mode CodeMirror thinks
-  is unchanged."
+  The one place the two engines differ, and they differ in what they are handed
+  rather than in what they are told. CodeMirror 5 draws from a mode, so the
+  highlighter is delivered as one; CodeMirror 6 draws from decorations, so it is
+  delivered as itself and the decorations are derived. The spans in between are
+  the same spans — see src-window/cm6-treesitter.ts.
+
+  Called again after every reparse. On CodeMirror 5 a fresh spec object is what
+  makes CodeMirror re-tokenize, because it compares specs and the identical one
+  is a no-op; on CodeMirror 6 the effect says so outright. Either way the point
+  is the same: the spans changed underneath something that thinks it is
+  unchanged."
   [ed ^js hl]
-  (.registerMode ts js/CodeMirror)
-  (let [^js cm (editor/->cm-ed ed)]
-    (.setOption cm "mode" #js {:name (.-MODE_NAME ts) :highlighter hl})))
+  (if (editor/cm6? ed)
+    (.setHighlighter ^js (editor/->cm-ed ed) hl)
+    (do
+      (.registerMode ts js/CodeMirror)
+      (let [^js cm (editor/->cm-ed ed)]
+        (if hl
+          (.setOption cm "mode" #js {:name (.-MODE_NAME ts) :highlighter hl})
+          ;; Back to the language's own mode, which the mime named.
+          (.setOption cm "mode" (or (-> @ed :info :mime) "null")))))))
 
 ;;*********************************************************
 ;; Behaviors
@@ -216,7 +234,7 @@
                                        ;; Swapped only once there is something
                                        ;; to show, so the editor is never
                                        ;; briefly blank.
-                                       (install-mode! this hl)))
+                                       (install-highlighter! this hl)))
                               (.catch (fn [e]
                                         ;; A missing or broken grammar must cost
                                         ;; its own language and nothing else:
@@ -243,13 +261,17 @@
                         ;; tokens it cached for lines whose text did not change
                         ;; — which is most of them, and most of what a reparse
                         ;; changes.
-                        (install-mode! this hl))))
+                        (install-highlighter! this hl))))
 
 (behavior ::dispose-highlighter
           :triggers #{:destroy :close}
           :desc "Editor: Release the tree-sitter tree"
           :reaction (fn [this]
                       (when-let [^js hl (::highlighter @this)]
+                        ;; Handed back before it is freed, so an editor that
+                        ;; outlives this is drawn by its own mode rather than
+                        ;; from a tree that has been deleted.
+                        (install-highlighter! this nil)
                         (.dispose hl)
                         (object/merge! this {::highlighter nil}))))
 
@@ -292,6 +314,28 @@
 ;;*********************************************************
 ;; Commands
 ;;*********************************************************
+
+(defn line-classes
+  "Every token class tree-sitter gives `ed`, sorted and without repeats.
+
+  Read from the span table rather than from what either engine drew, because
+  neither can be read without a window that paints: CodeMirror 5 answers
+  `getLineTokens` from a mode it only runs when asked, and CodeMirror 6
+  decorates the lines it can see. This is the thing they are both drawing
+  from — `runsForLine` and `tokenClasses` in src-window/treesitter.ts are the
+  functions each of them calls."
+  [ed]
+  (when-let [^js hl (::highlighter @ed)]
+    (->> (range (editor/line-count ed))
+         (mapcat (fn [n]
+                   (let [length (count (or (editor/line ed n) ""))]
+                     (map (fn [^js run] (.-style run))
+                          (.runsForLine ts (.spansForLine hl n) length)))))
+         (mapcat #(string/split (.tokenClasses ts %) #"\s+"))
+         (remove string/blank?)
+         distinct
+         sort
+         vec)))
 
 (defn report
   "What tree-sitter is doing for the active editor, for the command below and

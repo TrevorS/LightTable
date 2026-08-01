@@ -1,4 +1,10 @@
-// Tree-sitter powered syntax highlighting, as a CodeMirror 5 mode.
+// Tree-sitter powered syntax highlighting.
+//
+// The parse and the per-line span table it produces belong to neither engine.
+// Only the last step does: CodeMirror 5 wants a mode, which is at the bottom of
+// this file, and CodeMirror 6 wants decorations, which are in cm6-treesitter.ts.
+// Both read the same spans through the same `runsForLine`, so the colours are
+// the same colours and not merely similar ones.
 //
 // Why this exists rather than more CodeMirror modes: a mode is a per-line state
 // machine that knows `foo` is an identifier and cannot know whether it is a
@@ -228,6 +234,43 @@ export function styleAt(spans: Span[] | undefined, column: number): { style: str
         }
     }
     return { style, end };
+}
+
+/**
+ * A token style as class names, the way CodeMirror 5 writes them.
+ *
+ * CodeMirror 5 prefixes every class a mode returns with `cm-`, so a mode saying
+ * `ts-variable ts-variable-parameter` reaches the DOM as
+ * `cm-ts-variable cm-ts-variable-parameter`. Every theme is written against
+ * those names, css/treesitter.css included, so the other engine has to arrive
+ * at the same string rather than at its own convention.
+ */
+export function tokenClasses(style: string): string {
+    return 'cm-' + style.trim().replace(/\s+/g, ' cm-');
+}
+
+/**
+ * One line's styled runs, in columns.
+ *
+ * The loop the CodeMirror 5 mode runs, with the stream taken out of it: ask
+ * what covers this column and where that run ends, emit it, continue from
+ * there. Written once because both engines need the same answer — one turns a
+ * run into a token, the other into a decoration — and two implementations of
+ * this would drift into two different sets of colours.
+ */
+export function runsForLine(spans: Span[] | undefined, length: number): Span[] {
+    const out: Span[] = [];
+    let column = 0;
+    while (column < length) {
+        const { style, end } = styleAt(spans, column);
+        const stop = Math.min(end === Infinity ? length : end, length);
+        // Always forward, even where a span says otherwise: a run that does not
+        // advance is a loop that does not end.
+        const next = Math.max(stop, column + 1);
+        if (style) out.push({ from: column, to: next, style });
+        column = next;
+    }
+    return out;
 }
 
 /** Everything needed to highlight one document. */

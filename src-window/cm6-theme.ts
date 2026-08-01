@@ -227,13 +227,29 @@ export function watchForThemes(): void {
     mirrorAllSheets();
 }
 
-/** Everything an editor needs to wear a Light Table theme. */
+/**
+ * Colouring from the language's own parser, in CodeMirror 5's class names.
+ *
+ * Separated from the rest because it is the one part an editor turns off: a
+ * tree-sitter editor is coloured from its own tree, in a vocabulary of its own,
+ * and running both would put two sets of colours on the same characters. The
+ * language itself stays — it is what indents, folds and matches brackets, and
+ * none of that is drawing.
+ */
+export function legacyHighlighting(): Extension {
+    return syntaxHighlighting(legacyHighlightStyle, { fallback: true });
+}
+
+/** The structural class names, on the elements that keep them for a lifetime. */
 export function themeExtensions(): Extension {
-    return [syntaxHighlighting(legacyHighlightStyle, { fallback: true }), stampLegacyClasses];
+    return [stampLegacyClasses];
 }
 
 declare global {
     interface Window { ltCm6Theme?: unknown }
 }
 
-window.ltCm6Theme = { mirrorSelector, mirrorSheet, mirrorAllSheets, watchForThemes, legacyHighlightStyle };
+window.ltCm6Theme = {
+    mirrorSelector, mirrorSheet, mirrorAllSheets, watchForThemes,
+    legacyHighlightStyle, legacyHighlighting
+};

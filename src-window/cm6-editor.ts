@@ -31,7 +31,9 @@ import {
     lineComment, lineUncomment, blockComment, blockUncomment, indentSelection
 } from '@codemirror/commands';
 import { codeFolding, foldCode, unfoldCode, syntaxTree } from '@codemirror/language';
-import { themeExtensions } from './cm6-theme.js';
+import { themeExtensions, legacyHighlighting } from './cm6-theme.js';
+import { treeHighlighting, setTreeHighlighter } from './cm6-treesitter.js';
+import type { LineSpans } from './cm6-treesitter.js';
 import { Options, UNSUPPORTED } from './cm6-options.js';
 import {
     search, SearchQuery, setSearchQuery, findNext, findPrevious,
@@ -184,6 +186,7 @@ export class Cm6Editor {
     readonly view: EditorView;
     private readonly listeners = new Map<string, Listener[]>();
     private readonly language = new Compartment();
+    private readonly highlighting = new Compartment();
     private readonly settings = new Options();
     private declared: Band[] = [];
     private widgets: Band[] = [];
@@ -222,13 +225,19 @@ export class Cm6Editor {
                     bandField,
                     markerField,
                     codeFolding(),
+                    themeExtensions(),
                     // Without this a language parses and nothing is coloured:
                     // CodeMirror 6 separates having a tree from drawing one,
-                    // and the tree alone is invisible. What this supplies is
+                    // and the tree alone is invisible. What it supplies is
                     // CodeMirror 5's class names — `cm-keyword` and its
                     // twenty-odd neighbours — so the colours come from Light
                     // Table's themes, unedited. See cm6-theme.ts.
-                    themeExtensions(),
+                    //
+                    // In a compartment of its own because `setHighlighter`
+                    // turns it off: an editor coloured from a parse tree is
+                    // coloured once, not twice.
+                    this.highlighting.of(legacyHighlighting()),
+                    treeHighlighting(),
                     this.language.of([]),
                     EditorView.updateListener.of((update) => {
                         if (update.docChanged) {
@@ -486,6 +495,37 @@ export class Cm6Editor {
                 effects: this.language.reconfigure(modeExtension(String(value ?? '')))
             });
         }
+    }
+
+    /**
+     * Colour this document from a parse tree, or `null` to stop.
+     *
+     * The counterpart of installing the tree-sitter mode on CodeMirror 5, and
+     * the same one call from `lt.objs.editor.treesitter` — called once when the
+     * grammar loads and again after every reparse, because the spans behind the
+     * highlighter have changed even though the highlighter has not.
+     *
+     * The language's own colouring goes off while this is on. Both would draw
+     * over the same characters in two different vocabularies, and a theme has no
+     * way to prefer one. The language stays configured — it is what indents,
+     * folds and matches brackets, none of which is drawing.
+     *
+     * Deferred by a microtask because the caller is usually inside an update:
+     * the reparse runs in a `:change` behavior, which is raised from this
+     * editor's own update listener, and CodeMirror 6 refuses a dispatch made
+     * while an update is in progress. A microtask runs after the dispatch that
+     * started all this and before the next frame, which is all "after this
+     * update" has to mean.
+     */
+    setHighlighter(highlighter: LineSpans | null): void {
+        queueMicrotask(() => {
+            this.view.dispatch({
+                effects: [
+                    setTreeHighlighter.of(highlighter),
+                    this.highlighting.reconfigure(highlighter ? [] : legacyHighlighting())
+                ]
+            });
+        });
     }
 
     // --- bands -------------------------------------------------------------

@@ -29,7 +29,8 @@
             ["./cm6-editor.js" :as cm6-editor-js]
             ["./cm6-theme.js" :as cm6-theme-js]
             ["./cm6-commands.js"]
-            ["./cm6-modes.js"]))
+            ["./cm6-modes.js"]
+            ["./cm6-treesitter.js"]))
 
 (def ^js fuzzy
   "Fuzzy matching for the command bar and the file navigator: stringScore,
@@ -42,7 +43,8 @@
 
 (def ^js treesitter
   "Tree-sitter highlighting: initRuntime, highlighterFor, makeMode,
-  captureClasses, spansFromCaptures, styleAt. See src-window/treesitter.ts."
+  captureClasses, spansFromCaptures, styleAt, runsForLine, tokenClasses. See
+  src-window/treesitter.ts; the CodeMirror 6 half is cm6-treesitter.ts."
   treesitter-js)
 
 (def ^js cm-hint
