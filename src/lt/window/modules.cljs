@@ -18,7 +18,11 @@
             ;; Required for their side effects: each registers itself with the
             ;; global CodeMirror as it loads.
             ["./cm-search.js"]
-            ["./cm-hint.js"]))
+            ["./cm-hint.js"]
+            ;; CodeMirror 6, as a spike. Nothing in the editor uses it yet —
+            ;; it puts `window.ltCm6` there so the mechanism a port would be
+            ;; built on can be run and asserted about. See src-window/cm6.ts.
+            ["./cm6.js"]))
 
 (def ^js fuzzy
   "Fuzzy matching for the command bar and the file navigator: stringScore,

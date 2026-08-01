@@ -168,5 +168,61 @@ nothing to keep building it and porting later.
 chrome — when `lt.state.objects` is deleted rather than merely shrinking. At
 that point the editor is mounted by a view through one `on-mount` hook, the
 command table has one caller, and the port is a rewrite of one namespace behind
-signatures that Paredit has already proved hold. Before that point it is the
-same work plus a moving target.
+signatures that Paredit has already proved hold.
+
+## Decided: yes, and here is the evidence
+
+That trigger was too conservative, and the argument behind it was partly
+wrong. The Replicant work sits *above* `lt.objs.editor` and uses it; a
+CodeMirror 6 port rewrites *below* it. They are not competing for the same
+code, so "a migration in flight through the same seam" was not true.
+
+### The modes, counted
+
+The one unknown worth checking before committing, checked:
+
+| | |
+|---|---|
+| modes bundled today | 121 |
+| carried by `@codemirror/legacy-modes` | **101** |
+| replaced by a real Lezer grammar, better | 5 — markdown, htmlmixed, jsx, php, vue |
+| a name change only | 1 — `asn.1` → `asn1` |
+| **no CodeMirror 6 equivalent** | **14** |
+
+The fourteen: dart, django, gfm, haml, handlebars, haskell-literate,
+htmlembedded, rst, slim, smarty, soy, tornado, twig, yaml-frontmatter.
+
+Almost all of them are template and overlay modes — CodeMirror 5's way of
+running one mode inside another, which Lezer replaces with real mixed-language
+parsing for the cases it covers and does not replace at all for the rest. GFM
+and yaml-frontmatter are absorbed by `@codemirror/lang-markdown`. The genuine
+losses are the template languages: Django/Jinja, Handlebars, Twig, Smarty, Soy,
+HAML, Slim, reStructuredText, and literate Haskell.
+
+That is a real cost and it is bounded, nameable, and does not touch any
+language this editor has first-class support for. Every one of the sixteen
+language plugins is covered.
+
+### The spike
+
+`src-window/cm6.ts` is the mechanism, running, with three tests in
+`test-e2e/cm6.spec.ts`. It is not wired into the editor — it exists so the
+decision rests on something observed rather than argued.
+
+What it shows, and why it is the whole reason to go:
+
+- **A band is derived from state.** `bandField` is a `StateField` that holds
+  the set of widgets, and the view reconciles. On CodeMirror 5, `lt.ui.bands`
+  needs `ensure-widget!`, a table of what is drawn, and `retire-orphans!` — a
+  sweep to take away what the state no longer asks for. Under CodeMirror 6
+  there is nothing to orphan, so all of that is deleted rather than ported.
+- **A widget keeps its DOM when it keeps its key.** `eq` compares the address,
+  so the node Replicant rendered into survives the set being declared again.
+  Declaring bands and patching inside them compose exactly.
+- **A band follows its line through an edit.** Decorations map forward through
+  every document change on their own. There is no CodeMirror 5 equivalent:
+  today a result stays on the line number it was computed for, and typing above
+  it silently makes it wrong.
+
+That third one is not a performance note. It is a correctness bug this editor
+has today and cannot fix without either this or a change tracker of its own.
