@@ -570,3 +570,9 @@
   color: var(--lt-text);
   box-sizing: border-box;
 }
+
+/* A value that is not data. The band owns this node and Replicant does not
+ * look inside it — a plot, a frame, a stream arriving in pieces. */
+.band__host { display: block; }
+.band__frame { width: 100%; height: 220px; border: 0; border-radius: var(--lt-radius); background: #fff; }
+.band__image { max-width: 100%; border-radius: var(--lt-radius); }

@@ -187,6 +187,42 @@ What it buys immediately: an action is a pure function of state and arguments,
 so what a click does is asserted by calling it. `test/lt/actions_test.cljs`
 tests seven actions without a window, a DOM, or a click.
 
+## The boundary: bands live in DOM Replicant does not own
+
+An inline result is not beside the code, it is *between two lines of it* — so
+its parent is a node CodeMirror created and reflows. Put the editor inside the
+chrome tree and one of two things breaks: Replicant diffs away the editor's own
+DOM, or the bands sit outside the state model and stop being declarative.
+
+[`lt.ui.bands`](../src/lt/ui/bands.cljs) is the answer the design gives:
+**N+1 render roots.** One for the chrome, one per visible band, into the widget
+node the editor hands us. Both are ordinary Replicant renders of ordinary
+hiccup; the second just has a foreign parent.
+
+`:lt.ui.band/result` is therefore the same alias in the catalogue, in this
+document, and inside a live buffer. The impurity is `ensure-widget!` and
+`retire-orphans!` — two functions, one file — and the second exists because a
+band is never *un*-rendered: nothing renders it any more, which is a different
+thing, so what left the state has to be taken off the screen explicitly.
+
+Editor instances are not in the state atom. They are not data.
+
+## Three clocks, not one
+
+Section 06 of the design names four places top-down rendering from one atom
+strains. All four are handled, and three of them the same way — by admitting
+that a surface has its own clock:
+
+| | |
+|---|---|
+| the cursor | `lt.state/cursor`, observed by the statusbar's own root. Mirroring keystrokes into the main atom is a window render per keypress |
+| a watch at 60fps | `lt.state/watch-values`, observed by the watch bands' roots. `app` holds only that the watch exists |
+| the multibuffer | a window of 12 excerpts either side of the review cursor, keyed `[path start-line]`, with what is hidden shown as a count |
+| a value that is not data | the band dispatches on `:mime` and hands off — `text/html` is a sandboxed frame, an image is an element, and neither is described as hiccup |
+
+The design already draws watches in a distinct colour; here that distinction is
+also a rendering boundary.
+
 ## Two things a new renderer must not do
 
 **Do not let it own the CodeMirror subtree.** An editor's content is a

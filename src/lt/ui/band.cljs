@@ -18,15 +18,62 @@
   [line]
   [:div.band__gutter line])
 
+;; **Values are not always data.** A table renders from EDN. A plot is a
+;; canvas, an HTML embed is a sandboxed frame, and a stream arrives in pieces.
+;; Those are hosted widgets *inside* the band: mounted once and fed
+;; imperatively, because describing a canvas as hiccup is describing the wrong
+;; thing. So the band dispatches on `:mime` and hands off.
+(def ^:private renders-as-text
+  #{nil "" "application/edn" "text/plain" "application/json"})
+
+(defn- host
+  "A node the band owns and Replicant does not look inside.
+
+  `mount` is called once with the node, and whatever it puts there stays there.
+  The same mechanism the editor pane uses, at a smaller scale."
+  [mount]
+  [:div.band__host
+   {:replicant/on-mount (fn [{:replicant/keys [node]}] (mount node))}])
+
+(defn- html-embed
+  "A sandboxed frame. Sandboxed because a value is not trusted markup — it came
+  from whatever was evaluated, which may be anything."
+  [html]
+  (host (fn [node]
+          (let [frame (js/document.createElement "iframe")]
+            (.setAttribute frame "sandbox" "")
+            (.setAttribute frame "class" "band__frame")
+            (.appendChild node frame)
+            (set! (.-srcdoc frame) (str html))))))
+
+(defn- image-embed [mime data]
+  (host (fn [node]
+          (let [img (js/document.createElement "img")]
+            (.setAttribute img "class" "band__image")
+            (set! (.-src img) (str "data:" mime ";base64," data))
+            (.appendChild node img)))))
+
+(defn value-content
+  "How a value of `mime` is shown: as text, or handed to something that can.
+
+  Public because it is the decision, not the markup — a plugin that teaches
+  Light Table a new mime is changing this and nothing else."
+  [mime value]
+  (cond
+    (contains? renders-as-text mime) [:div.band__value (str value)]
+    (= mime "text/html") (html-embed value)
+    (and (string? mime) (re-find #"^image/" mime)) (image-embed mime value)
+    :else [:div.band__note (str mime " — nothing here can draw that yet")]))
+
 ;; A value beside the line that produced it. Addressed by [path line], which is
 ;; what lets it be promoted to a watch with one gesture.
-(defalias result [{:keys [line status value note against-unapplied]}]
+(defalias result [{:keys [line status value mime note against-unapplied]}]
   [:div.band.band--result
    (gutter line)
    [:div.band__body
     (when (and status (not= status :finished))
       [::chrome/status {:status status :pulse (= status :executing)} (name status)])
-    (when value [:div.band__value value])
+    (when value (value-content mime value))
     (when against-unapplied
       [:div.band__note (str "computed against " against-unapplied
                             " unapplied edit" (when-not (= 1 against-unapplied) "s"))])

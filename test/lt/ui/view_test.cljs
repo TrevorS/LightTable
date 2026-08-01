@@ -172,3 +172,31 @@
       (is (seq (find-all w :lt.ui.band/proposed-edit)))))
   (testing "an empty state renders rather than throwing, which is what a new window is"
     (is (vector? (view/window {})))))
+
+(deftest the-multibuffer-is-a-window-onto-the-edits
+  ;; Six excerpts is hiccup, six hundred is a virtual list — so only the ones
+  ;; near where you are looking are rendered, and the rest are a count.
+  (let [many (vec (for [i (range 60)]
+                    {:at ["a.ts" i] :summary (str "edit " i) :applied? false
+                     :evidence {:as-written "x" :if-applied "y"}}))
+        state (-> state
+                  (assoc-in [:runs "port-fuzzy" :edits] many)
+                  (assoc-in [:review :at] 30))
+        mb (view/multibuffer state)]
+    (is (= 25 (count (find-all mb :lt.ui.chrome/excerpt-header)))
+        "twelve either side of the cursor, and the cursor's own")
+    (testing "and what is not rendered is said rather than dropped"
+      (let [folds (map attrs-of (find-all mb :lt.ui.chrome/fold-row))]
+        (is (= [18 17] (map :lines folds)))))
+    (testing "keyed by address, so an excerpt that scrolls out and back is the same node"
+      (is (= ["a.ts" 18] (:replicant/key (attrs-of (first (find-all mb :div.excerpt-group)))))))))
+
+(deftest a-review-cursor-outside-the-list-does-not-take-the-window-down
+  ;; The cursor is state and the list is a projection, so the two are allowed
+  ;; to disagree for a moment.
+  (let [past-the-end (assoc-in state [:review :at] 99)]
+    (is (vector? (view/multibuffer past-the-end)))
+    (is (= 2 (count (find-all (view/multibuffer past-the-end) :lt.ui.chrome/excerpt-header)))))
+  (let [nothing (-> state (assoc-in [:runs "port-fuzzy" :edits] []) (assoc-in [:review :at] 5))]
+    (is (vector? (view/multibuffer nothing)))
+    (is (empty? (find-all (view/multibuffer nothing) :lt.ui.chrome/excerpt-header)))))

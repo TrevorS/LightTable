@@ -267,3 +267,140 @@ test('the window renders from the state atom, and follows it', async ({ window }
             :closed)`);
     fs.rmSync(dir, { recursive: true, force: true });
 });
+
+test('a band is hiccup rendered into DOM the editor owns', async ({ window }) => {
+    // The design's one genuinely hard problem. An inline result is not beside
+    // the code, it is between two lines of it — so the band's parent is a node
+    // CodeMirror created and reflows, and Replicant renders into it as an
+    // ordinary root that happens to have a foreign parent.
+    const dir = scratchDir('bands');
+    const file = path.join(dir, 'banded.txt');
+    fs.writeFileSync(dir && file, 'zero\none\ntwo\nthree\nfour\n');
+    await evalClj(window, `(do (cmd/exec! :open-path "${file}") :opened)`);
+    await expect.poll(async () => await evalClj(window,
+        `(count (pool/by-path "${file}"))`)).toBe('1');
+
+    // Put a result in the state. Nothing else is touched: no editor call, no
+    // widget, no DOM.
+    await evalClj(window, `
+        (do (swap! lt.state/app assoc :results
+                   {["${file}" 1] {:status :finished :value "({:count 2})" :mime "application/edn"}
+                    ["${file}" 3] {:status :executing}})
+            :put)`);
+
+    // And it is on screen, inside the editor, under the line it belongs to.
+    const bands = window.locator('.CodeMirror .band');
+    await expect.poll(async () => await bands.count()).toBe(2);
+    expect(await window.textContent('.CodeMirror .band--result .band__value'))
+        .toContain('{:count 2}');
+    // The gutter column is reserved so the band's content lands on the code.
+    expect(await window.textContent('.CodeMirror .band .band__gutter')).toBe('1');
+
+    // A watch on the same line is a second band, not the same band changing
+    // shape — teal, because it re-reads itself.
+    await evalClj(window, `
+        (do (swap! lt.state/app assoc :watches
+                   {["${file}" 1 [:count]] {:reads 8 :value 7 :expression "(count xs)"}})
+            :watched)`);
+    await expect.poll(async () => await window.locator('.CodeMirror .band--watch').count()).toBe(1);
+    await expect.poll(async () => await bands.count()).toBe(3);
+
+    // Updating a value patches the band in place rather than redrawing it: the
+    // widget stays, which is what stops the buffer jumping while you read.
+    const before = await evalClj(window, `(count (lt.ui.bands/drawn))`);
+    await evalClj(window, `
+        (do (swap! lt.state/app assoc-in [:results ["${file}" 1] :value] "({:count 9})") :changed)`);
+    await expect.poll(async () => await window.textContent('.CodeMirror .band--result .band__value'))
+        .toContain('{:count 9}');
+    expect(await evalClj(window, `(count (lt.ui.bands/drawn))`)).toBe(before);
+
+    // Taking it out of the state takes it off the screen. Nothing renders a
+    // band away — it has to be retired, which is the other half of the
+    // impurity this confines to one file.
+    await evalClj(window, '(do (swap! lt.state/app assoc :results {} :watches {}) :cleared)');
+    await expect.poll(async () => await bands.count()).toBe(0);
+    expect(await evalClj(window, '(count (lt.ui.bands/drawn))')).toBe('0');
+
+    // A line past the end of the buffer is a result computed against text we
+    // have since changed, and is not drawn rather than throwing.
+    await evalClj(window, `
+        (do (swap! lt.state/app assoc :results {["${file}" 9000] {:status :finished :value "x"}})
+            :past-the-end)`);
+    await window.waitForTimeout(200);
+    expect(await bands.count()).toBe(0);
+
+    await evalClj(window, `
+        (do (swap! lt.state/app assoc :results {} :watches {} :runs {})
+            (doseq [ed (pool/by-path "${file}")] (object/raise ed :close))
+            :closed)`);
+    fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('a value that is not data is hosted rather than described', async ({ window }) => {
+    // A table renders from EDN. A plot is a canvas and an HTML embed is a
+    // sandboxed frame, so the band dispatches on :mime and hands off — there is
+    // no describing a canvas as hiccup.
+    const dir = scratchDir('mime');
+    const file = path.join(dir, 'mimed.txt');
+    fs.writeFileSync(file, 'a\nb\nc\n');
+    await evalClj(window, `(do (cmd/exec! :open-path "${file}") :opened)`);
+    await expect.poll(async () => await evalClj(window, `(count (pool/by-path "${file}"))`)).toBe('1');
+
+    await evalClj(window, `
+        (do (swap! lt.state/app assoc :results
+                   {["${file}" 0] {:status :finished :mime "text/html" :value "<b>hi</b>"}
+                    ["${file}" 1] {:status :finished :mime "text/plain" :value "just words"}
+                    ["${file}" 2] {:status :finished :mime "video/mp4" :value "..."}})
+            :put)`);
+
+    // Sandboxed, because a value is not trusted markup — it came from whatever
+    // was evaluated.
+    const frame = window.locator('.CodeMirror .band__frame');
+    await expect.poll(async () => await frame.count()).toBe(1);
+    expect(await frame.getAttribute('sandbox')).toBe('');
+    // Text stays text.
+    expect(await window.textContent('.CodeMirror .band .band__value')).toBe('just words');
+    // And a mime nothing can draw says so rather than rendering an object.
+    expect(await window.textContent('.CodeMirror .band .band__note')).toContain('video/mp4');
+
+    await evalClj(window, `
+        (do (swap! lt.state/app assoc :results {})
+            (doseq [ed (pool/by-path "${file}")] (object/raise ed :close))
+            :closed)`);
+    fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('a watch ticks on its own clock, not the window\'s', async ({ window }) => {
+    // A streaming watch would re-render the whole window on every frame if its
+    // readings went through the main atom. They go through their own, observed
+    // by their own root — which is what makes the design's colour distinction
+    // also a rendering boundary.
+    const dir = scratchDir('watch-clock');
+    const file = path.join(dir, 'ticking.txt');
+    fs.writeFileSync(file, 'loop\nrecur\ndone\n');
+    await evalClj(window, `(do (cmd/exec! :open-path "${file}") :opened)`);
+    await expect.poll(async () => await evalClj(window, `(count (pool/by-path "${file}"))`)).toBe('1');
+
+    await evalClj(window, `
+        (do (swap! lt.state/app assoc :watches
+                   {["${file}" 1 [:i]] {:expression "(recur (inc i))"}})
+            :watching)`);
+    await expect.poll(async () => await window.locator('.CodeMirror .band--watch').count()).toBe(1);
+
+    // Sixty readings. The main atom is not touched by any of them.
+    const before = await evalClj(window, '(hash @lt.state/app)');
+    await evalClj(window, `
+        (do (dotimes [i 60] (lt.state/observe! ["${file}" 1 [:i]] i)) :ticked)`);
+
+    await expect.poll(async () => await window.textContent('.CodeMirror .band--watch'))
+        .toContain('59');
+    expect(await evalClj(window, '(hash @lt.state/app)')).toBe(before);
+    expect(await evalClj(window, `(:reads (get @lt.state/watch-values ["${file}" 1 [:i]]))`)).toBe('60');
+
+    await evalClj(window, `
+        (do (swap! lt.state/app assoc :watches {})
+            (reset! lt.state/watch-values {})
+            (doseq [ed (pool/by-path "${file}")] (object/raise ed :close))
+            :closed)`);
+    fs.rmSync(dir, { recursive: true, force: true });
+});

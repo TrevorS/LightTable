@@ -35,6 +35,35 @@
 
 (defonce app (atom initial))
 
+;;*********************************************************
+;; The clocks that are not the window's
+;;*********************************************************
+
+(defonce cursor
+  ;; **Cursor position in the atom.** The statusbar shows line and column, so
+  ;; the cursor has to reach state — but mirroring every keystroke into `app`
+  ;; means a full window render per keypress. This is the design's second
+  ;; option, and the cheaper one: a small atom that only the statusbar's own
+  ;; root observes. It also admits something true, which is that the statusbar
+  ;; is a different clock from the window.
+  (atom {:line 0 :ch 0}))
+
+(defonce watch-values
+  ;; **A watch ticking at 60fps.** A streaming watch would re-render the whole
+  ;; window on every frame. The history lives here with its own render root per
+  ;; band, and `app` holds only the fact that the watch exists. The design
+  ;; already draws watches as a distinct colour; here that distinction is also
+  ;; a rendering boundary.
+  ;;
+  ;; [path line into-value] -> {:value v :reads n}
+  (atom {}))
+
+(defn observe!
+  "Record a reading of the watch at `address`. Does not touch [[app]]."
+  [address value]
+  (swap! watch-values update address
+         (fn [w] {:value value :reads (inc (:reads w 0))})))
+
 (defn results-for
   "Every result belonging to `path`, as `[line result]` pairs.
 

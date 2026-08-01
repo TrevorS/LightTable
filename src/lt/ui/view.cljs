@@ -181,15 +181,46 @@
 ;; 7 · multibuffer
 ;;*********************************************************
 
+(def ^:private window-size
+  "How many excerpts either side of the cursor are real.
+
+  Six excerpts is hiccup. Six hundred is a virtual list, and each excerpt is a
+  real editable region — an editor instance rather than markup. So only the
+  ones near where you are looking are rendered, and the rest are their own
+  height and nothing else."
+  12)
+
+(defn- in-view
+  "The excerpts to render, and how many are hidden either side.
+
+  `at` is clamped into the list rather than trusted. The review cursor is state
+  and the list is a projection, so the two are allowed to disagree for a moment
+  — and a view that threw when they did would take the window with it."
+  [edits at]
+  (let [n (count edits)
+        at (min (max (or at 0) 0) (max 0 (dec n)))
+        from (max 0 (- at window-size))
+        to (min n (+ at window-size 1))]
+    {:before from
+     :items (map vector (range from to) (subvec (vec edits) from to))
+     :after (- n to)}))
+
 (defn multibuffer
   "Excerpts assembled by run rather than by file.
 
   Possible only because runs own edits: the regions of six files a run touched
-  are one list here, and none of those files has been changed."
+  are one list here, and none of those files has been changed.
+
+  Keyed by `[path start-line]`, and `:replicant/key` is doing load-bearing work
+  — an excerpt that scrolls out and back must be the same node or the editor
+  inside it is thrown away and rebuilt."
   [{:keys [review runs]}]
-  (let [run (get runs (:run review))]
+  (let [run (get runs (:run review))
+        {:keys [before items after]} (in-view (:edits run) (:at review))]
     [:div.multibuffer
-     (for [[i e] (map-indexed vector (:edits run))
+     (when (pos? before)
+       [::chrome/fold-row {:lines before :replicant/key :before}])
+     (for [[i e] items
            :let [[path line] (:at e)]]
        [:div.excerpt-group {:replicant/key (:at e)}
         [::chrome/excerpt-header
@@ -206,7 +237,9 @@
           [::band/evidence {:label "Evidence"
                             :before (:as-written ev)
                             :after (:if-applied ev)}])
-        (when (:folded e) [::chrome/fold-row {:lines (:folded e)}])])]))
+        (when (:folded e) [::chrome/fold-row {:lines (:folded e)}])])
+     (when (pos? after)
+       [::chrome/fold-row {:lines after :replicant/key :after}])]))
 
 ;;*********************************************************
 ;; 8 · settings
@@ -237,7 +270,12 @@
   "Everything, from one value.
 
   The whole window is a function call. That is the claim worth checking, and
-  the reason the state is one atom rather than several."
+  the reason the state is one atom rather than several.
+
+  The statusbar is here because it belongs on screen and because a test should
+  be able to ask for the whole window. The *live* chrome renders it into a root
+  of its own instead — it reads the cursor, which is a different clock. See
+  [[lt.ui.window]]."
   [state]
   [:div.window
    (titlebar state)
