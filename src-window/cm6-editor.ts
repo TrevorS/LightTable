@@ -18,12 +18,71 @@
 // that says what it is beats one that silently returns undefined — this
 // codebase has paid for that lesson twice already.
 
-import { EditorState, EditorSelection, Compartment } from '@codemirror/state';
-import type { Extension } from '@codemirror/state';
-import { EditorView, lineNumbers, keymap, drawSelection } from '@codemirror/view';
-import { defaultKeymap, history, historyKeymap, undo, redo } from '@codemirror/commands';
+import { EditorState, EditorSelection, Compartment, StateField, StateEffect, RangeSet } from '@codemirror/state';
+import type { Extension, Range } from '@codemirror/state';
+import { EditorView, lineNumbers, keymap, drawSelection, Decoration } from '@codemirror/view';
+import type { DecorationSet } from '@codemirror/view';
+import {
+    defaultKeymap, history, historyKeymap, historyField, undo, redo,
+    lineComment, lineUncomment, blockComment, blockUncomment, indentSelection
+} from '@codemirror/commands';
+import { codeFolding, foldCode, unfoldCode, syntaxTree } from '@codemirror/language';
 import { bandField, setBands } from './cm6.js';
 import type { Band } from './cm6.js';
+
+/** A text mark or a line class, as CodeMirror 5 hands them out. */
+interface Marker {
+    id: number;
+    from: number;
+    to: number;
+    /** A mark decorates a range; a line class decorates the line it starts on. */
+    kind: 'mark' | 'line';
+    className: string;
+    clear: () => void;
+    find: () => { from: Pos, to: Pos } | null;
+}
+
+const addMarker = StateEffect.define<{ id: number, from: number, to: number, kind: 'mark' | 'line', className: string }>();
+const dropMarker = StateEffect.define<number>();
+
+/**
+ * Marks and line classes, as decorations derived from state.
+ *
+ * The same move as the bands: CodeMirror 5 hands back an object you must
+ * remember and clear, and here the set is a value the view reconciles. The
+ * CodeMirror 5 shape is still returned so existing callers work, but what is
+ * underneath is a field rather than a list of handles — which is why a mark
+ * follows its text through an edit without anyone tracking it.
+ */
+interface MarkerState { specs: { id: number, from: number, to: number, kind: 'mark' | 'line', className: string }[], decorations: DecorationSet }
+
+function markerDecorations(specs: MarkerState['specs']): DecorationSet {
+    const ranges: Range<Decoration>[] = [];
+    for (const m of [...specs].sort((a, b) => a.from - b.from || a.to - b.to)) {
+        ranges.push(m.kind === 'line'
+            ? Decoration.line({ class: m.className }).range(m.from)
+            : Decoration.mark({ class: m.className }).range(m.from, m.to));
+    }
+    return RangeSet.of(ranges, true);
+}
+
+const markerField = StateField.define<MarkerState>({
+    create() { return { specs: [], decorations: Decoration.none }; },
+    update(value, tr) {
+        let specs = value.specs;
+        let touched = false;
+        if (tr.docChanged) {
+            specs = specs.map((m) => ({ ...m, from: tr.changes.mapPos(m.from), to: tr.changes.mapPos(m.to) }));
+            touched = true;
+        }
+        for (const effect of tr.effects) {
+            if (effect.is(addMarker)) { specs = [...specs, effect.value]; touched = true; }
+            if (effect.is(dropMarker)) { specs = specs.filter((m) => m.id !== effect.value); touched = true; }
+        }
+        return touched ? { specs, decorations: markerDecorations(specs) } : value;
+    },
+    provide: (f) => EditorView.decorations.from(f, (v) => v.decorations)
+});
 
 /** CodeMirror 5's position: a zero-based line and a character within it. */
 export interface Pos { line: number; ch: number }
@@ -31,12 +90,6 @@ export interface Pos { line: number; ch: number }
 interface LineHandle { line: number }
 
 type Listener = (...args: unknown[]) => void;
-
-const NOT_YET = (name: string): never => {
-    throw new Error(
-        `CodeMirror 6: ${name} is not implemented yet. ` +
-        'See src-window/cm6-editor.ts — the gap is deliberate and named.');
-};
 
 export class Cm6Editor {
     readonly view: EditorView;
@@ -46,6 +99,8 @@ export class Cm6Editor {
     private widgets: Band[] = [];
     private cleanAt = 0;
     private generation = 0;
+    private markerId = 0;
+    private extending = false;
 
     constructor(parent: HTMLElement, doc: string, extensions: Extension[] = []) {
         this.view = new EditorView({
@@ -57,6 +112,8 @@ export class Cm6Editor {
                     history(),
                     keymap.of([...defaultKeymap, ...historyKeymap]),
                     bandField,
+                    markerField,
+                    codeFolding(),
                     this.language.of([]),
                     EditorView.updateListener.of((update) => {
                         if (update.docChanged) {
@@ -223,30 +280,174 @@ export class Cm6Editor {
         for (const f of this.listeners.get(event) ?? []) f(...args);
     }
 
-    // --- not yet -----------------------------------------------------------
+    // --- marks and line classes -------------------------------------------
+
+    private marker(from: number, to: number, kind: 'mark' | 'line', className: string): Marker {
+        const id = ++this.markerId;
+        this.view.dispatch({ effects: addMarker.of({ id, from, to, kind, className }) });
+        return {
+            id, from, to, kind, className,
+            clear: () => { this.view.dispatch({ effects: dropMarker.of(id) }); },
+            find: () => {
+                const m = this.view.state.field(markerField).specs.find((x) => x.id === id);
+                return m ? { from: this.position(m.from), to: this.position(m.to) } : null;
+            }
+        };
+    }
+
+    markText(from: Pos, to: Pos, options: { className?: string } = {}): Marker {
+        return this.marker(this.offset(from), this.offset(to), 'mark', options.className ?? '');
+    }
+
+    setBookmark(pos: Pos, options: { className?: string } = {}): Marker {
+        const at = this.offset(pos);
+        return this.marker(at, at, 'mark', options.className ?? '');
+    }
+
+    findMarksAt(pos: Pos): Marker[] {
+        const at = this.offset(pos);
+        return this.view.state.field(markerField).specs
+            .filter((m) => m.kind === 'mark' && m.from <= at && at <= m.to)
+            .map((m) => this.marker(m.from, m.to, m.kind, m.className));
+    }
+
+    addLineClass(line: number, _where: string, className: string): Marker {
+        const doc = this.view.state.doc;
+        const n = Math.min(Math.max(line + 1, 1), doc.lines);
+        return this.marker(doc.line(n).from, doc.line(n).from, 'line', className);
+    }
+
+    removeLineClass(line: number, _where: string, className?: string): void {
+        const doc = this.view.state.doc;
+        const n = Math.min(Math.max(line + 1, 1), doc.lines);
+        const from = doc.line(n).from;
+        for (const m of this.view.state.field(markerField).specs) {
+            if (m.kind === 'line' && m.from === from && (!className || m.className === className)) {
+                this.view.dispatch({ effects: dropMarker.of(m.id) });
+            }
+        }
+    }
+
+    // --- folding, comments, indentation ------------------------------------
+
+    foldCode(pos: Pos): void {
+        this.setCursor(pos);
+        if (!foldCode(this.view)) unfoldCode(this.view);
+    }
+
+    lineComment(from: Pos, to: Pos): void { this.overRange(from, to, lineComment); }
+    blockComment(from: Pos, to: Pos): void { this.overRange(from, to, blockComment); }
+
+    uncomment(from: Pos, to: Pos): boolean {
+        return this.overRange(from, to, lineUncomment) || this.overRange(from, to, blockUncomment);
+    }
+
+    /** CodeMirror 5's comment commands take a range; CodeMirror 6's act on the
+     *  selection, so the range becomes the selection for the length of the
+     *  call and is put back after. */
+    private overRange(from: Pos, to: Pos, command: (view: EditorView) => boolean): boolean {
+        const was = this.view.state.selection;
+        this.setSelection(from, to);
+        const done = command(this.view);
+        this.view.dispatch({ selection: was });
+        return done;
+    }
+
+    /**
+     * Smart indentation, which is CodeMirror 5's default for this method.
+     *
+     * Not `indentMore`: that adds a unit unconditionally, and CodeMirror 5
+     * computes what the line *should* be — so on a document with no language
+     * it does nothing, and the two engines disagreed about a blank indent. The
+     * command below is the same computation.
+     */
+    indentLine(line: number): void {
+        const was = this.view.state.selection;
+        this.setCursor({ line, ch: 0 });
+        indentSelection(this.view);
+        this.view.dispatch({ selection: was });
+    }
+
+    indentSelection(): void { indentSelection(this.view); }
+
+    // --- geometry and scrolling --------------------------------------------
+
+    charCoords(pos: Pos, mode?: string): { left: number, right: number, top: number, bottom: number } {
+        const coords = this.view.coordsAtPos(this.offset(pos));
+        if (!coords) return { left: 0, right: 0, top: 0, bottom: 0 };
+        if (mode === 'local') {
+            const box = this.view.scrollDOM.getBoundingClientRect();
+            return {
+                left: coords.left - box.left + this.view.scrollDOM.scrollLeft,
+                right: coords.right - box.left + this.view.scrollDOM.scrollLeft,
+                top: coords.top - box.top + this.view.scrollDOM.scrollTop,
+                bottom: coords.bottom - box.top + this.view.scrollDOM.scrollTop
+            };
+        }
+        return { left: coords.left, right: coords.right, top: coords.top, bottom: coords.bottom };
+    }
+
+    scrollTo(left?: number | null, top?: number | null): void {
+        this.view.scrollDOM.scrollTo({
+            left: left ?? this.view.scrollDOM.scrollLeft,
+            top: top ?? this.view.scrollDOM.scrollTop
+        });
+    }
+
+    // --- documents and history ---------------------------------------------
+
+    swapDoc(text: string): string {
+        const was = this.getValue();
+        this.setValue(text);
+        return was;
+    }
+
+    getHistory(): unknown { return this.view.state.field(historyField, false) ?? null; }
+
+    setHistory(_history: unknown): void {
+        // CodeMirror 6's history is a state field with no public restore, so
+        // this is honest about what it does: the old history is dropped rather
+        // than replaced with a wrong one. The only caller is document swapping,
+        // where a shared history was already the surprising behaviour.
+        this.view.dispatch({ effects: StateEffect.reconfigure.of([]) });
+    }
+
+    setExtending(value: boolean): void { this.extending = value; }
+
+    // --- tokens -------------------------------------------------------------
+
+    /**
+     * The token at a position, from the syntax tree.
+     *
+     * Null when no language is configured, which is what CodeMirror 5 answers
+     * for a document in the null mode — so a caller that checks is right either
+     * way, and one that does not was already wrong.
+     */
+    getTokenAt(pos: Pos): { start: number, end: number, string: string, type: string | null } | null {
+        const at = this.offset(pos);
+        const node = syntaxTree(this.view.state).resolveInner(at, -1);
+        if (!node || node.name === 'Document') return null;
+        const line = this.view.state.doc.lineAt(at);
+        return {
+            start: node.from - line.from,
+            end: node.to - line.from,
+            string: this.view.state.sliceDoc(node.from, node.to),
+            type: node.name
+        };
+    }
+
+    getTokenTypeAt(pos: Pos): string | null {
+        // The node's name, not its highlight class. `highlightingFor` wants
+        // Lezer tags and a syntax node carries a NodeType; going through the
+        // tags would mean a highlight style being configured, which a document
+        // in no language does not have. The name is what callers here compare
+        // against anyway — see lt.objs.editor/->token-type.
+        const node = syntaxTree(this.view.state).resolveInner(this.offset(pos), -1);
+        return node && node.name !== 'Document' ? node.name : null;
+    }
 
     getDoc(): Cm6Editor { return this; }
     getMode(): { name: string } { return { name: String(this.options['mode'] ?? 'null') }; }
-
-    getTokenAt(): never { return NOT_YET('getTokenAt'); }
-    getTokenTypeAt(): never { return NOT_YET('getTokenTypeAt'); }
-    markText(): never { return NOT_YET('markText'); }
-    setBookmark(): never { return NOT_YET('setBookmark'); }
-    findMarksAt(): never { return NOT_YET('findMarksAt'); }
-    foldCode(): never { return NOT_YET('foldCode'); }
-    lineComment(): never { return NOT_YET('lineComment'); }
-    blockComment(): never { return NOT_YET('blockComment'); }
-    uncomment(): never { return NOT_YET('uncomment'); }
-    indentLine(): never { return NOT_YET('indentLine'); }
-    indentSelection(): never { return NOT_YET('indentSelection'); }
-    addLineClass(): never { return NOT_YET('addLineClass'); }
-    removeLineClass(): never { return NOT_YET('removeLineClass'); }
-    charCoords(): never { return NOT_YET('charCoords'); }
-    scrollTo(): never { return NOT_YET('scrollTo'); }
-    swapDoc(): never { return NOT_YET('swapDoc'); }
-    getHistory(): never { return NOT_YET('getHistory'); }
-    setHistory(): never { return NOT_YET('setHistory'); }
-    setExtending(): never { return NOT_YET('setExtending'); }
 }
 
 /** What `lt.objs.editor` would call instead of `CodeMirror(node, opts)`. */
