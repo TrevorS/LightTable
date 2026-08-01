@@ -64,6 +64,47 @@
   [tags]
   (registry/for-tags (servers) tags))
 
+(defn servers-for
+  "Every server declared for an editor carrying `tags`."
+  [tags]
+  (registry/all-for-tags (servers) tags))
+
+(defn conns
+  "Every language server this editor is connected to, in declaration order."
+  [ed]
+  (::conns @ed []))
+
+(def ^:private capability-for-method
+  "What a server must advertise before it is worth sending a method to.
+
+  This is how two servers for one language divide the work without anyone
+  configuring it: biome answers formatting and code actions and advertises
+  nothing else, so hover goes to vtsls without either of them being told about
+  the other."
+  {"textDocument/hover" :hoverProvider
+   "textDocument/definition" :definitionProvider
+   "textDocument/references" :referencesProvider
+   "textDocument/documentSymbol" :documentSymbolProvider
+   "textDocument/rename" :renameProvider
+   "textDocument/formatting" :documentFormattingProvider
+   "textDocument/rangeFormatting" :documentRangeFormattingProvider
+   "textDocument/codeAction" :codeActionProvider})
+
+(defn- conn-for
+  "The connection to send `method` to, or nil.
+
+  The last connection that says it can answer, so a server declared later wins
+  a surface both of them offer — the same rule as the table itself.
+
+  Falling back to the last connection when none advertises it is not a
+  formality: before the handshake there are no capabilities to filter on, and
+  a server that never advertised a method may still answer it. This is what a
+  single-server editor has always done."
+  [ed method]
+  (let [cs (conns ed)]
+    (or (last (filter #(get (lsp/server-capabilities %) (capability-for-method method)) cs))
+        (last cs))))
+
 ;;*********************************************************
 ;; Finding a project
 ;;*********************************************************
@@ -132,13 +173,16 @@
 ;;*********************************************************
 
 (defonce ^:private connections
-  ;; Keyed by [root command], so every editor in a project shares one server.
+  ;; Keyed by [root command args], so every editor in a project shares one
+  ;; server. The arguments are part of it because two declarations can name the
+  ;; same executable and be different servers — `node one.mjs` and
+  ;; `node two.mjs`, or one interpreter running two tools.
   (atom {}))
 
 (defn- ensure-connection!
   "The connection for this root and server, started if it is not running."
   [root {:keys [command args init-options install] :as server}]
-  (let [key [root command]]
+  (let [key [root command (vec args)]]
     (or (get @connections key)
         (if-let [full (server-command root command)]
           (let [conn (lsp/connect! {:command full
@@ -185,33 +229,48 @@
   [:div.inline-diagnostics
    (for [d ds] (->diagnostic d))])
 
-(defn- clear-diagnostics! [ed]
-  (object/merge! ed {::diagnostics []})
+(defn- erase-widgets! [ed]
   (doseq [widget (::widgets @ed)]
     (editor/remove-line-widget ed widget))
   (object/merge! ed {::widgets []}))
+
+(defn- clear-diagnostics! [ed]
+  (object/merge! ed {::diagnostics {}})
+  (erase-widgets! ed))
+
+(defn diagnostics
+  "Everything every server has said about this editor."
+  [ed]
+  (vec (mapcat val (::diagnostics @ed {}))))
 
 (defn- draw-diagnostics!
   "Put one widget under each line that has a diagnostic.
 
   Grouped by line rather than one widget per diagnostic: three errors on one
-  line are three sentences, not three boxes pushing the code apart."
-  [ed diagnostics]
-  (clear-diagnostics! ed)
-  (let [last-line (editor/last-line ed)
-        by-line (group-by #(:line (sync/range->loc (:range %))) diagnostics)
-        widgets (doall
-                 (for [[line ds] by-line
-                       ;; A diagnostic past the end of the document is one the
-                       ;; server computed against text we have since changed.
-                       :when (and line (<= 0 line last-line))]
-                   (editor/line-widget ed line (->diagnostics ds)
-                                       {:coverGutter false})))]
-    ;; The diagnostics themselves are kept, not only the widgets drawn from
-    ;; them: a code action is a fix *for* a diagnostic, and the server expects
-    ;; to be handed back the ones it sent for the range being asked about.
-    (object/merge! ed {::widgets (vec widgets)
-                       ::diagnostics (vec diagnostics)})))
+  line are three sentences, not three boxes pushing the code apart.
+
+  Kept per connection, because `publishDiagnostics` is a replacement rather
+  than an addition: it is the whole truth *from that server* about that file,
+  and holding one list would mean the linter's publish erased the type
+  checker's a moment after it arrived."
+  [ed conn published]
+  (let [by-conn (assoc (::diagnostics @ed {}) conn (vec published))
+        all (vec (mapcat val by-conn))]
+    (erase-widgets! ed)
+    (let [last-line (editor/last-line ed)
+          by-line (group-by #(:line (sync/range->loc (:range %))) all)
+          widgets (doall
+                   (for [[line ds] by-line
+                         ;; A diagnostic past the end of the document is one the
+                         ;; server computed against text we have since changed.
+                         :when (and line (<= 0 line last-line))]
+                     (editor/line-widget ed line (->diagnostics ds)
+                                         {:coverGutter false})))]
+      ;; The diagnostics themselves are kept, not only the widgets drawn from
+      ;; them: a code action is a fix *for* a diagnostic, and the server expects
+      ;; to be handed back the ones it sent for the range being asked about.
+      (object/merge! ed {::widgets (vec widgets)
+                         ::diagnostics by-conn}))))
 
 ;;*********************************************************
 ;; Telling the server about the document
@@ -246,35 +305,54 @@
           ;; editor does not know its language when it is created.
           :triggers #{:object.instant :lt.object/tags-added}
           :desc "Editor: Connect to a language server"
-          :doc "Starts the language server configured for this editor's
-                language, if the project provides one, and keeps it told about
-                the document. Diagnostics appear inline, under the line they
-                are about.
+          :doc "Starts the language servers configured for this editor's
+                language, if the project provides them, and keeps them told
+                about the document. Diagnostics appear inline, under the line
+                they are about.
+
+                More than one server for a language is normal — a type checker
+                and a linter — and every one declared is started. Each surface
+                asks the server that says it can answer.
 
                 A project with no server installed is not an error: nothing
                 starts, and everything else about the editor is unaffected."
           :type :user
           :reaction (fn [this & _]
-                      (when-let [server (server-for (:tags @this))]
-                        (when-let [path (-> @this :info :path)]
-                          (when-not (::doc @this)
-                            (when-let [root (project-root path (:root server))]
-                              (when-let [conn (ensure-connection! root server)]
-                                (let [doc (sync/document path (:language-id server))]
-                                  (object/merge! this {::doc doc ::conn conn})
-                                  ;; A server that was already up when this
-                                  ;; editor opened has answered `initialize`
-                                  ;; long ago, so ::tag-from-capabilities will
-                                  ;; not fire again for it.
-                                  (doseq [tag (capability-tags (lsp/server-capabilities conn))]
-                                    (object/add-tags this [tag]))
-                                  (when (open-close? conn)
-                                    (lsp/notify! conn "textDocument/didOpen"
-                                                 {:textDocument
-                                                  {:uri (:uri doc)
-                                                   :languageId (:language-id doc)
-                                                   :version (:version doc)
-                                                   :text (editor/->val this)}}))))))))))
+                      (when-let [path (-> @this :info :path)]
+                        (doseq [server (servers-for (:tags @this))
+                                :let [root (project-root path (:root server))]
+                                :when root
+                                :let [conn (ensure-connection! root server)]
+                                ;; Already connected, which this is raised
+                                ;; often enough to reach: :lt.object/tags-added
+                                ;; fires for every tag an editor earns,
+                                ;; including the ones earned here.
+                                :when (and conn (not (some #{conn} (conns this))))]
+                          ;; One document, shared. The version counter belongs
+                          ;; to the file rather than to a server, and every
+                          ;; server is told about every change, so one sequence
+                          ;; is what each of them sees.
+                          (let [doc (or (::doc @this) (sync/document path (:language-id server)))]
+                            (object/merge! this {::doc doc
+                                                 ::conns (conj (conns this) conn)})
+                            ;; A server that was already up when this editor
+                            ;; opened has answered `initialize` long ago, so
+                            ;; ::tag-from-capabilities will not fire again for
+                            ;; it.
+                            (doseq [tag (capability-tags (lsp/server-capabilities conn))]
+                              (object/add-tags this [tag]))
+                            (when (open-close? conn)
+                              (lsp/notify! conn "textDocument/didOpen"
+                                           {:textDocument
+                                            ;; Its own languageId, not the
+                                            ;; document's: two servers for one
+                                            ;; file can name its language
+                                            ;; differently, and each was
+                                            ;; declared with the name it knows.
+                                            {:uri (:uri doc)
+                                             :languageId (:language-id server)
+                                             :version (:version doc)
+                                             :text (editor/->val this)}})))))))
 
 (behavior ::sync-on-change
           :triggers #{:change}
@@ -284,30 +362,36 @@
           ;; is silent: the version still increments, `didChange` is never
           ;; sent, and the server answers confidently about the file on disk.
           :reaction (fn [this _cm ^js change]
-                      (when-let [conn (::conn @this)]
+                      (when (seq (conns this))
                         (let [doc (sync/bump (::doc @this))
-                              kind (sync/sync-kind (lsp/server-capabilities conn))]
+                              text (editor/->val this)]
                           (object/merge! this {::doc doc})
-                          (lsp/notify! conn "textDocument/didChange"
-                                       {:textDocument {:uri (:uri doc) :version (:version doc)}
-                                        :contentChanges
-                                        (sync/content-changes kind
-                                                              [(->change change)]
-                                                              (editor/->val this))})))))
+                          ;; Every server, and each in the shape it asked for:
+                          ;; one may want the whole document where another
+                          ;; takes the range that changed.
+                          (doseq [conn (conns this)]
+                            (lsp/notify! conn "textDocument/didChange"
+                                         {:textDocument {:uri (:uri doc) :version (:version doc)}
+                                          :contentChanges
+                                          (sync/content-changes
+                                           (sync/sync-kind (lsp/server-capabilities conn))
+                                           [(->change change)]
+                                           text)}))))))
 
 (behavior ::close-document
           :triggers #{:destroy :close}
           :desc "Editor: Tell the language server this document is gone"
           :reaction (fn [this]
-                      (when-let [conn (::conn @this)]
-                        (when (open-close? conn)
+                      (when (seq (conns this))
+                        (doseq [conn (conns this)
+                                :when (open-close? conn)]
                           (lsp/notify! conn "textDocument/didClose"
                                        {:textDocument {:uri (:uri (::doc @this))}}))
                         ;; The widgets go with the editor, but the editor may
                         ;; outlive this — `:close` on a tab that is being
                         ;; reused leaves the object behind.
                         (clear-diagnostics! this)
-                        (object/merge! this {::conn nil ::doc nil}))))
+                        (object/merge! this {::conns [] ::doc nil}))))
 
 ;;*********************************************************
 ;; Surfaces other than diagnostics
@@ -353,7 +437,7 @@
 (defn- request-at-cursor!
   "Send `method` about the cursor's position in `ed`, if a server is connected."
   [ed method callback]
-  (when-let [conn (::conn @ed)]
+  (when-let [conn (conn-for ed method)]
     (when (lsp/ready? conn)
       (lsp/request! conn method
                     {:textDocument {:uri (:uri (::doc @ed))}
@@ -452,7 +536,7 @@
           :desc "Language server: Tag editors with what their server can do"
           :reaction (fn [_ result conn]
                       (doseq [ed (object/by-tag :editor)
-                              :when (= conn (::conn @ed))
+                              :when (some #{conn} (conns ed))
                               tag (capability-tags (:capabilities result))]
                         (object/add-tags ed [tag]))))
 
@@ -560,9 +644,9 @@
                 loaded — so this is the server's answer whenever there is one."
           :reaction (fn [ed]
                       (notifos/working "Finding references…")
-                      (if-not (::conn @ed)
+                      (if-not (seq (conns ed))
                         (notifos/set-msg! "No language server for this editor.")
-                        (when-let [conn (::conn @ed)]
+                        (when-let [conn (conn-for ed "textDocument/references")]
                           (lsp/request! conn "textDocument/references"
                                         {:textDocument {:uri (:uri (::doc @ed))}
                                          :position (sync/->position (editor/->cursor ed))
@@ -637,7 +721,7 @@
                 `documentSymbolProvider`, so a language gets this by its server
                 saying it can answer."
           :reaction (fn [ed]
-                      (when-let [conn (::conn @ed)]
+                      (when-let [conn (conn-for ed "textDocument/documentSymbol")]
                         (lsp/request! conn "textDocument/documentSymbol"
                                       {:textDocument {:uri (:uri (::doc @ed))}}
                                       (fn [{:keys [result]}]
@@ -682,7 +766,7 @@
        :text newText}))))
 
 (defn- rename! [ed new-name]
-  (when-let [conn (::conn @ed)]
+  (when-let [conn (conn-for ed "textDocument/rename")]
     (lsp/request!
      conn "textDocument/rename"
      {:textDocument {:uri (:uri (::doc @ed))}
@@ -754,35 +838,39 @@
   `documentFormattingProvider` formats the file, which is a surprise worth
   avoiding when the user asked about four lines."
   [ed]
-  (when-let [conn (::conn @ed)]
-    (let [selection? (and (editor/selection? ed)
-                          (object/has-tag? ed :range-formattable))
-          method (if selection?
-                   "textDocument/rangeFormatting"
-                   "textDocument/formatting")
-          params (cond-> {:textDocument {:uri (:uri (::doc @ed))}
-                          :options (formatting-options ed)}
-                   selection?
-                   (assoc :range {:start (sync/->position (editor/->cursor ed "start"))
-                                  :end (sync/->position (editor/->cursor ed "end"))}))]
-      (notifos/working "Formatting")
-      (lsp/request!
-       conn method params
-       (fn [{:keys [result error]}]
-         (notifos/done-working)
-         (cond
-           error
-           (notifos/set-msg! (str "Formatting failed: " (:message error)) {:class "error"})
+  (let [selection? (and (editor/selection? ed)
+                        (object/has-tag? ed :range-formattable))
+        method (if selection?
+                 "textDocument/rangeFormatting"
+                 "textDocument/formatting")]
+    ;; One formatter, never two. Two servers both willing to format a file will
+    ;; not agree about it, and applying both means the second undoes the first.
+    ;; The later declaration wins, which is how a project puts biome in front of
+    ;; the type checker that would otherwise answer.
+    (when-let [conn (conn-for ed method)]
+      (let [params (cond-> {:textDocument {:uri (:uri (::doc @ed))}
+                            :options (formatting-options ed)}
+                     selection?
+                     (assoc :range {:start (sync/->position (editor/->cursor ed "start"))
+                                    :end (sync/->position (editor/->cursor ed "end"))}))]
+        (notifos/working "Formatting")
+        (lsp/request!
+         conn method params
+         (fn [{:keys [result error]}]
+           (notifos/done-working)
+           (cond
+             error
+             (notifos/set-msg! (str "Formatting failed: " (:message error)) {:class "error"})
 
-           ;; A server with nothing to change answers with an empty list, and
-           ;; one that declined answers null. Both mean the same thing here.
-           (empty? result)
-           (notifos/set-msg! "Nothing to format.")
+             ;; A server with nothing to change answers with an empty list, and
+             ;; one that declined answers null. Both mean the same thing here.
+             (empty? result)
+             (notifos/set-msg! "Nothing to format.")
 
-           :else
-           (let [n (apply-to-editor! ed (->text-edits result))]
-             (notifos/set-msg! (str "Formatted — " n " change"
-                                    (when-not (= 1 n) "s"))))))))))
+             :else
+             (let [n (apply-to-editor! ed (->text-edits result))]
+               (notifos/set-msg! (str "Formatted — " n " change"
+                                      (when-not (= 1 n) "s")))))))))))
 
 (defn- diagnostics-in-range
   "The server's own diagnostics overlapping `range`, sent back with the request.
@@ -790,10 +878,13 @@
   Required by the protocol rather than optional: a quick fix is a fix *for a
   diagnostic*, and a server given no diagnostics has nothing to offer a fix
   for. This is why asking on a line with a red squiggle produces actions and
-  asking two lines above it produces none."
-  [ed]
+  asking two lines above it produces none.
+
+  Only what `conn` itself published. Handing a server another server's
+  diagnostics asks it for a fix for a problem it does not know it has."
+  [ed conn]
   (let [{:keys [line]} (editor/->cursor ed)]
-    (->> (::diagnostics @ed)
+    (->> (get (::diagnostics @ed {}) conn)
          (filter (fn [d]
                    (let [start (get-in d [:range :start :line])
                          end (get-in d [:range :end :line])]
@@ -838,7 +929,7 @@
   not looking at — an import added at the top of another module, a symbol
   renamed where it is used — and that is exactly what that namespace is for."
   [ed action]
-  (let [conn (::conn @ed)]
+  (let [conn (conn-for ed "textDocument/codeAction")]
     (when-let [edit (:edit action)]
       (let [outcome (we/apply! (action-title action) (->edits edit))]
         (if (:error outcome)
@@ -859,7 +950,7 @@
                                             {:class "error"}))))))))
 
 (defn- code-actions! [ed]
-  (when-let [conn (::conn @ed)]
+  (when-let [conn (conn-for ed "textDocument/codeAction")]
     (let [from (if (editor/selection? ed) (editor/->cursor ed "start") (editor/->cursor ed))
           to (if (editor/selection? ed) (editor/->cursor ed "end") (editor/->cursor ed))]
       (notifos/working "Asking for code actions")
@@ -867,7 +958,7 @@
        conn "textDocument/codeAction"
        {:textDocument {:uri (:uri (::doc @ed))}
         :range {:start (sync/->position from) :end (sync/->position to)}
-        :context {:diagnostics (diagnostics-in-range ed)}}
+        :context {:diagnostics (diagnostics-in-range ed conn)}}
        (fn [{:keys [result error]}]
          (notifos/done-working)
          (cond
@@ -890,7 +981,7 @@
                 whole thing back."
           :reaction (fn [ed]
                       (cond
-                        (not (::conn @ed))
+                        (empty? (conns ed))
                         (notifos/set-msg! "No language server for this editor.")
 
                         (not (object/has-tag? ed :actionable))
@@ -915,7 +1006,7 @@
                 server offers range formatting. One undo takes it back."
           :reaction (fn [ed]
                       (cond
-                        (not (::conn @ed))
+                        (empty? (conns ed))
                         (notifos/set-msg! "No language server for this editor.")
 
                         (not (object/has-tag? ed :formattable))
@@ -931,7 +1022,7 @@
                 somebody else's project, so it is a line in user.behaviors
                 rather than a default — which is what behaviors are for."
           :reaction (fn [ed]
-                      (when (and (::conn @ed) (object/has-tag? ed :formattable))
+                      (when (and (seq (conns ed)) (object/has-tag? ed :formattable))
                         (format! ed))))
 
 (cmd/command {:command :editor.format
@@ -952,7 +1043,7 @@
                 a workspace edit works on what is on disk, so what it took away
                 is what it can put back."
           :reaction (fn [ed new-name]
-                      (if-not (::conn @ed)
+                      (if-not (seq (conns ed))
                         (notifos/set-msg! "No language server for this editor.")
                         (rename! ed new-name))))
 
@@ -1022,11 +1113,11 @@
 (behavior ::on-notification
           :triggers #{:lsp.notification}
           :desc "Language server: Handle a notification"
-          :reaction (fn [_ {:keys [method params]} _conn]
+          :reaction (fn [_ {:keys [method params]} conn]
                       (case method
                         "textDocument/publishDiagnostics"
                         (doseq [ed (editors-for-uri (:uri params))]
-                          (draw-diagnostics! ed (:diagnostics params)))
+                          (draw-diagnostics! ed conn (:diagnostics params)))
 
                         ;; A server telling the user something. The status bar
                         ;; is where Light Table says things of this size.
@@ -1093,22 +1184,32 @@
   \"why are there no diagnostics\", and it names every place that was looked."
   [ed]
   (let [path (-> @ed :info :path)
-        server (server-for (:tags @ed))
+        declared (servers-for (:tags @ed))
+        ;; The singular keys describe the last-declared server, which is the
+        ;; one a single-server language has and the one every surface both
+        ;; offer falls to. `:servers` is the whole list.
+        server (last declared)
         root (when (and path server) (project-root path (:root server)))
-        conn (::conn @ed)]
+        connected (conns ed)]
     {:path path
      :language-id (:language-id server)
      :command (:command server)
      :markers (:root server)
      :root root
      :found (when root (server-command root (:command server)))
-     :connected? (boolean conn)
-     :ready? (boolean (and conn (lsp/ready? conn)))
-     :diagnostics (count (::widgets @ed))}))
+     :connected? (boolean (seq connected))
+     :ready? (boolean (some #(lsp/ready? %) connected))
+     :diagnostics (count (::widgets @ed))
+     :servers (vec (for [s declared]
+                     {:command (:command s)
+                      :language-id (:language-id s)
+                      :root (when path (project-root path (:root s)))}))
+     :connections (count connected)}))
 
 (defn status-line
   "One sentence saying which of the ways this can be quiet is the one in play."
-  [{:keys [path language-id command markers root found connected? ready? diagnostics]}]
+  [{:keys [path language-id command markers root found connected? ready?
+           diagnostics servers connections]}]
   (cond
     (nil? path) "This editor is not backed by a file."
     (nil? language-id) "No language server is configured for this file type."
@@ -1118,6 +1219,13 @@
                       "Install it in the project, or globally.")
     (not connected?) (str "Found " found ", but this editor is not connected to it.")
     (not ready?) (str "Starting " found " …")
+    ;; Which of them, by name. Two servers for one language is the case where
+    ;; "connected" on its own answers the wrong question — the one that is
+    ;; missing is the one you are asking about.
+    (> (count servers) 1)
+    (str "Connected to " connections " of " (count servers) " servers ("
+         (string/join ", " (map :command servers)) ") — " diagnostics
+         (if (= 1 diagnostics) " diagnostic" " diagnostics") " on screen")
     :else (str "Connected to " found " — " diagnostics
                (if (= 1 diagnostics) " diagnostic" " diagnostics") " on screen")))
 

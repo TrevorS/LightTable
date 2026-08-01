@@ -179,28 +179,40 @@ const FAKE_SERVER = path.join(SCRIPT_DIR, 'fixtures', 'fake-language-server.mts'
 // harness template literal, because ClojureScript's munged arity names are
 // full of `$` and a `${` inside a template literal is an interpolation. That
 // has already cost this file twice.
-// Declaring a server the way a user.behaviors entry does, rather than writing
+// Declaring servers the way a user.behaviors entry does, rather than writing
 // into a table: language servers are :lt.objs.editor.lsp/language-servers now,
 // a non-exclusive :user behavior that accumulates. Running the real reaction
-// appends this entry after the TypeScript plugin's, so the check below that
-// this one is the server that started is also the check that a later
-// declaration beats an earlier one — which is the whole precedence rule, in
-// the assembled application.
+// appends these after the TypeScript plugin's.
+//
+// Two of them, because two servers for one language is the arrangement this
+// has to support — a type checker and a linter. The first carries :id "vtsls",
+// which is the plugin's own entry, so it *replaces* it: that is the precedence
+// rule, and it is also what keeps this check from starting a real vtsls on
+// whichever machine has one installed. The second is a new id, so it stacks.
 const LSP_START = `(function () {
     var kw = function (n) { return cljs.core.keyword.call(null, n); };
     var assoc = cljs.core.assoc.cljs$core$IFn$_invoke$arity$3;
     var vec = function () { return cljs.core.vec.call(null, cljs.core.PersistentVector.fromArray(Array.prototype.slice.call(arguments), true)); };
-    var entry = cljs.core.PersistentArrayMap.EMPTY;
-    entry = assoc(entry, kw('tags'), vec(kw('editor.typescript')));
-    entry = assoc(entry, kw('language-id'), 'typescript');
-    entry = assoc(entry, kw('root'), vec('tsconfig.json'));
-    // node, and the fixture as its argument. lt.objs.editor.lsp looks the
-    // command up under the project's node_modules/.bin first, then on PATH.
-    entry = assoc(entry, kw('command'), 'node');
-    entry = assoc(entry, kw('args'), vec(${JSON.stringify(FAKE_SERVER)}));
+    var server = function (id, args) {
+        var entry = cljs.core.PersistentArrayMap.EMPTY;
+        entry = assoc(entry, kw('tags'), vec(kw('editor.typescript')));
+        entry = assoc(entry, kw('language-id'), 'typescript');
+        entry = assoc(entry, kw('root'), vec('tsconfig.json'));
+        entry = assoc(entry, kw('id'), id);
+        // node, and the fixture as its argument. lt.objs.editor.lsp looks the
+        // command up under the project's node_modules/.bin first, then on PATH.
+        entry = assoc(entry, kw('command'), 'node');
+        return assoc(entry, kw('args'), cljs.core.vec.call(null, cljs.core.PersistentVector.fromArray(args, true)));
+    };
     lt.object.call_behavior_reaction.call(
         null, kw('lt.objs.editor.lsp/language-servers'),
-        lt.objs.editor.lsp.lsp_client, vec(entry));
+        lt.objs.editor.lsp.lsp_client,
+        vec(server('vtsls', [${JSON.stringify(FAKE_SERVER)}]),
+            // Diagnostics and nothing else, on lines of its own — so what it
+            // says has to survive the other one publishing, and the surfaces
+            // it does not offer have to be routed past it.
+            server('linter', [${JSON.stringify(FAKE_SERVER)},
+                              '--source', 'linter', '--line', '2', '--diagnostics-only'])));
     lt.objs.command.exec_BANG_(kw('open-path'), ${JSON.stringify(LSP_PROBE)});
 })()`;
 
@@ -259,13 +271,17 @@ const LSP_REPORT = `JSON.stringify((function () {
         var st = cljs.core.deref(ed);
         var doc = cljs.core.get.call(null, st, kw('lt.objs.editor.lsp/doc'));
         var widgets = cljs.core.get.call(null, st, kw('lt.objs.editor.lsp/widgets'));
-        out.connected = !!cljs.core.get.call(null, st, kw('lt.objs.editor.lsp/conn'));
+        out.connected = cljs.core.count(lt.objs.editor.lsp.conns(ed)) > 0;
+        // Both of them, which is the point: a language with a type checker and
+        // a linter runs both, and one publishing does not erase the other.
+        out.connections = cljs.core.count(lt.objs.editor.lsp.conns(ed));
         // Which entry in the table this editor resolved to. The TypeScript
-        // plugin declares typescript-language-server for :editor.typescript
-        // and the harness declared fake-language-server after it, so the
-        // command here says which declaration won.
+        // plugin declares vtsls for :editor.typescript and the harness
+        // replaced it by declaring the same id afterwards, so the command here
+        // says which declaration won.
         var status = lt.objs.editor.lsp.status(ed);
         out.command = String(cljs.core.get.call(null, status, kw('command')));
+        out.servers = cljs.core.count(cljs.core.get.call(null, status, kw('servers')));
         out.declared = cljs.core.count(lt.objs.editor.lsp.servers());
         out.version = doc ? cljs.core.get.call(null, doc, kw('version')) : null;
         out.uri = doc ? String(cljs.core.get.call(null, doc, kw('uri'))) : null;
@@ -274,15 +290,18 @@ const LSP_REPORT = `JSON.stringify((function () {
         out.tags = cljs.core.pr_str(cljs.core.get.call(null, st, kw('tags')));
         out.formattable = out.tags.indexOf(':formattable') !== -1;
         out.actionable = out.tags.indexOf(':actionable') !== -1;
-        out.diagnosticsKept = cljs.core.count(
-            cljs.core.get.call(null, st, kw('lt.objs.editor.lsp/diagnostics')) ||
-            cljs.core.PersistentVector.EMPTY);
+        out.diagnosticsKept = cljs.core.count(lt.objs.editor.lsp.diagnostics(ed));
         out.firstLine = String(lt.objs.editor.__GT_val(ed)).split('\\n')[0];
         var el = lt.object.__GT_content(ed);
         out.messages = Array.from(el.querySelectorAll('.inline-diagnostic')).map(function (n) {
             return n.className.replace('inline-diagnostic ', '') + ': ' +
                    ((n.querySelector('.message') || {}).textContent || '');
         });
+        // Which server said each one. Two servers publishing about one file is
+        // the case where a count says nothing: three diagnostics is what one
+        // server alone produces.
+        out.sources = Array.from(el.querySelectorAll('.inline-diagnostic .source'))
+            .map(function (n) { return n.textContent; });
     } catch (e) { out.error = String((e && e.message) || e); }
     return out;
 })())`;
@@ -1338,7 +1357,7 @@ async function main(): Promise<void> {
         ['its file is addressed as a uri', !!lsp.before &&
          String(lsp.before.uri || '').startsWith('file:///')],
         ['diagnostics are drawn inline, grouped by line',
-         !!lsp.before && lsp.before.widgets === 2 && lsp.before.messages.length === 3],
+         !!lsp.before && lsp.before.widgets === 4 && lsp.before.messages.length === 6],
         ['severities reach the markup',
          !!lsp.before && /^error: /.test(lsp.before.messages[0] || '') &&
          /^warning: /.test(lsp.before.messages[1] || '') &&
@@ -1353,9 +1372,28 @@ async function main(): Promise<void> {
          !!lsp.before && !!lsp.after &&
          lsp.after.version === lsp.before.version + 1 && /version=2 /.test(lspFirst)],
         ['and redrawing rather than accumulating',
-         !!lsp.after && lsp.after.widgets === 2 && lsp.after.messages.length === 3],
+         !!lsp.after && lsp.after.widgets === 4 && lsp.after.messages.length === 6],
         ['diagnostics are kept, not only drawn',
-         !!lsp.before && lsp.before.diagnosticsKept === 3],
+         !!lsp.before && lsp.before.diagnosticsKept === 6],
+        // Two servers for one language, which is what a modern setup is: a
+        // type checker and a linter. Both are started, and — the part that is
+        // easy to get wrong — publishDiagnostics replaces what *that* server
+        // said rather than everything on screen.
+        ['both servers declared for the language are running',
+         !!lsp.before && lsp.before.connections === 2],
+        ['and neither one publishing erases the other',
+         !!lsp.before && lsp.before.sources.indexOf('fake') !== -1 &&
+         lsp.before.sources.indexOf('linter') !== -1],
+        ['still, after a keystroke reaches both of them',
+         !!lsp.after && lsp.after.sources.indexOf('linter') !== -1],
+        // The linter advertises nothing but synchronisation, so formatting and
+        // code actions have to be routed past it to the server that offers
+        // them — which is what makes biome-beside-vtsls work without either
+        // being told about the other. The FORMATTED and FIXED checks below are
+        // that routing arriving somewhere.
+        ['a surface goes to the server that says it can answer',
+         !!lsp.before && lsp.before.formattable === true &&
+         lsp.before.actionable === true],
         ['an editor is tagged actionable when its server offers code actions',
          !!lsp.before && lsp.before.actionable === true],
         ['a choice of actions is offered rather than one applied',

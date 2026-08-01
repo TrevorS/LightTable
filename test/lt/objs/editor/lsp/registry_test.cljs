@@ -76,3 +76,48 @@
         tsx (assoc core :tags [:editor.tsx] :language-id "typescriptreact")]
     (is (= [ts tsx] (registry/add [] [ts tsx])))
     (is (= tsx (registry/for-tags [ts tsx] #{:editor.tsx})))))
+
+;;*********************************************************
+;; More than one server for a language
+;;*********************************************************
+
+(def biome
+  {:tags [:editor.typescript]
+   :language-id "typescript"
+   :root ["biome.json"]
+   :command "biome"
+   :args ["lsp-proxy"]})
+
+(deftest a-second-server-runs-beside-the-first
+  ;; The case this exists for: a type checker and a linter answering for one
+  ;; language. Neither replaces the other.
+  (let [table (declare-all [core] [biome])]
+    (is (= [core biome] (registry/all-for-tags table #{:editor.typescript})))
+    ;; And for the surfaces where only one can answer, the later one.
+    (is (= biome (registry/for-tags table #{:editor.typescript})))))
+
+(deftest pointing-at-a-path-replaces-rather-than-stacks
+  ;; `user` is the same executable named absolutely, which is the ordinary way
+  ;; to override a declaration — a version manager's shim, a project-local
+  ;; build. Starting the same server twice because one entry spelled it out is
+  ;; exactly what the id is for.
+  (is (= [user] (registry/all-for-tags (declare-all [core] [plugin] [user])
+                                       #{:editor.typescript})))
+  (testing "and keeps the place the first declaration had"
+    ;; Otherwise overriding a server's arguments would also move it past the
+    ;; linter declared after it, and quietly hand it the formatting.
+    (is (= [user biome] (registry/all-for-tags (declare-all [core] [biome] [user])
+                                               #{:editor.typescript})))))
+
+(deftest an-explicit-id-replaces-a-different-executable
+  (let [swapped (assoc biome :command "eslint-lsp" :id "biome")]
+    (is (= [core swapped] (registry/all-for-tags (declare-all [core] [biome] [swapped])
+                                                 #{:editor.typescript})))))
+
+(deftest a-server-is-turned-off-by-declaring-it-with-nothing-to-run
+  (let [off {:tags [:editor.typescript] :id "biome" :command nil}]
+    (is (= [core] (registry/all-for-tags (declare-all [core] [biome] [off])
+                                         #{:editor.typescript})))
+    (testing "and the last one still standing is the one that answers"
+      (is (= core (registry/for-tags (declare-all [core] [biome] [off])
+                                     #{:editor.typescript}))))))

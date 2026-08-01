@@ -134,9 +134,6 @@
 
  [:client.placeholder :lt.objs.clients/remove-placeholder-on-swapped]
 
- [:client.selector :lt.objs.connector/on-close!]
- [:client.selector :lt.objs.connector/on-selected]
-
  [:clients :lt.objs.clients/raise-on-object]
 
  [:clients.devtools :lt.objs.clients.devtools/clear-queue-on-connect]

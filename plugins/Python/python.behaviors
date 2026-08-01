@@ -18,9 +18,10 @@
      ;; file, the client knows the session. Where both could answer,
      ;; lt.objs.providers decides.
      ;;
-     ;; ruff is the other half of a modern Python setup — lint and format —
-     ;; and it needs a second server for one language, which the registry does
-     ;; not do yet. See doc/lsp-architecture.md.
+     ;; ruff is the other half of it — lint and format — and runs beside
+     ;; pyright rather than instead of it. Declared second, so it takes
+     ;; formatting; pyright keeps hover and definition, which ruff does not
+     ;; offer. Neither is required: whichever is installed is what starts.
      ;;
      ;; :root ends with .git because a directory of scripts is a real project.
      ;; Without a root the server gets the file's own directory and forgets
@@ -31,4 +32,10 @@
                      :root ["pyproject.toml" "setup.py" "setup.cfg" "requirements.txt" ".git"]
                      :command "pyright-langserver"
                      :args ["--stdio"]
-                     :install "pip install pyright  (or npm i -g pyright)"}])]}}
+                     :install "pip install pyright  (or npm i -g pyright)"}
+                    {:tags [:editor.python]
+                     :language-id "python"
+                     :root ["pyproject.toml" "ruff.toml" ".ruff.toml" ".git"]
+                     :command "ruff"
+                     :args ["server"]
+                     :install "pip install ruff  (or brew install ruff)"}])]}}

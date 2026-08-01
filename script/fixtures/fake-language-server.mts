@@ -26,6 +26,21 @@ interface LspMessage {
 
 const CHANGE_INCREMENTAL = 2;
 
+// Two of these run at once in the two-servers-per-language check, so an
+// instance can be told who it is. `--source` names it in every diagnostic it
+// publishes and `--line` puts them somewhere the other one is not, which is
+// what makes "both are being listened to" an assertion rather than a guess.
+// `--diagnostics-only` advertises nothing but synchronisation, so the surfaces
+// it does not offer have to be routed past it.
+const args = process.argv.slice(2);
+const flag = (name: string, fallback: string): string => {
+    const at = args.indexOf(name);
+    return at === -1 ? fallback : args[at + 1];
+};
+const SOURCE = flag('--source', 'fake');
+const LINE = Number(flag('--line', '0'));
+const DIAGNOSTICS_ONLY = args.includes('--diagnostics-only');
+
 let buffer = Buffer.alloc(0);
 let changes = 0;
 let lastText = '';
@@ -47,29 +62,29 @@ function publish(uri: string): void {
             uri: uri,
             diagnostics: [
                 {
-                    range: { start: { line: 0, character: 0 }, end: { line: 0, character: 1 } },
+                    range: { start: { line: LINE, character: 0 }, end: { line: LINE, character: 1 } },
                     message: 'changes=' + changes + ' version=' + lastVersion +
                              ' last=' + JSON.stringify(lastText) +
                              (lastCommand ? ' ran=' + lastCommand : ''),
                     severity: 1,
-                    source: 'fake'
+                    source: SOURCE
                 },
                 // A second diagnostic on the same line, so grouping is
                 // exercised: several diagnostics on one line must become one
                 // widget holding several messages, not several widgets.
                 {
-                    range: { start: { line: 0, character: 0 }, end: { line: 0, character: 1 } },
+                    range: { start: { line: LINE, character: 0 }, end: { line: LINE, character: 1 } },
                     message: 'a second opinion about the same line',
                     severity: 2,
-                    source: 'fake'
+                    source: SOURCE
                 },
                 // And one further down, so there is more than one widget to
                 // clear when the next publish replaces these.
                 {
-                    range: { start: { line: 1, character: 0 }, end: { line: 1, character: 1 } },
-                    message: 'about the second line',
+                    range: { start: { line: LINE + 1, character: 0 }, end: { line: LINE + 1, character: 1 } },
+                    message: 'about the next line',
                     severity: 3,
-                    source: 'fake'
+                    source: SOURCE
                 }
             ]
         }
@@ -82,14 +97,15 @@ function handle(msg: LspMessage): void {
         return send({
             id: msg.id,
             result: {
-                capabilities: {
-                    textDocumentSync: { openClose: true, change: CHANGE_INCREMENTAL },
+                capabilities: Object.assign(
+                    { textDocumentSync: { openClose: true, change: CHANGE_INCREMENTAL } },
                     // Enough for the client to earn its :formattable tag and
                     // send a request worth answering.
-                    documentFormattingProvider: true,
-                    codeActionProvider: true
-                },
-                serverInfo: { name: 'fake-language-server' }
+                    DIAGNOSTICS_ONLY ? {} : {
+                        documentFormattingProvider: true,
+                        codeActionProvider: true
+                    }),
+                serverInfo: { name: 'fake-language-server (' + SOURCE + ')' }
             }
         });
     case 'textDocument/didOpen':

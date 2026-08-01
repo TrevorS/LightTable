@@ -203,7 +203,7 @@ answers for several editor tags: clojure-lsp covers `.clj`, `.cljc`, `.edn` and
 `.cljs` and there is one entry for all four. TypeScript and TSX stay separate
 because their `:language-id` differs — `"typescript"` versus
 `"typescriptreact"` — which costs nothing, since connections are keyed by
-`[root command]` and the two share one server.
+`[root command args]` and the two share one server.
 
 `:root` is the marker list that decides where the project starts, nearest first
 from the file. `:command` is the bare executable name; the project's own
@@ -227,6 +227,30 @@ twice — once at the plugin stage and once at the user stage — and keeping th
 first arrival parked a user's entry *ahead* of the plugin it was written to
 override. `lt.objs.editor.lsp.registry` is the table and the rule, separated
 from the rest so that precedence has a test rather than a comment.
+
+### More than one server for a language
+
+A language usually has two now: a compiler-backed server that knows what the
+code means, and a linter or formatter that knows what it should look like.
+vtsls and biome. pyright and ruff. They answer different questions, so both
+run, and each surface is sent to the server whose `initialize` result says it
+can answer — the *last* such server, so the same later-wins rule decides who
+formats when both offer it.
+
+That is why biome takes formatting from vtsls without either being told the
+other exists, and why hover still goes to vtsls: biome advertises no
+`hoverProvider`.
+
+Diagnostics are the exception to *one answers*, and the reason they are kept
+per connection rather than in one list. `publishDiagnostics` is a replacement —
+the whole truth from that server about that file — so a linter publishing would
+otherwise erase the type checker's errors a moment after they arrived.
+
+**What makes two declarations the same server** is `:id`, which defaults to the
+executable's name. Naming a path — `~/.bun/bin/vtsls` — replaces, because the
+name is the same; naming a different executable stacks. Swapping in something
+called something else needs an explicit `:id`, and declaring an `:id` with no
+`:command` is how a server is turned off.
 
 ### Where a declaration lives
 

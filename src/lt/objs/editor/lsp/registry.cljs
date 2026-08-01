@@ -15,6 +15,7 @@
     :command \"clojure-lsp\"
     :args []
     ;; Optional.
+    :id \"clojure-lsp\"
     :install \"brew install clojure-lsp/brew/clojure-lsp-native\"
     :init-options {}}]
   ```
@@ -26,6 +27,26 @@
   `:tags` is inside the entry rather than being the key. One server usually
   answers for several editor tags — clojure-lsp for four file extensions —
   and keying by tag meant repeating the whole entry per tag.
+
+  ## More than one server for a language
+
+  Normal, and increasingly the point: a language often has a compiler-backed
+  server and a linter or formatter beside it — vtsls and biome, pyright and
+  ruff. They answer different questions and neither replaces the other, so
+  every one that is declared runs, and each surface asks the server that says
+  it can answer.
+
+  Two declarations are the *same* server when they share an **`:id`**, which
+  defaults to the executable's name — `:command` with any directories dropped.
+  That is what separates adding a second server from replacing the first:
+  biome names a different executable, so it stacks; a user pointing at
+  `~/.bun/bin/vtsls` names the same one, so it replaces, which is the whole
+  reason the default is the name rather than the path. Swapping in an
+  executable that is called something else needs an explicit `:id`, or it will
+  run alongside rather than instead of what it was meant to replace.
+
+  An entry with no `:command` is how a server is turned off — declare its `:id`
+  with nothing to run and the entry it replaces stops being offered.
 
   ## Precedence
 
@@ -48,17 +69,41 @@
   on every behavior reload, so every declaration arrives again in the same
   order; a table whose order is decided by last arrival lands in the same place
   it was already in."
-  (:require [clojure.set :as set]))
+  (:require [clojure.set :as set]
+            [clojure.string :as string]))
 
 (defn add
   "`entries` appended to `table`, moving any it already holds to the end."
   [table entries]
   (into (vec (remove (set entries) table)) entries))
 
-(defn for-tags
-  "The server for an editor carrying `tags`, or nil.
+(defn- id-of
+  "What makes two declarations the same server: `:id`, or the executable's name."
+  [entry]
+  (or (:id entry)
+      (last (string/split (str (:command entry)) #"[\\/]"))))
 
-  The last matching entry, so a later declaration beats an earlier one. An
-  entry matches when any of its `:tags` is one the editor carries."
+(defn all-for-tags
+  "Every server to run for an editor carrying `tags`, in declaration order.
+
+  An entry matches when any of its `:tags` is one the editor carries. Entries
+  sharing an `:id` are one server declared more than once, and the last of them
+  is the one that counts — in the place the first was declared, so adding
+  arguments to a server does not also move it to the end of the queue.
+
+  An entry left with no `:command` is dropped, which is how one is turned off."
   [table tags]
-  (last (filter #(seq (set/intersection (set (:tags %)) (set tags))) table)))
+  (let [matching (filter #(seq (set/intersection (set (:tags %)) (set tags))) table)
+        winner (reduce #(assoc %1 (id-of %2) %2) {} matching)]
+    (into []
+          (comp (map #(get winner (id-of %)))
+                (distinct)
+                (remove #(string/blank? (:command %))))
+          matching)))
+
+(defn for-tags
+  "The one server to ask when only one can answer, or nil.
+
+  The last of them, so a later declaration beats an earlier one."
+  [table tags]
+  (last (all-for-tags table tags)))

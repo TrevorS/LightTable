@@ -37,5 +37,19 @@
     :root ["tsconfig.json" "jsconfig.json" "package.json"]
     :command "vtsls"
     :args ["--stdio"]
-    :install "npm i -g @vtsls/language-server"}]]
+    :install "npm i -g @vtsls/language-server"}
+
+   ;; biome beside vtsls, not instead of it: it lints and formats and answers
+   ;; nothing else, so vtsls keeps hover, definition and rename. Declared
+   ;; second, which is what gives it the formatting both of them offer.
+   ;;
+   ;; :root is biome's own file, so nothing starts in a project that does not
+   ;; use it — a formatter that shows up uninvited rewrites files to a style
+   ;; the project never chose.
+   {:tags [:editor.typescript :editor.tsx :editor.javascript]
+    :language-id "typescript"
+    :root ["biome.json" "biome.jsonc"]
+    :command "biome"
+    :args ["lsp-proxy"]
+    :install "npm i -g @biomejs/biome"}]]
 ]
