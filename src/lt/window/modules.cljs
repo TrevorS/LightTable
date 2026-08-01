@@ -24,6 +24,7 @@
             ;; so a test and a REPL can reach them. See src-window/cm6.ts.
             ["./cm6.js" :as cm6-js]
             ["./cm6-editor.js" :as cm6-editor-js]
+            ["./cm6-theme.js" :as cm6-theme-js]
             ["./cm6-commands.js"]
             ["./cm6-modes.js"]))
 
@@ -50,3 +51,9 @@
   "A CodeMirror 6 editor answering to CodeMirror 5's method names:
   makeCm6Editor, Cm6Editor. See src-window/cm6-editor.ts."
   cm6-editor-js)
+
+(def ^js cm6-theme
+  "Light Table's themes, applied to a CodeMirror 6 editor: the CodeMirror 5
+  token classes as a HighlightStyle, and the structural rules mirrored onto
+  CodeMirror 6's own selectors. See src-window/cm6-theme.ts."
+  cm6-theme-js)

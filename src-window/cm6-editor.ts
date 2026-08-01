@@ -26,10 +26,8 @@ import {
     defaultKeymap, history, historyKeymap, historyField, undo, redo,
     lineComment, lineUncomment, blockComment, blockUncomment, indentSelection
 } from '@codemirror/commands';
-import {
-    codeFolding, foldCode, unfoldCode, syntaxTree,
-    syntaxHighlighting, defaultHighlightStyle
-} from '@codemirror/language';
+import { codeFolding, foldCode, unfoldCode, syntaxTree } from '@codemirror/language';
+import { themeExtensions } from './cm6-theme.js';
 import { modeExtension } from './cm6-modes.js';
 import { runCommand } from './cm6-commands.js';
 import { bandField, setBands } from './cm6.js';
@@ -179,10 +177,11 @@ export class Cm6Editor {
                     codeFolding(),
                     // Without this a language parses and nothing is coloured:
                     // CodeMirror 6 separates having a tree from drawing one,
-                    // and the tree alone is invisible. Light Table overrides
-                    // the colours with its own stylesheet either way; what this
-                    // supplies is the classes to hang them on.
-                    syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+                    // and the tree alone is invisible. What this supplies is
+                    // CodeMirror 5's class names — `cm-keyword` and its
+                    // twenty-odd neighbours — so the colours come from Light
+                    // Table's themes, unedited. See cm6-theme.ts.
+                    themeExtensions(),
                     this.language.of([]),
                     EditorView.updateListener.of((update) => {
                         if (update.docChanged) {
@@ -231,6 +230,7 @@ export class Cm6Editor {
             }),
             parent
         });
+        this.setOption('theme', 'default');
     }
 
     // --- positions ---------------------------------------------------------
@@ -368,6 +368,17 @@ export class Cm6Editor {
      */
     setOption(name: string, value: unknown): void {
         this.options[name] = value;
+        if (name === 'theme') {
+            // CodeMirror 5 scopes a theme by putting `cm-s-<name>` on the
+            // wrapper, and every theme file is written `.cm-s-monokai .cm-keyword`.
+            // Same element, same class, so the same rules apply.
+            for (const c of Array.from(this.view.dom.classList)) {
+                if (c.startsWith('cm-s-')) this.view.dom.classList.remove(c);
+            }
+            for (const part of String(value ?? 'default').split(' ')) {
+                if (part) this.view.dom.classList.add('cm-s-' + part);
+            }
+        }
         if (name === 'mode' || name === 'mime') {
             this.view.dispatch({
                 effects: this.language.reconfigure(modeExtension(String(value ?? '')))
