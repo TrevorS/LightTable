@@ -578,10 +578,20 @@
               :hidden true
               :exec (fn [cmd & args]
                       (when-let [ed (last-active)]
-                        (when-let [command (aget js/CodeMirror.commands cmd)]
-                          (when (= js/CodeMirror.Pass
-                                   (apply command (editor/->cm-ed ed) args))
-                            (kb/passthrough)))))})
+                        (if (editor/cm6? ed)
+                          ;; The global command table belongs to CodeMirror 5,
+                          ;; and its functions reach into a CodeMirror 5 editor —
+                          ;; handing one a CodeMirror 6 editor is a TypeError in
+                          ;; whichever key you happened to press. `execCommand`
+                          ;; is the table that means the same things; a name it
+                          ;; does not know passes the key through, which is what
+                          ;; `CodeMirror.Pass` did.
+                          (when-not (.execCommand (editor/->cm-ed ed) cmd)
+                            (kb/passthrough))
+                          (when-let [command (aget js/CodeMirror.commands cmd)]
+                            (when (= js/CodeMirror.Pass
+                                     (apply command (editor/->cm-ed ed) args))
+                              (kb/passthrough))))))})
 
 (cmd/command {:command :editor.fold-code
               :desc "Editor: Fold code at cursor"

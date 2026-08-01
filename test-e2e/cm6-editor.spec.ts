@@ -152,8 +152,10 @@ test('the rest of the surface answers rather than throwing', async ({ window }) 
 });
 
 test('every method lt.objs.editor calls exists on the adapter', async ({ window }) => {
-    // The list was 51. A method that is missing is a TypeError in whichever
-    // feature happens to reach it first, which is the worst way to find out.
+    // The list is 54 — every method any ClojureScript in this repository or in
+    // deploy/plugins calls on a CodeMirror instance, extracted rather than
+    // remembered. A method that is missing is a TypeError in whichever feature
+    // happens to reach it first, which is the worst way to find out.
     const missing = await window.evaluate(() => {
         const w = globalThis as any;
         const host = document.createElement('div');
@@ -168,7 +170,9 @@ test('every method lt.objs.editor calls exists on the adapter', async ({ window 
             'operation', 'redo', 'refresh', 'removeLineClass', 'removeLineWidget',
             'replaceRange', 'replaceSelection', 'scrollTo', 'setBookmark', 'setCursor',
             'setExtending', 'setHistory', 'setOption', 'setSelection', 'somethingSelected',
-            'swapDoc', 'uncomment', 'undo'];
+            'swapDoc', 'uncomment', 'undo',
+            // Found by flipping the default and watching what threw.
+            'getScrollInfo', 'getValue', 'setValue'];
         const gaps = wanted.filter((m) => typeof ed[m] !== 'function');
         host.remove();
         return gaps;

@@ -19,8 +19,8 @@
 // codebase has paid for that lesson twice already.
 
 import { EditorState, EditorSelection, Compartment, StateField, StateEffect, RangeSet } from '@codemirror/state';
-import type { Extension, Range } from '@codemirror/state';
-import { EditorView, lineNumbers, keymap, drawSelection, Decoration } from '@codemirror/view';
+import type { Extension, Range, Text } from '@codemirror/state';
+import { EditorView, lineNumbers, keymap, drawSelection, Decoration, WidgetType } from '@codemirror/view';
 import type { DecorationSet } from '@codemirror/view';
 import {
     defaultKeymap, history, historyKeymap, historyField, undo, redo,
@@ -31,6 +31,7 @@ import {
     syntaxHighlighting, defaultHighlightStyle
 } from '@codemirror/language';
 import { modeExtension } from './cm6-modes.js';
+import { runCommand } from './cm6-commands.js';
 import { bandField, setBands } from './cm6.js';
 import type { Band } from './cm6.js';
 
@@ -39,14 +40,22 @@ interface Marker {
     id: number;
     from: number;
     to: number;
-    /** A mark decorates a range; a line class decorates the line it starts on. */
-    kind: 'mark' | 'line';
+    /**
+     * A mark decorates a range, a line class decorates the line it starts on,
+     * and a point sits between two characters without covering either.
+     *
+     * A point is what CodeMirror 5 calls a bookmark, and it has to be its own
+     * kind here rather than a mark of zero width: CodeMirror 6 rejects an empty
+     * mark decoration outright, which is the difference between a bookmark that
+     * does nothing and an editor that throws while drawing.
+     */
+    kind: 'mark' | 'line' | 'point';
     className: string;
     clear: () => void;
     find: () => { from: Pos, to: Pos } | null;
 }
 
-const addMarker = StateEffect.define<{ id: number, from: number, to: number, kind: 'mark' | 'line', className: string }>();
+const addMarker = StateEffect.define<MarkerSpec>();
 const dropMarker = StateEffect.define<number>();
 
 /**
@@ -58,14 +67,40 @@ const dropMarker = StateEffect.define<number>();
  * underneath is a field rather than a list of handles — which is why a mark
  * follows its text through an edit without anyone tracking it.
  */
-interface MarkerState { specs: { id: number, from: number, to: number, kind: 'mark' | 'line', className: string }[], decorations: DecorationSet }
+interface MarkerSpec {
+    id: number;
+    from: number;
+    to: number;
+    kind: 'mark' | 'line' | 'point';
+    className: string;
+}
 
-function markerDecorations(specs: MarkerState['specs']): DecorationSet {
+interface MarkerState { specs: MarkerSpec[], decorations: DecorationSet }
+
+/** The DOM for a bookmark: an empty span the caller can style or fill. */
+class PointWidget extends WidgetType {
+    constructor(readonly className: string) { super(); }
+    override eq(other: PointWidget): boolean { return other.className === this.className; }
+    override toDOM(): HTMLElement {
+        const node = document.createElement('span');
+        if (this.className) node.className = this.className;
+        return node;
+    }
+}
+
+function markerDecorations(specs: MarkerSpec[]): DecorationSet {
     const ranges: Range<Decoration>[] = [];
     for (const m of [...specs].sort((a, b) => a.from - b.from || a.to - b.to)) {
-        ranges.push(m.kind === 'line'
-            ? Decoration.line({ class: m.className }).range(m.from)
-            : Decoration.mark({ class: m.className }).range(m.from, m.to));
+        if (m.kind === 'line') {
+            ranges.push(Decoration.line({ class: m.className }).range(m.from));
+        } else if (m.kind === 'point' || m.from === m.to) {
+            // A mark that has become empty — its text was deleted — is a point
+            // now. Drawing it as a mark would throw, and dropping it would take
+            // the marker away from a caller still holding it.
+            ranges.push(Decoration.widget({ widget: new PointWidget(m.className), side: 1 }).range(m.from));
+        } else {
+            ranges.push(Decoration.mark({ class: m.className }).range(m.from, m.to));
+        }
     }
     return RangeSet.of(ranges, true);
 }
@@ -88,8 +123,30 @@ const markerField = StateField.define<MarkerState>({
     provide: (f) => EditorView.decorations.from(f, (v) => v.decorations)
 });
 
+/**
+ * A field of a CodeMirror 5 position, as a number.
+ *
+ * CodeMirror 5 fills a missing field in as zero, and callers rely on it:
+ * `{line: n}` with no `ch` is an ordinary way to name the start of a line, and
+ * `lt.objs.eval` writes them. Left alone it arrives here as `undefined`,
+ * arithmetic turns it into NaN, and NaN passes every range check — the failure
+ * surfaces as a null dereference inside CodeMirror's range set, nowhere near
+ * the caller that made it. Strings are coerced for the same reason: a line
+ * number that came back from JSON is a string, and `'1' + 1` is `'11'`.
+ */
+const coord = (value: unknown): number => {
+    const n = Math.trunc(Number(value));
+    return Number.isFinite(n) ? n : 0;
+};
+
 /** CodeMirror 5's position: a zero-based line and a character within it. */
 export interface Pos { line: number; ch: number }
+
+/** Where an offset is, in a document that may not be the current one. */
+const posIn = (doc: Text, offset: number): Pos => {
+    const line = doc.lineAt(offset);
+    return { line: line.number - 1, ch: offset - line.from };
+};
 
 interface LineHandle { line: number }
 
@@ -130,9 +187,44 @@ export class Cm6Editor {
                     EditorView.updateListener.of((update) => {
                         if (update.docChanged) {
                             this.generation += 1;
-                            this.emit('change', this, {});
+                            // One event per change, carrying CodeMirror 5's
+                            // shape. An empty object was not enough: the LSP
+                            // document sync reads `change.from.line` to build
+                            // an incremental `didChange`, and with nothing
+                            // there it threw — the version still incremented,
+                            // so the server stayed confident about a file it
+                            // had the wrong text for.
+                            //
+                            // Positions are in the document as it was, which is
+                            // what CodeMirror 5 reports. For a transaction
+                            // carrying several changes the later ones are
+                            // measured against that same starting document
+                            // rather than against each other, so a multi-cursor
+                            // edit is approximate here; every edit Light Table
+                            // makes today is one change.
+                            const before = update.startState.doc;
+                            update.changes.iterChanges((fromA, toA, _fromB, _toB, inserted) => {
+                                this.emit('change', this, {
+                                    from: posIn(before, fromA),
+                                    to: posIn(before, toA),
+                                    text: inserted.toJSON(),
+                                    removed: before.slice(fromA, toA).toJSON(),
+                                    origin: '+input'
+                                });
+                            });
                         }
                         if (update.selectionSet) this.emit('cursorActivity', this);
+                        // Focus is not a nicety. `lt.ui.window/::sync-from-objects`
+                        // runs on it, so without it the state atom never learns
+                        // that a file is open — the window renders from a
+                        // projection that nothing refreshed, and every symptom
+                        // is somewhere other than here.
+                        if (update.focusChanged) {
+                            this.emit(this.view.hasFocus ? 'focus' : 'blur', this);
+                        }
+                    }),
+                    EditorView.domEventHandlers({
+                        scroll: () => { this.emit('scroll', this); }
                     }),
                     ...extensions
                 ]
@@ -146,9 +238,9 @@ export class Cm6Editor {
     /** CodeMirror 5 talks in {line, ch}; CodeMirror 6 talks in offsets. */
     private offset(pos: Pos): number {
         const lines = this.view.state.doc.lines;
-        const n = Math.min(Math.max(pos.line + 1, 1), lines);
+        const n = Math.min(Math.max(coord(pos?.line) + 1, 1), lines);
         const line = this.view.state.doc.line(n);
-        return Math.min(line.from + Math.max(pos.ch, 0), line.to);
+        return Math.min(line.from + Math.max(coord(pos?.ch), 0), line.to);
     }
 
     private position(offset: number): Pos {
@@ -245,6 +337,17 @@ export class Cm6Editor {
     refresh(): void { this.view.requestMeasure(); }
     getScrollerElement(): HTMLElement { return this.view.scrollDOM; }
 
+    /** Where the editor is scrolled to, and how much there is. */
+    getScrollInfo(): { left: number, top: number, width: number, height: number,
+                       clientWidth: number, clientHeight: number } {
+        const el = this.view.scrollDOM;
+        return {
+            left: el.scrollLeft, top: el.scrollTop,
+            width: el.scrollWidth, height: el.scrollHeight,
+            clientWidth: el.clientWidth, clientHeight: el.clientHeight
+        };
+    }
+
     /**
      * CodeMirror 5 batched DOM work inside `operation`. CodeMirror 6 batches by
      * transaction and there is nothing to open or close, so this is the
@@ -325,6 +428,18 @@ export class Cm6Editor {
     }
 
     /**
+     * Run a CodeMirror 5 command by name, if there is one that means the same.
+     *
+     * False when there is not — which the caller turns into a passthrough, the
+     * same answer CodeMirror 5 gives with `CodeMirror.Pass`. The table is
+     * `cm6-commands.ts`; what is *not* in it is every command the CodeMirror 5
+     * addons registered, the sublime keymap most of all.
+     */
+    execCommand(name: string): boolean {
+        return runCommand(name, this.view);
+    }
+
+    /**
      * The declared bands that are actually drawn, as keys.
      *
      * Declared and drawn are not the same set — a band whose line is past the
@@ -358,7 +473,7 @@ export class Cm6Editor {
 
     // --- marks and line classes -------------------------------------------
 
-    private marker(from: number, to: number, kind: 'mark' | 'line', className: string): Marker {
+    private marker(from: number, to: number, kind: 'mark' | 'line' | 'point', className: string): Marker {
         const id = ++this.markerId;
         this.view.dispatch({ effects: addMarker.of({ id, from, to, kind, className }) });
         return {
@@ -377,13 +492,13 @@ export class Cm6Editor {
 
     setBookmark(pos: Pos, options: { className?: string } = {}): Marker {
         const at = this.offset(pos);
-        return this.marker(at, at, 'mark', options.className ?? '');
+        return this.marker(at, at, 'point', options.className ?? '');
     }
 
     findMarksAt(pos: Pos): Marker[] {
         const at = this.offset(pos);
         return this.view.state.field(markerField).specs
-            .filter((m) => m.kind === 'mark' && m.from <= at && at <= m.to)
+            .filter((m) => m.kind !== 'line' && m.from <= at && at <= m.to)
             .map((m) => this.marker(m.from, m.to, m.kind, m.className));
     }
 

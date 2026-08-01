@@ -122,13 +122,17 @@
 (defn engine
   "Which engine new editors are built on: `:cm5` or `:cm6`.
 
-  `window.ltEditorEngine` chooses at startup and [[set-engine!]] changes it
-  afterwards, so both can be running in one session and a test can compare
-  them. Existing editors keep the engine they were made with — this is read
-  once, when one is created."
+  CodeMirror 6 by default. `window.ltEditorEngine` chooses at startup and
+  [[set-engine!]] changes it afterwards, so both can be running in one session
+  and a test can compare them. Existing editors keep the engine they were made
+  with — this is read once, when one is created.
+
+  CodeMirror 5 is still here and still works, and going back is one command.
+  The one behaviour it has that CodeMirror 6 does not is a shared `Doc`: two
+  editors on the same document seeing each other's edits. See `make`."
   []
   (or @engine-override
-      (if (= "cm6" (some-> js/window .-ltEditorEngine)) :cm6 :cm5)))
+      (if (= "cm5" (some-> js/window .-ltEditorEngine)) :cm5 :cm6)))
 
 (defn set-engine!
   "Build subsequent editors on `k` (`:cm5` or `:cm6`), or on the default again

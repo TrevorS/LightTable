@@ -23,6 +23,15 @@ async function openFile(window: Page, file: string): Promise<void> {
 }
 
 test('multiple cursors select, edit and clear', async ({ window, ltErrors }) => {
+    // On CodeMirror 5, explicitly. Multiple cursors here are the sublime keymap
+    // addon — `selectNextOccurrence` and its neighbours are CodeMirror 5 code
+    // registered on the CodeMirror 5 global, operating on a CodeMirror 5 editor
+    // — and none of it applies to a CodeMirror 6 one. CodeMirror 6 has multiple
+    // selections natively and `@codemirror/search` has the command, so this is
+    // work not yet done rather than a thing that cannot be done. Until it is,
+    // the feature is a reason to keep the old engine and this says so.
+    await window.evaluate("lt.objs.editor.set_engine_BANG_(cljs.core.keyword.call(null, 'cm5'))");
+
     const dir = scratchDir('cursors');
     const file = path.join(dir, 'probe.js');
     fs.writeFileSync(file, 'const total = 1;\nconst other = total + total;\n');

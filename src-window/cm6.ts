@@ -111,10 +111,14 @@ function decorationsFor(state: EditorState, bands: Band[]): DecorationSet {
     const lines = state.doc.lines;
     return RangeSet.of(
         bands
+            // Coerced before it is compared, because the comparisons below lie
+            // about the values that are not numbers: `null >= 0` is true, and
+            // a line that arrived as the string "1" would index line "11".
+            .map((b) => ({ ...b, line: Math.trunc(Number(b.line)) }))
             // A band past the end is one computed against text since changed.
             // Dropped rather than thrown, the same rule the CodeMirror 5 path
-            // applies in `ensure-widget!`.
-            .filter((b) => b.line >= 0 && b.line < lines)
+            // applies in `lt.objs.editor.bands`.
+            .filter((b) => Number.isFinite(b.line) && b.line >= 0 && b.line < lines)
             .sort((a, b) => a.line - b.line)
             .map((b) => Decoration.widget({
                 widget: new BandWidget(b.key, b.mount, b.content, b.equals),

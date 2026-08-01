@@ -453,6 +453,16 @@ app.on('ready', function () {
                 // know a type from a value or a parameter from a local — so
                 // their presence is proof the parser is driving the colours.
                 step = 'highlighting a TypeScript file with tree-sitter';
+                // On CodeMirror 5, explicitly. Tree-sitter highlighting here is
+                // a CodeMirror 5 *mode* — src-window/treesitter.ts builds one with
+                // CodeMirror.StringStream and installs it with extendMode — and
+                // CodeMirror 6 has no such thing. Porting it means a Lezer
+                // parser or a decoration field driven by the tree, which is
+                // real work not yet done. Until then this is a reason to keep
+                // the old engine, and pinning the check says so rather than
+                // quietly asserting less.
+                await w.webContents.executeJavaScript(
+                    'lt.objs.editor.set_engine_BANG_(cljs.core.keyword.call(null,"cm5"))');
                 await w.webContents.executeJavaScript(
                     'lt.objs.command.exec_BANG_(cljs.core.keyword.call(null,"open-path"),' +
                     JSON.stringify(${JSON.stringify(TS_PROBE)}) + ')');
@@ -597,8 +607,8 @@ app.on('ready', function () {
                     // Fold addons register helpers and extensions rather than
                     // anything on the constructor itself.
                     codeMirrorFold: !!(CodeMirror && CodeMirror.fold && CodeMirror.fold.brace),
-                    editors: document.querySelectorAll('.CodeMirror').length,
-                    editorText: (function () { var e = document.querySelector('.CodeMirror-code'); return e ? e.innerText.slice(0, 40) : ''; })(),
+                    editors: document.querySelectorAll('.CodeMirror, .cm-editor').length,
+                    editorText: (function () { var e = document.querySelector('.CodeMirror-code, .cm-content'); return e ? e.innerText.slice(0, 40) : ''; })(),
                     behaviors: cljs.core.count(cljs.core.deref(lt.object.behaviors)),
                     crateShim: typeof (window.crate && window.crate.core && window.crate.core.html) === 'function',
                     // The default user plugin, which is compiled from source in

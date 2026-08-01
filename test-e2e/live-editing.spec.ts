@@ -98,7 +98,11 @@ test('a CSS buffer restyles the running editor', async ({ window, ltErrors }) =>
     await connectLocalClient(window);
     const dir = scratchDir('css');
     const file = path.join(dir, 'probe.css');
-    fs.writeFileSync(file, '.CodeMirror { background: rgb(17, 34, 51) !important; }\n');
+    // Both names, because the rule has to reach whichever engine drew the
+    // editor. That the stylesheets in deploy/core/css say only the first is
+    // the gap this exposes rather than the one it is testing.
+    fs.writeFileSync(file,
+        '.CodeMirror, .cm-editor { background: rgb(17, 34, 51) !important; }\n');
 
     // Opened first: a fresh window shows the Welcome tab, which is not a
     // CodeMirror, so there is nothing to read a background off until a file is
@@ -111,11 +115,11 @@ test('a CSS buffer restyles the running editor', async ({ window, ltErrors }) =>
         ([f]) => {
             const lt = (globalThis as any).lt, cljs = (globalThis as any).cljs;
             return !!cljs.core.first.call(null, lt.objs.editor.pool.by_path(f))
-                && !!document.querySelector('.CodeMirror');
+                && !!document.querySelector('.CodeMirror, .cm-editor');
         }, [file], { timeout: 30_000 });
 
     const before = await window.evaluate(
-        "getComputedStyle(document.querySelector('.CodeMirror')).backgroundColor");
+        "getComputedStyle(document.querySelector('.CodeMirror, .cm-editor')).backgroundColor");
 
     await window.evaluate(([f]) => {
         const lt = (globalThis as any).lt, cljs = (globalThis as any).cljs;
@@ -124,7 +128,7 @@ test('a CSS buffer restyles the running editor', async ({ window, ltErrors }) =>
     }, [file]);
 
     await expect.poll(async () => await window.evaluate(
-        "getComputedStyle(document.querySelector('.CodeMirror')).backgroundColor"))
+        "getComputedStyle(document.querySelector('.CodeMirror, .cm-editor')).backgroundColor"))
         .toBe('rgb(17, 34, 51)');
     expect(before).not.toBe('rgb(17, 34, 51)');
     expect(await ltErrors()).toEqual([]);
