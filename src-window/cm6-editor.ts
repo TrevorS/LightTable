@@ -26,7 +26,11 @@ import {
     defaultKeymap, history, historyKeymap, historyField, undo, redo,
     lineComment, lineUncomment, blockComment, blockUncomment, indentSelection
 } from '@codemirror/commands';
-import { codeFolding, foldCode, unfoldCode, syntaxTree } from '@codemirror/language';
+import {
+    codeFolding, foldCode, unfoldCode, syntaxTree,
+    syntaxHighlighting, defaultHighlightStyle
+} from '@codemirror/language';
+import { modeExtension } from './cm6-modes.js';
 import { bandField, setBands } from './cm6.js';
 import type { Band } from './cm6.js';
 
@@ -114,6 +118,12 @@ export class Cm6Editor {
                     bandField,
                     markerField,
                     codeFolding(),
+                    // Without this a language parses and nothing is coloured:
+                    // CodeMirror 6 separates having a tree from drawing one,
+                    // and the tree alone is invisible. Light Table overrides
+                    // the colours with its own stylesheet either way; what this
+                    // supplies is the classes to hang them on.
+                    syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
                     this.language.of([]),
                     EditorView.updateListener.of((update) => {
                         if (update.docChanged) {
@@ -241,7 +251,24 @@ export class Cm6Editor {
     operation<T>(f: () => T): T { return f(); }
 
     getOption(name: string): unknown { return this.options[name]; }
-    setOption(name: string, value: unknown): void { this.options[name] = value; }
+
+    /**
+     * `mode` and `mime` reconfigure the language; everything else is recorded.
+     *
+     * A compartment is CodeMirror 6's way of swapping one part of a
+     * configuration without rebuilding the state — so changing the mode keeps
+     * the document, the history and the selection, which is what
+     * `lt.objs.editor/set-mode` has always implied and CodeMirror 5 did by
+     * mutating in place.
+     */
+    setOption(name: string, value: unknown): void {
+        this.options[name] = value;
+        if (name === 'mode' || name === 'mime') {
+            this.view.dispatch({
+                effects: this.language.reconfigure(modeExtension(String(value ?? '')))
+            });
+        }
+    }
 
     // --- bands -------------------------------------------------------------
 
