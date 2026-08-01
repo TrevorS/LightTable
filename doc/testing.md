@@ -94,6 +94,29 @@ offline, and a devtools client that polled a port that was not there.
   Three times, which is why it is now checked rather than caught: see
   [`lt.util.load.compiled`](../src/lt/util/load/compiled.cljs).
 
+## Changing a stylesheet without changing the rendering
+
+Moving a declaration from one stylesheet to another is supposed to change
+nothing, and there is no way to be sure by reading it: the cascade decides, and
+the cascade depends on file order, specificity and what else matched. So ask
+the browser.
+
+```sh
+node script/style-snapshot.mts before.json src/lt/objs/style.cljs
+# …edit stylesheets…
+node script/style-snapshot.mts after.json src/lt/objs/style.cljs
+node script/style-snapshot.mts --compare before.json after.json
+```
+
+It boots Light Table, records the computed style of every element — around
+1,175 of them — and names the element and property behind any difference. An
+empty comparison is the proof that a refactor was one. It is deterministic
+across runs, which is what makes it usable; a screenshot is not, because of
+antialiasing, font loading and a cursor that blinks.
+
+It is as useful in the other direction: what a new skin is *actually* doing,
+element by element, rather than what it was meant to do.
+
 ## The linter is a pinned binary
 
 `npm run lint:cljs` fetches clj-kondo from its GitHub release, checks it

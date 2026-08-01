@@ -183,34 +183,6 @@ input {
   color: #bbb;
   padding-left: 5px;
 }
-#instarepl .error {
-  color: #ffa6a6;
-  background: #73404c;
-}
-#instarepl .livetoggler {
-  background: #505d6b;
-  color: #c7e6ff;
-}
-#instarepl .livetoggler.off {
-  color: #aaa;
-  background: #3b3f41;
-}
-#instarepl .livetoggler.off:hover {
-  color: #555;
-  background: #ccc;
-}
-#instarepl .use-result {
-  background: #3e6b6b;
-  color: #7ffffd;
-}
-#instarepl .result-result {
-  background: #505d6b;
-  color: #c7e6ff;
-}
-#instarepl .exception-result {
-  background: #73404c;
-  color: #ffa6a6;
-}
 .popup {
   background: rgba(0,0,0,0.5);
 }
@@ -910,4 +882,19 @@ button {
 .CodeMirror-hints ul::-webkit-scrollbar-thumb {
   background: #606970;
   border-color: #606970;
+}
+
+/* Diagnostics, by severity. These were in structure.css, which is where the
+   box is decided rather than what colour it is. */
+.inline-diagnostic.error .message {
+  color: #e0908f;
+}
+.inline-diagnostic.warning .message {
+  color: #d7c07a;
+}
+.inline-diagnostic.info .message {
+  color: #7fb3d5;
+}
+.inline-diagnostic.hint .message {
+  color: #9aa7b4;
 }

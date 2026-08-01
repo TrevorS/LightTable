@@ -37,10 +37,6 @@ body { -webkit-user-select: none; }
 .inline-diagnostics { box-sizing:border-box; padding:3px 0; }
 .inline-diagnostic { box-sizing:border-box; padding:2px 0 2px 10px; -webkit-user-select:text; white-space:pre-wrap; font-size:0.9em; }
 .inline-diagnostic .source { opacity:0.5; margin-right:0.6em; font-size:0.85em; }
-.inline-diagnostic.error .message { color:#e0908f; }
-.inline-diagnostic.warning .message { color:#d7c07a; }
-.inline-diagnostic.info .message { color:#7fb3d5; }
-.inline-diagnostic.hint .message { color:#9aa7b4; }
 
 .inline-exception { box-sizing:border-box; padding:5px 0px; padding-left:10px; -webkit-user-select:text; white-space:nowrap; overflow:hidden; }
 .inline-exception pre { display:inline-block; white-space:pre-wrap;  padding:4px 10px !important; padding-bottom:6px !important; border-radius:2px; vertical-align:top; overflow:hidden; }
@@ -50,7 +46,6 @@ body { -webkit-user-select: none; }
 .underline-result pre { display:inline-block; white-space:pre-wrap; padding:10px 10px !important; border-radius:2px; }
 .underline-result .spacer { display:inline-block; white-space:pre; vertical-align:top; }
 
-.dragimage { display:block; height:0; width:0; cursor:default; }
 .sortable-placeholder { box-sizing:border-box; }
 
 .inspector-object h2 { cursor:default; }
@@ -114,17 +109,6 @@ body { -webkit-user-select: none; }
 #intro p { font-size:14px; max-width:480px; }
 #intro > span { position:static; }
 
-#instarepl .main { height:100%; width:100%; float:left; border-radius:0; box-sizing:border-box;}
-#instarepl .error { z-index:1000; position:absolute; left:0; bottom:0px; padding:5px; border-radius:3px; }
-#instarepl .error:empty {padding:0;}
-#instarepl .livetoggler { position:absolute; cursor:default; border-radius:2px; right:15px; margin-right:2px; float:left; z-index:10; padding:3px 8px; }
-#instarepl .result-mark { border-radius:2px; display:inline-block; vertical-align:top; }
-#instarepl .result-mark .truncated { display:inline-block; overflow:hidden; }
-#instarepl .result-mark.open .truncated { display:none; overflow:hidden; vertical-align:top; }
-#instarepl .result-mark.open .full { display:inline-block; vertical-align:top; }
-#instarepl .use-result .truncated { max-width: 100px; }
-#instarepl .result-result .truncated { display:none; }
-#instarepl .result-result .full { display:inline-block; }
 
 .popup { display:table; height:100%; vertical-align:middle; text-align:center; z-index:100000000000; width:100%; top:0px; bottom:0px; right:0; left:0px; position:fixed;}
 .popup > div { font-size:12pt; margin:0 auto; text-align:center; vertical-align:middle; position:static; display:table-cell; padding:0; border-radius:3px; }
