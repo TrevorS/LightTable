@@ -495,3 +495,74 @@ test('the kit is data, so a component can be replaced while the editor runs', as
     await expect.poll(async () => await window.locator('.kit .row--swapped').count()).toBe(0);
     await expect.poll(async () => await window.locator('.kit .row').count()).toBeGreaterThan(0);
 });
+
+test('an editor is hosted inside the chrome, and never diffed', async ({ window }) => {
+    // The fourth kind in the design's split, and the last mechanism it names:
+    // foreign DOM we must never diff. The hiccup is an empty keyed element and
+    // a mount hook; everything inside belongs to CodeMirror.
+    //
+    // Rendered into a root of its own rather than through the whole window,
+    // because that is the mechanism — the window adds a projection whose
+    // timing has nothing to do with what is being asserted here.
+    const dir = scratchDir('pane');
+    const file = path.join(dir, 'hosted.txt');
+    fs.writeFileSync(file, 'alpha\nbeta\ngamma\n');
+
+    await evalClj(window, `
+        (do (def host (js/document.createElement "div"))
+            (js/document.body.appendChild host)
+            (replicant.dom/render host [:div.probe-chrome (lt.ui.pane/pane "${file}")])
+            :mounted)`);
+
+    // A real editor, with the real content, inside a view.
+    await expect.poll(async () => await evalClj(window, '(count (lt.ui.pane/mounted))')).toBe('1');
+    const pane = window.locator('.probe-chrome .pane');
+    await expect.poll(async () => await pane.locator('.CodeMirror').count()).toBe(1);
+    expect(await pane.locator('.CodeMirror').textContent()).toContain('gamma');
+
+    // Re-rendering the chrome does not touch it. The node the editor is in is
+    // the node it was in, which is what :replicant/key buys — without it a
+    // scroll would destroy and rebuild a CodeMirror per excerpt.
+    await evalClj(window, `
+        (do (replicant.dom/render host [:div.probe-chrome
+                                        [:span.noise "something changed"]
+                                        (lt.ui.pane/pane "${file}")])
+            :rendered)`);
+    expect(await evalClj(window, '(count (lt.ui.pane/mounted))')).toBe('1');
+    expect(await pane.locator('.CodeMirror').count()).toBe(1);
+
+    // And taking the pane out of the hiccup destroys the editor rather than
+    // leaking it — the unmount hook is the other half of the handoff.
+    await evalClj(window, '(do (replicant.dom/render host [:div.probe-chrome]) :hidden)');
+    await expect.poll(async () => await evalClj(window, '(count (lt.ui.pane/mounted))')).toBe('0');
+    expect(await pane.locator('.CodeMirror').count()).toBe(0);
+
+    await evalClj(window, `
+        (do (lt.ui.pane/clear!)
+            (.remove host)
+            (doseq [ed (pool/by-path "${file}")] (object/raise ed :close))
+            :closed)`);
+    fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('the actions the views emit are all handled', async ({ window }) => {
+    // Every handler in the chrome is a vector, and a vector nothing answers is
+    // a click that does nothing — which looks exactly like a click that did
+    // something invisible. So the table has to cover what the views emit.
+    const emitted = ['review/goto', 'tab/activate', 'client/bind', 'cmd/exec',
+                     'eval/form', 'watch/promote', 'edit/apply', 'run/grant',
+                     'ns/refresh', 'behavior/rebind'];
+    const registered = await evalClj(window,
+        '(vec (sort (map str (keys (lt.actions/registered)))))');
+    for (const a of emitted) expect(registered).toContain(a);
+
+    // And an effect with no handler is reported rather than swallowed, which
+    // is how the gap above was found in the first place.
+    await evalClj(window, '(do (object/clear-errors!) :cleared)');
+    await evalClj(window, '(do (lt.actions/dispatch! [[:nope/not-a-thing]]) :ran)');
+    const said = await window.evaluate(
+        () => (globalThis as any).lt.objs.control.request('errors', {})
+            .errors.map((e: { message: string }) => e.message).join(' ')) as string;
+    expect(said.length).toBeGreaterThan(0);
+    await evalClj(window, '(do (object/clear-errors!) :cleared)');
+});

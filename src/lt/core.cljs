@@ -35,9 +35,11 @@
             [lt.plugins.watches]
             ;; The component kit and the dispatch table it renders against.
             [lt.actions :as actions]
+            [lt.actions.effects :as effects]
             [lt.ui.bands :as bands]
             [lt.ui.catalogue]
             [lt.ui.kit]
+            [lt.ui.pane]
             [lt.ui.window]
             [lt.util.style]))
 
@@ -45,6 +47,7 @@
 ;; Global, and set once: without it every `:on {:click [[:review/goto 3]]}` in
 ;; the kit is a vector where a function was expected, and nothing happens.
 (actions/install!)
+(effects/install!)
 
 ;; One watcher drives both halves of the design's structural claim: the chrome
 ;; renders from the state by value, and the bands are drawn into the editor's

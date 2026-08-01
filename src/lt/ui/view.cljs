@@ -16,6 +16,7 @@
   (:require [clojure.string :as string]
             [lt.ui.band :as band]
             [lt.ui.chrome :as chrome]
+            [lt.ui.pane :as pane]
             [lt.ui.row :as row]))
 
 (defn- leaf [path]
@@ -205,6 +206,18 @@
      :items (map vector (range from to) (subvec (vec edits) from to))
      :after (- n to)}))
 
+(defn editor-pane
+  "The file you are looking at, as a real editor inside the chrome.
+
+  The one place a view returns something Replicant must not describe. It is a
+  keyed empty element with a mount hook; everything inside it belongs to the
+  editor. See [[lt.ui.pane]]."
+  [{:keys [tabsets editors]}]
+  (let [{:keys [tabs active]} (first tabsets)
+        path (get (vec tabs) (or active 0))]
+    (when (contains? editors path)
+      (pane/pane path))))
+
 (defn multibuffer
   "Excerpts assembled by run rather than by file.
 
@@ -281,6 +294,9 @@
    (titlebar state)
    [:div.window__body
     (sidebar state)
-    (multibuffer state)]
+    ;; The active file when there is one, and the run's excerpts when there is
+    ;; not. A multibuffer is what you look at while reviewing a run; a buffer is
+    ;; what you look at the rest of the time.
+    (or (editor-pane state) (multibuffer state))]
    (statusbar state)
    (command-bar state)])
