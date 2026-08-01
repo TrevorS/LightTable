@@ -72,6 +72,7 @@
  [:app :lt.objs.style/provide-theme "base16-dark" "core/css/themes/base16-dark.css"]
  [:app :lt.objs.style/provide-theme "base16-light" "core/css/themes/base16-light.css"]
  [:app :lt.objs.style/provide-theme "blackboard" "core/css/themes/blackboard.css"]
+ [:app :lt.objs.style/provide-theme "catppuccin-mocha" "core/css/themes/catppuccin-mocha.css"]
  [:app :lt.objs.style/provide-theme "cobalt" "core/css/themes/cobalt.css"]
  [:app :lt.objs.style/provide-theme "codemirror" "core/css/themes/codemirror.css"]
  [:app :lt.objs.style/provide-theme "default" "core/css/themes/default.css"]
@@ -97,7 +98,6 @@
  [:app :lt.objs.style/provide-theme "xq-dark" "core/css/themes/xq-dark.css"]
  [:app :lt.objs.style/provide-theme "xq-light" "core/css/themes/xq-light.css"]
  [:app :lt.objs.style/set-skin "dark"]
- [:app :lt.objs.editor/init-codemirror]
 
  [:bottombar :lt.objs.bottombar/item-toggled]
  [:bottombar :lt.objs.bottombar/height!]
@@ -161,15 +161,11 @@
  [:docable :lt.plugins.doc/editor.doc.show!]
  [:docable :lt.plugins.doc/doc-menu+]
 
- [:document :lt.objs.document/try-close-root-document]
  [:document :lt.objs.document/close-root-document]
- [:document :lt.objs.document/set-linked-doc-options {}]
 
- [:document.linked :lt.objs.document/close-linked-document]
 
  [:editor :lt.ui.window/sync-from-objects]
  [:editor :lt.ui.window/track-cursor]
- [:editor :lt.ui.window/retire-bands]
  [:editor :lt.objs.document/close-document-on-editor-close]
  [:editor :lt.objs.editor/active-on-focus]
  ;; The language-server client object, which is one per window and receives
@@ -255,7 +251,7 @@
  [:editor :lt.objs.settings/default-behavior-diffs]
  [:editor :lt.objs.settings/user-behavior-diffs]
  [:editor :lt.objs.style/remove-theme]
- [:editor :lt.objs.style/set-theme "default"]
+ [:editor :lt.objs.style/set-theme "catppuccin-mocha"]
  [:editor :lt.objs.editor/tab-settings false 2 2]
  [:editor :lt.plugins.auto-complete/remove-on-move-line]
  [:editor :lt.plugins.auto-complete/remove-on-scroll-inactive]

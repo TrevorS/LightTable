@@ -57,11 +57,11 @@
 
 (cmd/command {:command :html.jump-to-matching-tag
               :desc "HTML: Jump to matching tag"
+              ;; `toMatchingTag` came from a CodeMirror 5 addon that walked the
+              ;; token stream looking for a tag name. The editor parses HTML
+              ;; into a tree now, and a tag's match is its element's other end —
+              ;; `selectMatchingBracket` finds it the same way it finds a brace,
+              ;; because in a tree they are the same question.
               :exec (fn []
-                      (let [cm (ed/->cm-ed (pool/last-active))
-                            _ (js/CodeMirror.commands.toMatchingTag cm)
-                            cursor (.getCursor cm)]
-                        ;; Decrement to keep cursor in tag and enable jumping back and forth between matching tags
-                        (set! (.-ch cursor) (dec (.-ch cursor)))
-                        ;; Unselect selection. Not a problem in CM demo
-                        (.setSelection cm cursor cursor)))})
+                      (when-let [ed (pool/last-active)]
+                        (ed/exec-command! ed "selectMatchingBracket")))})

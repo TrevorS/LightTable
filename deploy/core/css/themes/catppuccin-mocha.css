@@ -1,0 +1,169 @@
+/* Catppuccin Mocha.
+ *
+ * https://github.com/catppuccin/catppuccin — the dark end of a palette with a
+ * published set of role assignments, which is why it is here rather than
+ * another hand-picked set of hex codes: keyword is mauve, type is yellow,
+ * parameter is maroon in every editor that ships it, so a file looks the same
+ * here as it does wherever else you read code.
+ *
+ *   base      #1e1e2e   the page          text      #cdd6f4   the words
+ *   mantle    #181825   behind the page   subtext0  #a6adc8
+ *   surface0  #313244   the active line   overlay0  #6c7086   comments
+ *   surface1  #45475a   the selection     overlay2  #9399b2   punctuation
+ *
+ * Three vocabularies are coloured below and they are not alternatives. The
+ * CodeMirror token classes are what a per-line mode emits; the `cm-ts-` ones
+ * are tree-sitter capture names, which css/treesitter.css defines and this
+ * overrides by being more specific; the `CodeMirror-` ones are the editor's own
+ * furniture, written under CodeMirror 5's names because that is what both
+ * engines answer to — see src-window/cm6-theme.ts.
+ */
+
+/* ── Chrome ─────────────────────────────────────────────────────────────── */
+#multi.theme-catppuccin-mocha .content { background: #1e1e2e; }
+#multi.theme-catppuccin-mocha .list .active,
+#multi.theme-catppuccin-mocha .list li:hover { background: #1e1e2e; color: #cdd6f4; }
+#multi.theme-catppuccin-mocha .list .dirty { color: #f9e2af; }
+#multi.theme-catppuccin-mocha .tabset .list .active { color: #a6adc8; }
+#multi.theme-catppuccin-mocha .tabset.active .list .active { color: #cdd6f4; }
+#multi.theme-catppuccin-mocha .tabset.active .list .dirty { color: #f9e2af; }
+
+/* ── The page ───────────────────────────────────────────────────────────── */
+.cm-s-catppuccin-mocha { background: #1e1e2e; color: #cdd6f4; }
+.cm-s-catppuccin-mocha.CodeMirror { background: #1e1e2e; color: #cdd6f4; }
+
+/* ── CodeMirror tokens, for the languages a mode still draws ────────────── */
+.cm-s-catppuccin-mocha span.cm-comment    { color: #6c7086; font-style: italic; }
+.cm-s-catppuccin-mocha span.cm-string     { color: #a6e3a1; }
+.cm-s-catppuccin-mocha span.cm-string-2   { color: #f5c2e7; }
+.cm-s-catppuccin-mocha span.cm-number     { color: #fab387; }
+.cm-s-catppuccin-mocha span.cm-atom       { color: #fab387; }
+.cm-s-catppuccin-mocha span.cm-keyword    { color: #cba6f7; }
+.cm-s-catppuccin-mocha span.cm-qualifier  { color: #cba6f7; }
+.cm-s-catppuccin-mocha span.cm-def        { color: #89b4fa; }
+.cm-s-catppuccin-mocha span.cm-variable   { color: #cdd6f4; }
+.cm-s-catppuccin-mocha span.cm-variable-2 { color: #b4befe; }
+.cm-s-catppuccin-mocha span.cm-variable-3 { color: #f9e2af; }
+.cm-s-catppuccin-mocha span.cm-property   { color: #89b4fa; }
+.cm-s-catppuccin-mocha span.cm-operator   { color: #89dceb; }
+.cm-s-catppuccin-mocha span.cm-builtin    { color: #f38ba8; }
+.cm-s-catppuccin-mocha span.cm-meta       { color: #a6adc8; }
+.cm-s-catppuccin-mocha span.cm-bracket    { color: #9399b2; }
+.cm-s-catppuccin-mocha span.cm-tag        { color: #89b4fa; }
+.cm-s-catppuccin-mocha span.cm-attribute  { color: #f9e2af; }
+.cm-s-catppuccin-mocha span.cm-header     { color: #89b4fa; font-weight: 600; }
+.cm-s-catppuccin-mocha span.cm-quote      { color: #a6e3a1; }
+.cm-s-catppuccin-mocha span.cm-link       { color: #89dceb; text-decoration: underline; }
+.cm-s-catppuccin-mocha span.cm-hr         { color: #6c7086; }
+.cm-s-catppuccin-mocha span.cm-em         { font-style: italic; }
+.cm-s-catppuccin-mocha span.cm-strong     { font-weight: 600; }
+.cm-s-catppuccin-mocha span.cm-error      { color: #f38ba8; }
+
+/* ── Tree-sitter captures ───────────────────────────────────────────────── */
+/* The same roles the palette publishes, against the vocabulary in
+ * css/treesitter.css. Scoped by the theme class, so it wins on specificity as
+ * well as on order and a theme that says nothing still gets the defaults. */
+.cm-s-catppuccin-mocha .cm-ts-comment            { color: #6c7086; font-style: italic; }
+.cm-s-catppuccin-mocha .cm-ts-comment-doc        { color: #7f849c; }
+
+.cm-s-catppuccin-mocha .cm-ts-string             { color: #a6e3a1; }
+.cm-s-catppuccin-mocha .cm-ts-string-special     { color: #94e2d5; }
+.cm-s-catppuccin-mocha .cm-ts-string-escape      { color: #f5c2e7; }
+.cm-s-catppuccin-mocha .cm-ts-character          { color: #a6e3a1; }
+.cm-s-catppuccin-mocha .cm-ts-number             { color: #fab387; }
+.cm-s-catppuccin-mocha .cm-ts-constant           { color: #fab387; }
+.cm-s-catppuccin-mocha .cm-ts-constant-builtin   { color: #fab387; }
+.cm-s-catppuccin-mocha .cm-ts-boolean            { color: #fab387; }
+
+.cm-s-catppuccin-mocha .cm-ts-keyword            { color: #cba6f7; }
+.cm-s-catppuccin-mocha .cm-ts-keyword-control    { color: #cba6f7; }
+.cm-s-catppuccin-mocha .cm-ts-keyword-operator   { color: #89dceb; }
+.cm-s-catppuccin-mocha .cm-ts-keyword-function   { color: #cba6f7; }
+.cm-s-catppuccin-mocha .cm-ts-keyword-return     { color: #cba6f7; }
+.cm-s-catppuccin-mocha .cm-ts-conditional        { color: #cba6f7; }
+.cm-s-catppuccin-mocha .cm-ts-repeat             { color: #cba6f7; }
+.cm-s-catppuccin-mocha .cm-ts-include            { color: #cba6f7; }
+.cm-s-catppuccin-mocha .cm-ts-exception          { color: #f38ba8; }
+
+.cm-s-catppuccin-mocha .cm-ts-variable           { color: #cdd6f4; }
+.cm-s-catppuccin-mocha .cm-ts-variable-parameter { color: #eba0ac; }
+.cm-s-catppuccin-mocha .cm-ts-variable-builtin   { color: #f38ba8; font-style: italic; }
+.cm-s-catppuccin-mocha .cm-ts-variable-member    { color: #89b4fa; }
+.cm-s-catppuccin-mocha .cm-ts-parameter          { color: #eba0ac; }
+.cm-s-catppuccin-mocha .cm-ts-property           { color: #89b4fa; }
+.cm-s-catppuccin-mocha .cm-ts-field              { color: #89b4fa; }
+
+.cm-s-catppuccin-mocha .cm-ts-function           { color: #89b4fa; }
+.cm-s-catppuccin-mocha .cm-ts-function-builtin   { color: #fab387; font-style: italic; }
+.cm-s-catppuccin-mocha .cm-ts-function-method    { color: #89b4fa; }
+.cm-s-catppuccin-mocha .cm-ts-function-macro     { color: #cba6f7; }
+.cm-s-catppuccin-mocha .cm-ts-method             { color: #89b4fa; }
+.cm-s-catppuccin-mocha .cm-ts-constructor        { color: #74c7ec; }
+
+.cm-s-catppuccin-mocha .cm-ts-type               { color: #f9e2af; }
+.cm-s-catppuccin-mocha .cm-ts-type-builtin       { color: #f9e2af; font-style: italic; }
+.cm-s-catppuccin-mocha .cm-ts-type-definition    { color: #f9e2af; }
+.cm-s-catppuccin-mocha .cm-ts-class              { color: #f9e2af; }
+.cm-s-catppuccin-mocha .cm-ts-namespace          { color: #f9e2af; font-style: italic; }
+.cm-s-catppuccin-mocha .cm-ts-module             { color: #f9e2af; font-style: italic; }
+.cm-s-catppuccin-mocha .cm-ts-label              { color: #74c7ec; }
+.cm-s-catppuccin-mocha .cm-ts-attribute          { color: #f9e2af; }
+
+.cm-s-catppuccin-mocha .cm-ts-punctuation           { color: #9399b2; }
+.cm-s-catppuccin-mocha .cm-ts-punctuation-bracket   { color: #9399b2; }
+.cm-s-catppuccin-mocha .cm-ts-punctuation-delimiter { color: #9399b2; }
+.cm-s-catppuccin-mocha .cm-ts-punctuation-special   { color: #89dceb; }
+.cm-s-catppuccin-mocha .cm-ts-operator              { color: #89dceb; }
+
+.cm-s-catppuccin-mocha .cm-ts-tag                { color: #89b4fa; }
+.cm-s-catppuccin-mocha .cm-ts-tag-attribute      { color: #f9e2af; }
+.cm-s-catppuccin-mocha .cm-ts-tag-delimiter      { color: #9399b2; }
+.cm-s-catppuccin-mocha .cm-ts-markup-heading     { color: #89b4fa; font-weight: 600; }
+.cm-s-catppuccin-mocha .cm-ts-markup-link        { color: #89dceb; text-decoration: underline; }
+.cm-s-catppuccin-mocha .cm-ts-markup-raw         { color: #a6e3a1; }
+
+.cm-s-catppuccin-mocha .cm-ts-error              { color: #f38ba8; text-decoration: underline wavy; }
+.cm-s-catppuccin-mocha .cm-ts-warning            { color: #f9e2af; }
+
+/* ── The editor's furniture ─────────────────────────────────────────────── */
+.cm-s-catppuccin-mocha .CodeMirror-selected { background: #313244; }
+.cm-s-catppuccin-mocha .CodeMirror-focused .CodeMirror-selected { background: #45475a; }
+.cm-s-catppuccin-mocha .CodeMirror-activeline-background { background: #26263a; }
+.cm-s-catppuccin-mocha .CodeMirror-activeline .CodeMirror-linenumber { color: #cdd6f4; }
+
+.cm-s-catppuccin-mocha .CodeMirror-gutters { background: #1e1e2e; border: none; }
+.cm-s-catppuccin-mocha .CodeMirror-linenumber { color: #585b70; }
+
+.cm-s-catppuccin-mocha .CodeMirror-cursor { border-left: 1px solid #f5e0dc; }
+.cm-s-catppuccin-mocha .CodeMirror-secondarycursor { border-left: 1px solid #9399b2; }
+
+.cm-s-catppuccin-mocha span.CodeMirror-matchingbracket {
+  box-sizing: border-box; background: transparent;
+  border-bottom: 1px solid #94e2d5; font-weight: normal;
+}
+.cm-s-catppuccin-mocha span.CodeMirror-nonmatchingbracket {
+  color: #f38ba8; border-bottom: 1px solid #f38ba8; background: none;
+}
+
+.cm-s-catppuccin-mocha .CodeMirror-searching { background: #45475a; color: #cdd6f4; }
+.cm-s-catppuccin-mocha .CodeMirror-searching-active { background: #f9e2af; color: #1e1e2e; }
+.cm-s-catppuccin-mocha .CodeMirror-matchhighlight { background: #313244; }
+
+/* ── The hint list ──────────────────────────────────────────────────────── */
+/* Unscoped, because it is not inside the editor: the list is appended to the
+ * body so it can overhang the window edge. Every theme that styles it does so
+ * this way — see default.css. */
+.CodeMirror-hints {
+  position: absolute; z-index: 1000000000000000; overflow: hidden;
+  list-style: none; margin: 0; padding: 2px; border-radius: 4px;
+  border: 1px solid #313244; background: #181825; font-size: 90%;
+  font-family: inherit; max-height: 20em;
+}
+.CodeMirror-hints ul { overflow-y: auto; max-height: 20em; }
+.CodeMirror-hints ul li {
+  margin: 0; padding: 0 4px; border-radius: 2px; max-width: 60em;
+  overflow: hidden; white-space: pre; color: #cdd6f4; cursor: pointer;
+}
+.CodeMirror-hints input { display: none; }
+.CodeMirror-hints .selected { background: #45475a; color: #cdd6f4; }
+.CodeMirror-hints ul::-webkit-scrollbar-thumb { background: #585b70; border-color: #585b70; }

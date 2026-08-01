@@ -471,25 +471,16 @@ app.on('ready', function () {
                         if (!ed) { out.error = 'no editor for ' + PROBE_TS; return JSON.stringify(out); }
                         out.report = cljs.core.clj__GT_js(lt.objs.editor.treesitter.report(ed));
                         var cm = lt.objs.editor.__GT_cm_ed(ed);
-                        out.modeName = cm.getMode().name;
-                        // Asserted on what the mode tokenizes rather than on
-                        // the painted DOM. The harness window is created with
-                        // show:false, so nothing drives a repaint and the
-                        // rendered lines keep the tokens they had before the
-                        // mode was swapped in — getLineTokens asks the mode
-                        // directly and does not care whether anything is
-                        // visible.
-                        var seen = {};
-                        var lineCount = cm.lineCount();
-                        for (var l = 0; l < lineCount; l++) {
-                            cm.getLineTokens(l, true).forEach(function (t) {
-                                if (!t.type) return;
-                                t.type.split(' ').forEach(function (c) {
-                                    if (c) seen['cm-' + c] = true; });
-                            });
-                        }
-                        out.classes = Object.keys(seen).sort();
-                        out.lines = lineCount;
+                        // Asserted on the span table rather than on the painted
+                        // DOM. The harness window is created with show:false, so
+                        // there is no viewport to decorate; line-classes asks
+                        // what the drawing reads from and does not care whether
+                        // anything is visible. What reaches the screen is
+                        // asserted in test-e2e/cm6-treesitter.spec.ts, in a
+                        // window that has one.
+                        out.classes = cljs.core.clj__GT_js(
+                            lt.objs.editor.treesitter.line_classes(ed)) || [];
+                        out.lines = cm.lineCount();
                     } catch (e) { out.error = String((e && e.message) || e); }
                     return JSON.stringify(out);
                 })()\`));
@@ -539,7 +530,7 @@ app.on('ready', function () {
                 await new Promise(function (r) { setTimeout(r, 4000); });
 
                 // Then an edit, which is the half that has actually broken.
-                // Made through CodeMirror rather than through a command so it
+                // Made through the editor rather than through a command so it
                 // travels the same path a keystroke does — the :change event,
                 // whose arguments are the editor instance and *then* the
                 // change.
@@ -591,14 +582,11 @@ app.on('ready', function () {
                     platform: String(lt.objs.platform.platform),
                     dataPath: String(lt.objs.platform.get_data_path()),
                     windowNumber: String(lt.objs.app.window_number()),
-                    codeMirror: typeof CodeMirror === 'function',
-                    codeMirrorAddons: typeof (CodeMirror && CodeMirror.overlayMode) === 'function',
-                    codeMirrorModes: CodeMirror && CodeMirror.modes ? Object.keys(CodeMirror.modes).length : 0,
-                    // Fold addons register helpers and extensions rather than
-                    // anything on the constructor itself.
-                    codeMirrorFold: !!(CodeMirror && CodeMirror.fold && CodeMirror.fold.brace),
-                    editors: document.querySelectorAll('.CodeMirror').length,
-                    editorText: (function () { var e = document.querySelector('.CodeMirror-code'); return e ? e.innerText.slice(0, 40) : ''; })(),
+                    editorBuilt: typeof (window.ltCm6Editor && window.ltCm6Editor.makeCm6Editor) === 'function',
+                    commandTable: window.ltCm6Commands ? Object.keys(window.ltCm6Commands.commands).length : 0,
+                    codeMirrorModes: window.ltCm6Modes ? window.ltCm6Modes.knownModes().length : 0,
+                    editors: document.querySelectorAll('.cm-editor').length,
+                    editorText: (function () { var e = document.querySelector('.cm-content'); return e ? e.innerText.slice(0, 40) : ''; })(),
                     behaviors: cljs.core.count(cljs.core.deref(lt.object.behaviors)),
                     crateShim: typeof (window.crate && window.crate.core && window.crate.core.html) === 'function',
                     // The default user plugin, which is compiled from source in
@@ -864,18 +852,19 @@ app.on('ready', function () {
                     // Every mime the file-type table maps: does it produce a
                     // working mode?
                     //
-                    // Rust did not. CodeMirror's simple-mode addon decides
-                    // whether a rule's token is a function by asking it for
-                    // an apply method, and extending js/String with IFn puts
-                    // one on every string — so the addon called a string
-                    // and threw, and opening a .rs file threw with it. Six
-                    // modes are built on that addon. Nothing noticed, because
-                    // counting bundled modes says 130 either way.
+// Rust did not. CodeMirror 5's simple-mode addon decided
+                    // whether a rule's token was a function by asking it for an
+                    // apply method, and extending js/String with IFn puts one
+                    // on every string — so the addon called a string and threw,
+                    // and opening a .rs file threw with it. Nothing noticed,
+                    // because counting bundled modes said 130 either way.
                     //
-                    // Instantiating each one is the only check that would have
-                    // caught it: a mode that registers and then throws on the
-                    // first token is indistinguishable from a working one
-                    // until something tokenizes.
+                    // Configuring each one is what catches that: a language
+                    // that throws while being built is indistinguishable from a
+                    // working one until something asks. Whether the result is
+                    // *empty* is a separate question and a separate list —
+                    // test-e2e/cm6-modes.spec.ts is where the four deliberate
+                    // gaps are named.
                     modes: (function () {
                         var types = cljs.core.get.call(null, cljs.core.deref(lt.objs.files.files_obj),
                                                        cljs.core.keyword.call(null, 'types'));
@@ -894,17 +883,17 @@ app.on('ready', function () {
                             try {
                                 // Content that reaches a keyword, a string, a
                                 // number and a comment in most languages, so a
-                                // mode has to actually tokenize rather than
-                                // return null for an empty document.
+                                // language has something to do.
                                 // Built rather than written as a literal: this
                                 // string passes through two template literals
                                 // on its way here, and each one would eat a
                                 // backslash escape.
                                 var probeSrc = ['let x = 42;', '"a string"',
                                                 '// a comment', ''].join(String.fromCharCode(10));
-                                var ed = CodeMirror(host, { value: probeSrc, mode: mime });
-                                var m = ed.getMode();
-                                if (!m || m.name === 'null') noMode.push(mime);
+                                var ed = window.ltCm6Editor.makeCm6Editor(host, { value: probeSrc });
+                                ed.setOption('mode', mime);
+                                var ext = window.ltCm6Modes.modeExtension(mime);
+                                if (!ext || (Array.isArray(ext) && ext.length === 0)) noMode.push(mime);
                                 else ok++;
                             } catch (e) {
                                 broken.push(mime + ' (' + mimes[mime] + '): ' + String(e.message).slice(0, 40));
@@ -1197,13 +1186,12 @@ async function main(): Promise<void> {
         ['platform resolved over ipc', r.platform === ':linux' || r.platform === ':mac' || r.platform === ':windows'],
         ['app path resolved over ipc', typeof r.dataPath === 'string' && r.dataPath.length > 0 && r.dataPath !== 'undefined'],
         ['window number resolved over ipc', r.windowNumber !== 'undefined' && r.windowNumber !== 'null'],
-        ['CodeMirror loaded', r.codeMirror === true],
-        ['forked CodeMirror addons loaded', r.codeMirrorAddons === true],
+        ['the editor factory is there', r.editorBuilt === true],
+        ['the command table is populated', r.commandTable > 50],
         ['a file opened into an editor', r.editors >= 1],
         ['the editor rendered its contents', typeof r.editorText === 'string' && r.editorText.indexOf('ns lt.objs.platform') !== -1],
         ['behaviors registered', r.behaviors > 400],
         ['language modes registered', r.codeMirrorModes > 50],
-        ['fold addons registered', r.codeMirrorFold === true],
         ['the worker thread connected', r.workerConnected === true],
         ['a background job round-tripped', r.workerFilesFound >= 5],
         // Four matching lines across three files, out of four files searched.
@@ -1222,9 +1210,12 @@ async function main(): Promise<void> {
         // opened with no highlighting at all. Zig and Elixir share it — they
         // have a language server and no CodeMirror mode, so they are readable
         // and not coloured until a grammar covers them.
-        ['every mapped file type has a mode that tokenizes', r.modes.broken.length === 0],
-        ['only plaintext resolves to no mode',
-            r.modes.noMode.length === 1 && r.modes.noMode[0] === 'plaintext'],
+        ['every mapped file type builds without throwing', r.modes.broken.length === 0],
+        // Four, and each is a gap on purpose: plain text, plus three markup
+        // languages with no CodeMirror 6 grammar. Named in cm6-modes.ts and
+        // asserted by name in test-e2e/cm6-modes.spec.ts.
+        ['only the four deliberate gaps resolve to no language',
+            r.modes.noMode.length === 4 && r.modes.noMode.indexOf('plaintext') !== -1],
         ['the file-type table still covers what it used to', r.modes.total >= 100],
         // Tree-sitter highlighting. The capture names are the assertion: a
         // CodeMirror mode emits seven token types for TypeScript and cannot
@@ -1438,11 +1429,11 @@ async function main(): Promise<void> {
     console.log('browser devtools client: ' + r.browserDevtools);
     console.log('capability reports: ' + JSON.stringify(r.capabilities));
     console.log('behaviors registered: ' + r.behaviors);
-    console.log('CodeMirror modes registered: ' + r.codeMirrorModes);
+    console.log('language modes: ' + r.codeMirrorModes + ', commands: ' + r.commandTable);
     console.log('worker connected: ' + r.workerConnected + ', files found by background scan: ' + r.workerFilesFound);
     console.log('workspace search: ' + r.search.count + ' results in ' + r.search.reported +
                 ' files, ' + r.search.files + ' searched, ' + r.search.seconds + 's');
-    console.log('file types: ' + r.modes.total + ' mimes, ' + r.modes.ok + ' tokenizing, ' +
+    console.log('file types: ' + r.modes.total + ' mimes, ' + r.modes.ok + ' with a language, ' +
                 r.modes.broken.length + ' broken' +
                 (r.modes.broken.length ? ': ' + r.modes.broken.join('; ') : ''));
     console.log('tree-sitter: ' + r.treesitter.classes.length + ' capture classes (' +

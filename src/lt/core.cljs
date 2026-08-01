@@ -9,9 +9,8 @@
   (:require [lt.objs.app :as app]
             [lt.compat]
    ;; Generated: every CodeMirror mode and fold addon, so they are bundled.
-   [lt.editor.codemirror-modes]
    ;; Light Table's own JavaScript, bundled.
-   [lt.window.modules]
+   [lt.window.modules :as modules]
             [lt.objs.browser]
             [lt.objs.clients.local]
             [lt.objs.connector]
@@ -53,3 +52,10 @@
 ;; renders from the state by value, and the bands are drawn into the editor's
 ;; own line widgets by effect. See doc/rendering.md.
 (bands/install!)
+
+;; Light Table's themes are written against CodeMirror 5's class names, and
+;; CodeMirror 6 calls its elements something else. Rather than edit thirty theme
+;; files — and break every theme a user wrote — each rule that names a
+;; CodeMirror 5 class gets a twin naming the CodeMirror 6 one, against the
+;; stylesheet as loaded. See src-window/cm6-theme.ts.
+(.watchForThemes modules/cm6-theme)

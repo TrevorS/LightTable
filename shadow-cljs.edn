@@ -139,7 +139,7 @@
    :exclude    #{cljs.js replicant.env}
 
    ;; The same npm resolution as the app build. This target does not inherit
-   ;; it, and without it the walk stops at the first `(:require ["codemirror"])`.
+   ;; it, and without it the walk stops at the first npm require it meets.
    :js-options {:js-provider :shadow
                 :js-package-dirs ["deploy/core/node_modules" "node_modules"]
                 :resolve {"fs" {:target :file

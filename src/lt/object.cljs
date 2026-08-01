@@ -371,6 +371,14 @@
     (swap! instances dissoc (->id inst))
     (when (->content obj)
       (dom/remove (->content obj)))
+    ;; Nobody is told about the last value, because the last value is nil and
+    ;; nil is not a state anything can render. A view bound to this object runs
+    ;; its own function against whatever the atom now holds — so removing a
+    ;; folder from the workspace reached `(files/basename (:path @this))` with
+    ;; no path, and Node threw about an argument nobody passed. The DOM is gone
+    ;; by this line; the watch was the only thing still listening.
+    (doseq [k (keys (.-watches ^js inst))]
+      (remove-watch inst k))
     (reset! obj nil)))
 
 (defn- store-inst [inst]

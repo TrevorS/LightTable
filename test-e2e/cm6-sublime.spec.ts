@@ -1,0 +1,121 @@
+// The sublime keymap's commands, which is where Light Table's multiple cursors
+// and line editing came from.
+//
+// Twenty-one commands, registered by a CodeMirror 5 addon onto the CodeMirror 5
+// global. Nothing carries them to CodeMirror 6, so each one is either a name
+// CodeMirror 6 already has, a few lines about `EditorSelection`, or a gap that
+// says so.
+//
+// Compared against CodeMirror 5 where the answer should be identical, because
+// "it does something" is not the claim — the claim is that the key you have
+// pressed for ten years still does what it did.
+
+import { test, expect } from './fixtures';
+import { cm5 } from './cm5-answers';
+import type { Page } from '@playwright/test';
+
+/** Run `command` from `doc`, and report the text and every cursor. */
+async function run(window: Page, doc: string, command: string, setup = ''): Promise<unknown> {
+    return await window.evaluate(([text, name, prepare]) => {
+        const w = globalThis as any;
+        const host = document.createElement('div');
+        document.body.appendChild(host);
+        const ed = w.ltCm6Editor.makeCm6Editor(host, { value: text });
+        try {
+            new Function('ed', prepare as string)(ed);
+            ed.execCommand(name as string);
+            return {
+                value: ed.getValue(),
+                cursors: ed.listSelections().map(
+                    (s: any) => `${s.head.line}:${s.head.ch}`).sort()
+            };
+        } finally {
+            host.remove();
+        }
+    }, [doc, command, setup] as [string, string, string]);
+}
+
+/** Against what CodeMirror 5 did, which is recorded — see cm5-answers.ts. */
+async function check(window: Page, doc: string, command: string, setup = ''): Promise<void> {
+    expect(await run(window, doc, command, setup),
+           `${command} should match CodeMirror 5`).toEqual(cm5('sublime::' + command));
+}
+
+const DOC = 'gamma\nalpha\nbeta\n';
+const AT_TOP = 'ed.setCursor({line: 0, ch: 0});';
+
+test('a line command does what it did before', async ({ window }) => {
+    for (const [command, setup] of [
+        ['duplicateLine', AT_TOP],
+        ['swapLineDown', AT_TOP],
+        ['swapLineUp', 'ed.setCursor({line: 2, ch: 0});'],
+        ['sortLines', 'ed.setSelection({line: 0, ch: 0}, {line: 2, ch: 4});'],
+        ['sortLinesInsensitive', 'ed.setSelection({line: 0, ch: 0}, {line: 2, ch: 4});']
+    ] as [string, string][]) {
+        await check(window, DOC, command, setup);
+    }
+});
+
+test('and a selection command puts the cursors in the same places', async ({ window }) => {
+    for (const [command, setup] of [
+        ['selectNextOccurrence', 'ed.setSelection({line: 1, ch: 0}, {line: 1, ch: 5});'],
+        ['addCursorToNextLine', AT_TOP],
+        ['addCursorToPrevLine', 'ed.setCursor({line: 2, ch: 0});'],
+        ['splitSelectionByLine', 'ed.setSelection({line: 0, ch: 0}, {line: 2, ch: 4});']
+    ] as [string, string][]) {
+        await check(window, DOC, command, setup);
+    }
+});
+
+test('singleSelectionTop keeps the first cursor, not the last one', async ({ window }) => {
+    // The one that is not CodeMirror 6's `simplifySelection`, which keeps the
+    // *main* range — and the main range is the one added last. Selecting four
+    // occurrences downward and pressing this would leave you at the bottom
+    // instead of back where you started, which is the opposite of the point.
+    const line = await window.evaluate(() => {
+        const w = globalThis as any;
+        const host = document.createElement('div');
+        document.body.appendChild(host);
+        const ed = w.ltCm6Editor.makeCm6Editor(host, { value: 'a\nb\nc\nd\n' });
+        ed.setCursor({ line: 0, ch: 0 });
+        ed.execCommand('addCursorToNextLine');
+        ed.execCommand('addCursorToNextLine');
+        ed.execCommand('singleSelectionTop');
+        const out = [ed.listSelections().length, ed.getCursor().line];
+        host.remove();
+        return out;
+    });
+    expect(line).toEqual([1, 0]);
+});
+
+test('goToBracket goes to the bracket you are inside, not the one you are on', async ({ window }) => {
+    // The distinction that made this the last one. Bracket *matching* answers
+    // "what closes the bracket under the cursor", and the cursor is usually not
+    // on a bracket when you press this — so the matching extension had nothing
+    // to say and it had to be scanned for.
+    await check(window, 'foo(bar, baz)\n', 'goToBracket', 'ed.setCursor({line: 0, ch: 6});');
+});
+
+test('a command with no CodeMirror 6 answer is named rather than silently absent',
+    async ({ window }) => {
+    const gaps = await window.evaluate(
+        () => Object.keys((globalThis as any).ltCm6Commands.UNSUPPORTED_COMMANDS));
+    // None of the twenty-one, now that goToBracket is written. The list stays
+    // so the next command someone adds has somewhere to be absent from.
+    expect(gaps).toEqual([]);
+
+    // And every other sublime command Light Table registers is answered.
+    const missing = await window.evaluate(() => {
+        const w = globalThis as any;
+        const table = w.ltCm6Commands.commands;
+        const gapNames = Object.keys(w.ltCm6Commands.UNSUPPORTED_COMMANDS);
+        return ['addCursorToNextLine', 'addCursorToPrevLine', 'duplicateLine', 'goToBracket',
+            'insertLineAfter', 'insertLineBefore', 'joinLines', 'redoSelection',
+            'selectBetweenBrackets', 'selectLinesDownward', 'selectLinesUpward',
+            'selectNextOccurrence', 'selectScope', 'singleSelectionTop',
+            'skipAndSelectNextOccurrence', 'sortLines', 'sortLinesInsensitive',
+            'splitSelectionByLine', 'swapLineDown', 'swapLineUp', 'undoSelection']
+            .filter((name) => typeof table[name] !== 'function' && !gapNames.includes(name));
+    });
+    expect(missing).toEqual([]);
+});

@@ -15,14 +15,16 @@
   (:require ["./fuzzy.js" :as fuzzy-js]
             ["./dragdrop.js" :as dragdrop-js]
             ["./treesitter.js" :as treesitter-js]
-            ;; Required for their side effects: each registers itself with the
-            ;; global CodeMirror as it loads.
-            ["./cm-search.js"]
-            ["./cm-hint.js"]
-            ;; CodeMirror 6, as a spike. Nothing in the editor uses it yet —
-            ;; it puts `window.ltCm6` there so the mechanism a port would be
-            ;; built on can be run and asserted about. See src-window/cm6.ts.
-            ["./cm6.js"]))
+            ["./cm-hint.js" :as cm-hint-js]
+            ;; The editor. `lt.objs.editor` builds one of these; the rest
+            ;; register themselves on the window so a test and a REPL can reach
+            ;; them. See src-window/cm6.ts.
+            ["./cm6.js" :as cm6-js]
+            ["./cm6-editor.js" :as cm6-editor-js]
+            ["./cm6-theme.js" :as cm6-theme-js]
+            ["./cm6-commands.js"]
+            ["./cm6-modes.js"]
+            ["./cm6-treesitter.js"]))
 
 (def ^js fuzzy
   "Fuzzy matching for the command bar and the file navigator: stringScore,
@@ -34,6 +36,28 @@
   dragdrop-js)
 
 (def ^js treesitter
-  "Tree-sitter highlighting: initRuntime, highlighterFor, makeMode,
-  captureClasses, spansFromCaptures, styleAt. See src-window/treesitter.ts."
+  "Tree-sitter highlighting: initRuntime, highlighterFor, captureClasses,
+  spansFromCaptures, styleAt, runsForLine, tokenClasses. See
+  src-window/treesitter.ts; the drawing half is cm6-treesitter.ts."
   treesitter-js)
+
+(def ^js cm-hint
+  "Where the autocomplete list goes: positionHint, ensureHintVisible. Takes any
+  editor that can say where its cursor is. See src-window/cm-hint.ts."
+  cm-hint-js)
+
+(def ^js cm6
+  "The band field: bandField, setBands, Band. Bands go through the editor
+  rather than through here — see [[cm6-editor]]."
+  cm6-js)
+
+(def ^js cm6-editor
+  "A CodeMirror 6 editor answering to CodeMirror 5's method names:
+  makeCm6Editor, Cm6Editor. See src-window/cm6-editor.ts."
+  cm6-editor-js)
+
+(def ^js cm6-theme
+  "Light Table's themes, applied to a CodeMirror 6 editor: the CodeMirror 5
+  token classes as a HighlightStyle, and the structural rules mirrored onto
+  CodeMirror 6's own selectors. See src-window/cm6-theme.ts."
+  cm6-theme-js)

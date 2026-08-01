@@ -14,6 +14,17 @@ import * as path from 'node:path';
 import { test, expect, scratchDir } from './fixtures';
 import type { Page } from '@playwright/test';
 
+/**
+ * The editor's own element, on whichever engine built it.
+ *
+ * CodeMirror 5 calls it `.CodeMirror` and CodeMirror 6 calls it `.cm-editor`.
+ * These tests are about what Light Table renders *inside* an editor, so they
+ * should not care which — but the stylesheets do, and that is a real gap rather
+ * than a selector: `deploy/core/css/themes` is written against the CodeMirror 5
+ * names.
+ */
+const EDITOR = ':is(.CodeMirror, .cm-editor)';
+
 async function evalClj(window: Page, source: string): Promise<any> {
     let job = await window.evaluate(
         ([s]) => (globalThis as any).lt.objs.control.request('eval', { source: s }), [source]);
@@ -279,6 +290,12 @@ test('a band is hiccup rendered into DOM the editor owns', async ({ window }) =>
     await evalClj(window, `(do (cmd/exec! :open-path "${file}") :opened)`);
     await expect.poll(async () => await evalClj(window,
         `(count (pool/by-path "${file}"))`)).toBe('1');
+    // Wait for the projection to have caught up before writing into the state.
+    // `lt.state.objects/sync!` runs from editor behaviors and owns `:results`,
+    // so a write that lands before the last one is overwritten by it — which is
+    // a race the CodeMirror 5 timing happened to hide.
+    await expect.poll(async () => await evalClj(window,
+        `(contains? (:editors @lt.state/app) "${file}")`)).toBe('true');
 
     // Put a result in the state. Nothing else is touched: no editor call, no
     // widget, no DOM.
@@ -289,12 +306,12 @@ test('a band is hiccup rendered into DOM the editor owns', async ({ window }) =>
             :put)`);
 
     // And it is on screen, inside the editor, under the line it belongs to.
-    const bands = window.locator('.CodeMirror .band');
+    const bands = window.locator(`${EDITOR} .band`);
     await expect.poll(async () => await bands.count()).toBe(2);
-    expect(await window.textContent('.CodeMirror .band--result .band__value'))
+    expect(await window.textContent(`${EDITOR} .band--result .band__value`))
         .toContain('{:count 2}');
     // The gutter column is reserved so the band's content lands on the code.
-    expect(await window.textContent('.CodeMirror .band .band__gutter')).toBe('1');
+    expect(await window.textContent(`${EDITOR} .band .band__gutter`)).toBe('1');
 
     // A watch on the same line is a second band, not the same band changing
     // shape — teal, because it re-reads itself.
@@ -302,7 +319,7 @@ test('a band is hiccup rendered into DOM the editor owns', async ({ window }) =>
         (do (swap! lt.state/app assoc :watches
                    {["${file}" 1 [:count]] {:reads 8 :value 7 :expression "(count xs)"}})
             :watched)`);
-    await expect.poll(async () => await window.locator('.CodeMirror .band--watch').count()).toBe(1);
+    await expect.poll(async () => await window.locator(`${EDITOR} .band--watch`).count()).toBe(1);
     await expect.poll(async () => await bands.count()).toBe(3);
 
     // Updating a value patches the band in place rather than redrawing it: the
@@ -310,7 +327,7 @@ test('a band is hiccup rendered into DOM the editor owns', async ({ window }) =>
     const before = await evalClj(window, `(count (lt.ui.bands/drawn))`);
     await evalClj(window, `
         (do (swap! lt.state/app assoc-in [:results ["${file}" 1] :value] "({:count 9})") :changed)`);
-    await expect.poll(async () => await window.textContent('.CodeMirror .band--result .band__value'))
+    await expect.poll(async () => await window.textContent(`${EDITOR} .band--result .band__value`))
         .toContain('{:count 9}');
     expect(await evalClj(window, `(count (lt.ui.bands/drawn))`)).toBe(before);
 
@@ -345,6 +362,12 @@ test('a value that is not data is hosted rather than described', async ({ window
     fs.writeFileSync(file, 'a\nb\nc\n');
     await evalClj(window, `(do (cmd/exec! :open-path "${file}") :opened)`);
     await expect.poll(async () => await evalClj(window, `(count (pool/by-path "${file}"))`)).toBe('1');
+    // Wait for the projection to have caught up before writing into the state.
+    // `lt.state.objects/sync!` runs from editor behaviors and owns `:results`,
+    // so a write that lands before the last one is overwritten by it — which is
+    // a race the CodeMirror 5 timing happened to hide.
+    await expect.poll(async () => await evalClj(window,
+        `(contains? (:editors @lt.state/app) "${file}")`)).toBe('true');
 
     await evalClj(window, `
         (do (swap! lt.state/app assoc :results
@@ -355,13 +378,13 @@ test('a value that is not data is hosted rather than described', async ({ window
 
     // Sandboxed, because a value is not trusted markup — it came from whatever
     // was evaluated.
-    const frame = window.locator('.CodeMirror .band__frame');
+    const frame = window.locator(`${EDITOR} .band__frame`);
     await expect.poll(async () => await frame.count()).toBe(1);
     expect(await frame.getAttribute('sandbox')).toBe('');
     // Text stays text.
-    expect(await window.textContent('.CodeMirror .band .band__value')).toBe('just words');
+    expect(await window.textContent(`${EDITOR} .band .band__value`)).toBe('just words');
     // And a mime nothing can draw says so rather than rendering an object.
-    expect(await window.textContent('.CodeMirror .band .band__note')).toContain('video/mp4');
+    expect(await window.textContent(`${EDITOR} .band .band__note`)).toContain('video/mp4');
 
     await evalClj(window, `
         (do (swap! lt.state/app assoc :results {})
@@ -380,19 +403,25 @@ test('a watch ticks on its own clock, not the window\'s', async ({ window }) => 
     fs.writeFileSync(file, 'loop\nrecur\ndone\n');
     await evalClj(window, `(do (cmd/exec! :open-path "${file}") :opened)`);
     await expect.poll(async () => await evalClj(window, `(count (pool/by-path "${file}"))`)).toBe('1');
+    // Wait for the projection to have caught up before writing into the state.
+    // `lt.state.objects/sync!` runs from editor behaviors and owns `:results`,
+    // so a write that lands before the last one is overwritten by it — which is
+    // a race the CodeMirror 5 timing happened to hide.
+    await expect.poll(async () => await evalClj(window,
+        `(contains? (:editors @lt.state/app) "${file}")`)).toBe('true');
 
     await evalClj(window, `
         (do (swap! lt.state/app assoc :watches
                    {["${file}" 1 [:i]] {:expression "(recur (inc i))"}})
             :watching)`);
-    await expect.poll(async () => await window.locator('.CodeMirror .band--watch').count()).toBe(1);
+    await expect.poll(async () => await window.locator(`${EDITOR} .band--watch`).count()).toBe(1);
 
     // Sixty readings. The main atom is not touched by any of them.
     const before = await evalClj(window, '(hash @lt.state/app)');
     await evalClj(window, `
         (do (dotimes [i 60] (lt.state/observe! ["${file}" 1 [:i]] i)) :ticked)`);
 
-    await expect.poll(async () => await window.textContent('.CodeMirror .band--watch'))
+    await expect.poll(async () => await window.textContent(`${EDITOR} .band--watch`))
         .toContain('59');
     expect(await evalClj(window, '(hash @lt.state/app)')).toBe(before);
     expect(await evalClj(window, `(:reads (get @lt.state/watch-values ["${file}" 1 [:i]]))`)).toBe('60');
@@ -501,6 +530,9 @@ test('an editor is hosted inside the chrome, and never diffed', async ({ window 
     // foreign DOM we must never diff. The hiccup is an empty keyed element and
     // a mount hook; everything inside belongs to CodeMirror.
     //
+    // Asked for by keyword, the way `lt.ui.view` asks: an alias rather than a
+    // function is what keeps the view layer loadable without a DOM.
+    //
     // Rendered into a root of its own rather than through the whole window,
     // because that is the mechanism — the window adds a projection whose
     // timing has nothing to do with what is being asserted here.
@@ -511,14 +543,14 @@ test('an editor is hosted inside the chrome, and never diffed', async ({ window 
     await evalClj(window, `
         (do (def host (js/document.createElement "div"))
             (js/document.body.appendChild host)
-            (replicant.dom/render host [:div.probe-chrome (lt.ui.pane/pane "${file}")])
+            (replicant.dom/render host [:div.probe-chrome [:lt.ui.pane/pane {:path "${file}"}]])
             :mounted)`);
 
     // A real editor, with the real content, inside a view.
     await expect.poll(async () => await evalClj(window, '(count (lt.ui.pane/mounted))')).toBe('1');
     const pane = window.locator('.probe-chrome .pane');
-    await expect.poll(async () => await pane.locator('.CodeMirror').count()).toBe(1);
-    expect(await pane.locator('.CodeMirror').textContent()).toContain('gamma');
+    await expect.poll(async () => await pane.locator(EDITOR).count()).toBe(1);
+    expect(await pane.locator(EDITOR).textContent()).toContain('gamma');
 
     // Re-rendering the chrome does not touch it. The node the editor is in is
     // the node it was in, which is what :replicant/key buys — without it a
@@ -526,16 +558,16 @@ test('an editor is hosted inside the chrome, and never diffed', async ({ window 
     await evalClj(window, `
         (do (replicant.dom/render host [:div.probe-chrome
                                         [:span.noise "something changed"]
-                                        (lt.ui.pane/pane "${file}")])
+                                        [:lt.ui.pane/pane {:path "${file}"}]])
             :rendered)`);
     expect(await evalClj(window, '(count (lt.ui.pane/mounted))')).toBe('1');
-    expect(await pane.locator('.CodeMirror').count()).toBe(1);
+    expect(await pane.locator(EDITOR).count()).toBe(1);
 
     // And taking the pane out of the hiccup destroys the editor rather than
     // leaking it — the unmount hook is the other half of the handoff.
     await evalClj(window, '(do (replicant.dom/render host [:div.probe-chrome]) :hidden)');
     await expect.poll(async () => await evalClj(window, '(count (lt.ui.pane/mounted))')).toBe('0');
-    expect(await pane.locator('.CodeMirror').count()).toBe(0);
+    expect(await pane.locator(EDITOR).count()).toBe(0);
 
     await evalClj(window, `
         (do (lt.ui.pane/clear!)

@@ -18,7 +18,8 @@
             [lt.objs.editor.pool :as pool]
             [lt.objs.files :as files]
             [lt.objs.opener :as opener]
-            [lt.util.dom :as dom]))
+            [lt.util.dom :as dom]
+            [replicant.alias :refer-macros [defalias]]))
 
 (defonce ^:private instances (atom {}))
 
@@ -67,12 +68,20 @@
     (swap! instances dissoc path)
     (object/destroy! ed)))
 
-(defn pane
-  "Hiccup for an editor showing `path`.
+(defalias pane
+  "Hiccup for an editor showing `:path`.
 
   Empty, keyed, and with hooks either side. Everything between the hooks is the
-  editor's and Replicant is told nothing about it."
-  [path]
+  editor's and Replicant is told nothing about it.
+
+  An alias rather than a function, so that `lt.ui.view` can ask for an editor by
+  writing `[:lt.ui.pane/pane {:path p}]` without requiring this namespace. That
+  is not tidiness: hosting an editor means loading the editor, which means
+  loading singultus and `lt.util.dom`, which extend browser types at load and
+  cannot be loaded anywhere without a DOM. Requiring it made every view
+  unloadable under `node`, and the ClojureScript unit suite failed at import.
+  The view layer stays a pure function of a value; the keyword is the seam."
+  [{:keys [path]}]
   [:div.pane
    {:replicant/key path
     :replicant/on-mount (fn [{:replicant/keys [node]}] (mount! node path))

@@ -22,46 +22,53 @@ async function openFile(window: Page, file: string): Promise<void> {
         }, [file], { timeout: 30_000 });
 }
 
-test('multiple cursors select, edit and clear', async ({ window, ltErrors }) => {
-    const dir = scratchDir('cursors');
-    const file = path.join(dir, 'probe.js');
-    fs.writeFileSync(file, 'const total = 1;\nconst other = total + total;\n');
+/** One engine now. The constant stays so the file reads as it did. */
+const engine = ':cm6';
+test(`multiple cursors select, edit and clear, on ${engine}`, async ({ window, ltErrors }) => {
+// The sublime commands were a CodeMirror 5 addon registering on the
+// CodeMirror 5 global. CodeMirror 6 keeps multiple selections in the state, so
+// most of them turn out to be a few lines about `EditorSelection` — but they
+// had to be written, because nothing carried them over.
 
-    await openFile(window, file);
+const dir = scratchDir('cursors');
+const file = path.join(dir, 'probe.js');
+fs.writeFileSync(file, 'const total = 1;\nconst other = total + total;\n');
 
-    const result = await window.evaluate(([f]) => {
-        const lt = (globalThis as any).lt, cljs = (globalThis as any).cljs;
-        const kw = (n: string) => cljs.core.keyword.call(null, n);
-        const run = (c: string) => lt.objs.command.exec_BANG_(kw(c));
-        const ed = cljs.core.first.call(null, lt.objs.editor.pool.by_path(f));
-        const cm = lt.objs.editor.__GT_cm_ed(ed);
+await openFile(window, file);
 
-        cm.setCursor({ line: 0, ch: 6 });
-        run('editor.sublime.selectNextOccurrence');
-        run('editor.sublime.selectNextOccurrence');
-        run('editor.sublime.selectNextOccurrence');
-        const selected = cm.listSelections().length;
+const result = await window.evaluate(([f]) => {
+    const lt = (globalThis as any).lt, cljs = (globalThis as any).cljs;
+    const kw = (n: string) => cljs.core.keyword.call(null, n);
+    const run = (c: string) => lt.objs.command.exec_BANG_(kw(c));
+    const ed = cljs.core.first.call(null, lt.objs.editor.pool.by_path(f));
+    const cm = lt.objs.editor.__GT_cm_ed(ed);
 
-        run('editor.sublime.undoSelection');
-        const afterUndo = cm.listSelections().length;
-        run('editor.sublime.redoSelection');
+    cm.setCursor({ line: 0, ch: 6 });
+    run('editor.sublime.selectNextOccurrence');
+    run('editor.sublime.selectNextOccurrence');
+    run('editor.sublime.selectNextOccurrence');
+    const selected = cm.listSelections().length;
 
-        cm.replaceSelections(cm.listSelections().map(() => 'sum'));
-        const text = cm.getValue().split('\n')[1];
+    run('editor.sublime.undoSelection');
+    const afterUndo = cm.listSelections().length;
+    run('editor.sublime.redoSelection');
 
-        run('editor.sublime.singleSelectionTop');
-        const afterClear = cm.listSelections().length;
-        return { selected, afterUndo, text, afterClear };
-    }, [file]) as { selected: number; afterUndo: number; text: string; afterClear: number };
+    cm.replaceSelections(cm.listSelections().map(() => 'sum'));
+    const text = cm.getValue().split('\n')[1];
 
-    // Three occurrences of `total`, all selected, all replaced at once.
-    expect(result.selected).toBe(3);
-    expect(result.afterUndo).toBe(2);
-    expect(result.text).toBe('const other = sum + sum;');
-    expect(result.afterClear).toBe(1);
-    expect(await ltErrors()).toEqual([]);
+    run('editor.sublime.singleSelectionTop');
+    const afterClear = cm.listSelections().length;
+    return { selected, afterUndo, text, afterClear };
+}, [file]) as { selected: number; afterUndo: number; text: string; afterClear: number };
 
-    fs.rmSync(dir, { recursive: true, force: true });
+// Three occurrences of `total`, all selected, all replaced at once.
+expect(result.selected).toBe(3);
+expect(result.afterUndo).toBe(2);
+expect(result.text).toBe('const other = sum + sum;');
+expect(result.afterClear).toBe(1);
+expect(await ltErrors()).toEqual([]);
+
+fs.rmSync(dir, { recursive: true, force: true });
 });
 
 test('and every one of them is reachable from a key', async ({ window }) => {

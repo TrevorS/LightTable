@@ -1,6 +1,9 @@
 (ns lt.objs.editor
-  "Provide fns and behaviors for interfacing with a CodeMirror editor
-  object. Also manage defining and loading [CodeMirror](http://codemirror.net/doc/manual.html).
+  "Provide fns and behaviors for interfacing with an editor object.
+
+  The editor is CodeMirror 6 wearing CodeMirror 5's method names — see
+  src-window/cm6-editor.ts for why, and note that the documentation links below
+  point at CodeMirror 5's manual because that is what the names mean.
 
   Editor objects are frequently used as arguments for functions, but often only the internal
   CodeMirror object is actually used. Where the following documentation referers to the editor,
@@ -28,28 +31,14 @@
             [lt.util.dom :as dom]
             [lt.util.load :as load]
             [lt.objs.platform :as platform]
-            ;; CodeMirror and the addons Light Table always wants. These used to
-            ;; be read off disk and eval'd; requiring them lets the compiler and
-            ;; the module system see them like anything else. Addons have no
-            ;; exports — they register themselves on the CodeMirror they require,
-            ;; which is the same instance bound here.
-            ["codemirror" :as CodeMirror]
-            ["codemirror/addon/edit/matchbrackets"]
-            ["codemirror/addon/edit/closebrackets"]
-            ["codemirror/addon/comment/comment"]
-            ["codemirror/addon/selection/active-line"]
-            ["codemirror/addon/scroll/scrollpastend"]
-            ["codemirror/addon/mode/overlay"]
-            ["codemirror/addon/mode/simple"]
-            ["codemirror/addon/display/rulers"]
-            ["codemirror/keymap/sublime"])
+            [lt.window.modules :as modules])
   (:require-macros [lt.macros :refer [behavior]]))
 
 (defn ^js ->cm-ed
   "Return editor `e`'s CodeMirror object.
 
-  Hinted ^js so that the compiler can resolve the CodeMirror methods called on
-  the result, rather than warning at every one of them."
+  Hinted ^js so that the compiler can resolve the methods called on the result,
+  rather than warning at every one of them."
   [e]
   (if (satisfies? IDeref e)
     (:ed @e)
@@ -99,28 +88,33 @@
   e)
 
 
-;;*********************************************************
-;; commands
-;;*********************************************************
-
-(defn- expand-tab [^js cm]
-  (cond
-   (.somethingSelected cm) (.indentSelection cm "add")
-   (.getOption cm "indentWithTabs") (.replaceSelection cm "\t" "end" "+input")
-   :else
-   (let [spaces (.join (js/Array (inc (.getOption cm "indentUnit"))) " ")]
-     (.replaceSelection cm spaces "end" "+input"))))
-
 
 ;;*********************************************************
 ;; Creating
 ;;*********************************************************
 
 (defn- headless
-  "Create a headless CodeMirror object using `opts`."
+  "Create a detached editor using `opts`.
+
+  Detached because the pane moves the element where it belongs afterwards.
+  CodeMirror 6 needs a parent to be built into, so it gets one nobody keeps —
+  what matters is the element [[->elem]] finds."
   [opts]
-  (-> (js/CodeMirror. (fn []))
+  (-> (.makeCm6Editor modules/cm6-editor (js/document.createElement "div") #js {})
       (set-options opts)))
+
+(defn scratch
+  "A detached editor holding `text`, for code that needs somewhere to put marks
+  and make edits without touching what anybody is looking at.
+
+  `lt.plugins.watches` is the caller: it copies the buffer, marks the watched
+  expressions in the copy and rewrites each one with instrumented source, so
+  that the positions stay right while the text underneath them changes. That
+  used to be a CodeMirror 5 `Doc`, which was the same idea with a lighter
+  object behind it."
+  [text]
+  (.makeCm6Editor modules/cm6-editor (js/document.createElement "div")
+                  #js {:value (or text "")}))
 
 (defn- make [context]
   (let [e (headless {:mode (if (:mime context)
@@ -135,8 +129,8 @@
     (when-let [c (:content context)]
       (set-val e c)
       (clear-history e))
-    (when (:doc context)
-      (.swapDoc ^js e (-> (:doc context) deref :doc)))
+    (when-let [doc (:doc context)]
+      (set-val e (:text @doc)))
     e))
 
 (defn on
@@ -191,9 +185,6 @@
        :string (.-string token)
        :type (.-type token)
        :state (.-state token)})))
-
-(defn- ->token-js [e pos]
-  (.getTokenAt (->cm-ed e) (clj->js pos)))
 
 (defn ->token-type
   "Return the type of token located at position `pos` for editor `e`.
@@ -429,13 +420,6 @@
   [e start end]
   (.setSelection (->cm-ed e) (clj->js start) (clj->js end)))
 
-(defn set-extending
-  "Sets editor's 'extending' flag to `ext?`.
-
-  See [setExtending](http://codemirror.net/doc/manual.html#setExtending)."
-  [e ext?]
-  (.setExtending (->cm-ed e) ext?))
-
 (defn replace-selection
   "Replace selection with `neue` for editor `e`.
 
@@ -497,12 +481,38 @@
     (ev/capture elem :mousedown func)
     e))
 
-(defn extension
-  "Add function `func` named `name` to CodeMirror API.
+(defn exec-command!
+  "Run the CodeMirror command named `cmd` on editor `e`.
 
-  See [defineExtension](http://codemirror.net/doc/manual.html#defineExtension)."
-  [name func]
-  (.defineExtension js/CodeMirror name func))
+  The command table is `cm6-commands.ts`. One place knows about it, rather than
+  the fifty-odd commands in [[lt.objs.editor.pool]] that each used to decide
+  where to look by not deciding."
+  [e cmd & _args]
+  (.execCommand (->cm-ed e) cmd))
+
+(defn find!
+  "Search editor `e` for `query` and move to the first match.
+
+  A function rather than a command name, because the query is part of the
+  editor's state rather than an argument to a global — see [[lt.objs.find]],
+  which does not know that."
+  [e query & [reverse?]]
+  (.search (->cm-ed e) query (boolean reverse?)))
+
+(defn find-next!
+  "Move to the next match, or the previous one when `reverse?`."
+  [e & [reverse?]]
+  (.findNext (->cm-ed e) (boolean reverse?)))
+
+(defn clear-search!
+  "Forget the query, which takes the match highlighting with it."
+  [e]
+  (.clearSearch (->cm-ed e)))
+
+(defn replace!
+  "Replace the current match with `text`, or every match when `all?`."
+  [e text & [reverse? all?]]
+  (.replace (->cm-ed e) text (boolean reverse?) (boolean all?)))
 
 (defn line-widget
   "Add line widget `elem` (an element), along with any options, at `line` to editor `e`.
@@ -586,22 +596,6 @@
   See [removeLineClass](http://codemirror.net/doc/manual.html#removeLineClass)."
   [e lh plane class]
   (.removeLineClass (->cm-ed e) lh (name plane) (name class)))
-
-(defn show-hints
-  "Display hint `hint-fn` for editor `e` with any provided options.
-
-  See [show-hint.js](http://codemirror.net/addon/hint/show-hint.js)."
-  [e hint-fn options]
-  (js/CodeMirror.showHint (->cm-ed e) hint-fn (clj->js options))
-  e)
-
-(defn inner-mode
-  "Sets the innerMode of editor `e`'s CodeMirror object with `state` if provided. Returns the mode."
-  ([e] (inner-mode e nil))
-  ([e state]
-   (let [state (or state (->> (cursor e) (->token-js e) (.-state)))]
-     (-> (js/CodeMirror.innerMode (.getMode (->cm-ed e)) state)
-         (.-mode)))))
 
 (defn adjust-loc
   "Adjust position `loc` with integer offset `dir` and the key `axis`. Axis should either be `:line` or `:ch`.
@@ -692,20 +686,14 @@
   [e gen]
   (not (.isClean (->cm-ed e) gen)))
 
-(defn get-doc
-  "Returns currently active document for the editor.
-
-  See [getDoc](http://codemirror.net/doc/manual.html#getDoc)."
-  [e]
-  (.getDoc (->cm-ed e)))
-
 (defn set-doc!
-  "Adds document `doc` to editor `e`. If there is already a document associated with the editor then it is replaced. Returns old document.
+  "Show `doc`'s text in editor `e`, and remember which document it is.
 
-  See [swapDoc](http://codemirror.net/doc/manual.html#swapDoc)."
+  The text, because a document is a file's identity here rather than a buffer
+  two editors can share — see [[lt.objs.document]]."
   [e doc]
   (object/merge! e {:doc doc})
-  (.swapDoc (->cm-ed e) (:doc @doc)))
+  (set-val e (:text @doc)))
 
 (defn fold-code
   "Attempts to fold code starting at position `loc`. If position is not provided then folding will be attempted at the cursor position.
@@ -753,10 +741,6 @@
 ;;*********************************************************
 ;; Object
 ;;*********************************************************
-
-;; Light Table's plugin API assumes a global CodeMirror, and so does much of
-;; this codebase. Requiring the module no longer creates one, so publish it.
-(set! (.-CodeMirror js/window) CodeMirror)
 
 (object/object* ::editor
          :tags #{:editor :editor.inline-result :editor.keys.normal}
@@ -1002,36 +986,6 @@
                              :order 5
                              :click (fn []
                                       (select-all this))})))
-
-(behavior ::init-codemirror
-          :triggers #{:init}
-          :reaction (fn [this]
-                      ;; Modes and fold addons arrive with the bundle — see
-                      ;; lt.editor.codemirror-modes, which lt.core requires.
-                      ;; They used to be walked out of node_modules and
-                      ;; require'd here, which stopped working once CodeMirror
-                      ;; itself was bundled: a mode loaded that way registers
-                      ;; against the copy it finds in node_modules rather than
-                      ;; the one the editor is using.
-                      (load/css "node_modules/codemirror/addon/fold/foldgutter.css")
-                      (aset js/CodeMirror.keyMap.basic "Tab" expand-tab)))
-
-(behavior ::load-addon
-          :triggers #{:object.instant-load}
-          :desc "App: Load CodeMirror addon path(s)"
-          :params [{:label "path(s)"
-                    :example "edit/matchtags.js"}]
-          :type :user
-          :reaction (fn [this path]
-                      (let [paths (map #(files/join (files/lt-home)
-                                                    "core/node_modules/codemirror/addon" %)
-                                       (if (coll? path) path [path]))]
-                        (object/call-behavior-reaction :lt.objs.plugins/load-js
-                                                       this
-                                                       (filter #(= (files/ext %) "js") paths))
-                        (object/call-behavior-reaction :lt.objs.plugins/load-css
-                                                       this
-                                                       (filter #(= (files/ext %) "css") paths)))))
 
 (behavior ::set-rulers
           :triggers #{:object.instant}

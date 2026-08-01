@@ -67,7 +67,7 @@
                         (let [type (files/path->type path)
                               prev-tags (-> @this :info :tags)
                               mode (files/path->mode path)
-                              neue-doc (doc/create {:doc (editor/get-doc this)
+                              neue-doc (doc/create {:text (editor/->val this)
                                                     :line-ending files/line-ending
                                                     :mtime (files/stats path)
                                                     :mime mode})]

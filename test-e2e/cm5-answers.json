@@ -1,0 +1,214 @@
+{
+ "editor::ed.getValue()": "zero line\none line\ntwo line\nthree\n",
+ "editor::ed.getLine(1)": "one line",
+ "editor::ed.lineCount()": 5,
+ "editor::ed.firstLine()": 0,
+ "editor::ed.lastLine()": 4,
+ "editor::ed.getRange({line:0,ch:5}, {line:1,ch:3})": "line\none",
+ "editor::ed.indexFromPos({line:2,ch:4})": 23,
+ "editor::(function(p){return p.line+\":\"+p.ch;})(ed.posFromIndex(14))": "1:4",
+ "editor::ed.getLineNumber(ed.getLineHandle(2))": 2,
+ "editor::(ed.setCursor({line:2,ch:3}), (function(p){return p.line+\":\"+p.ch;})(ed.getCursor()))": "2:3",
+ "editor::(ed.setCursor({line:1,ch:0}), ed.somethingSelected())": false,
+ "editor::(ed.setSelection({line:0,ch:0},{line:1,ch:3}), ed.getSelection())": "zero line\none",
+ "editor::(ed.setSelection({line:0,ch:0},{line:1,ch:3}), ed.somethingSelected())": true,
+ "editor::(ed.setSelection({line:0,ch:0},{line:0,ch:4}), (function(p){return p.line+\":\"+p.ch;})(ed.getCursor(\"start\")))": "0:0",
+ "editor::(ed.setSelection({line:0,ch:0},{line:0,ch:4}), (function(p){return p.line+\":\"+p.ch;})(ed.getCursor(\"end\")))": "0:4",
+ "editor::(ed.setSelection({line:0,ch:0},{line:0,ch:4}), ed.replaceSelection(\"ZERO\"), ed.getLine(0))": "ZERO line",
+ "editor::(ed.replaceRange(\"X\", {line:0,ch:0}), ed.getLine(0))": "Xzero line",
+ "editor::(ed.replaceRange(\"\", {line:0,ch:0}, {line:0,ch:5}), ed.getLine(0))": "line",
+ "editor::(ed.replaceRange(\"new\\n\", {line:1,ch:0}), ed.lineCount())": 6,
+ "editor::(ed.setValue(\"only\\n\"), ed.getValue())": "only\n",
+ "editor::(ed.replaceRange(\"Q\", {line:0,ch:0}), ed.undo(), ed.getLine(0))": "zero line",
+ "editor::(ed.replaceRange(\"Q\", {line:0,ch:0}), ed.undo(), ed.redo(), ed.getLine(0))": "Qzero line",
+ "editor::ed.operation(function () { return 42; })": 42,
+ "editor::(function(p){return p.line+\":\"+p.ch;})(ed.getCursor())": "0:0",
+ "editor::(ed.setCursor({line:99,ch:99}), (function(p){return p.line+\":\"+p.ch;})(ed.getCursor()))": "4:0",
+ "editor::ed.getRange({line:0,ch:0},{line:99,ch:99})": "zero line\none line\ntwo line\nthree\n",
+ "editor::(ed.markText({line:0,ch:0},{line:0,ch:4},{className:\"m\"}), ed.findMarksAt({line:0,ch:2}).length)": 1,
+ "editor::(ed.markText({line:0,ch:0},{line:0,ch:4},{className:\"m\"}), ed.findMarksAt({line:2,ch:0}).length)": 0,
+ "editor::(function(){var m=ed.markText({line:0,ch:0},{line:0,ch:4},{className:\"m\"}); m.clear(); return ed.findMarksAt({line:0,ch:2}).length;})()": 0,
+ "editor::(function(){var m=ed.markText({line:1,ch:0},{line:1,ch:3},{className:\"m\"}); ed.replaceRange(\"two\\nlines\\n\",{line:0,ch:0}); var f=m.find(); return f.from.line+\":\"+f.from.ch;})()": "3:0",
+ "editor::(ed.indentLine(1), ed.getLine(1).length > \"one line\".length)": false,
+ "editor::(ed.setSelection({line:0,ch:0},{line:1,ch:0}), ed.indentSelection(), ed.getValue().length > 30)": true,
+ "editor::typeof ed.charCoords({line:0,ch:0}).left": "number",
+ "editor::(ed.scrollTo(0, 0), ed.getValue().length)": 34,
+ "editor::ed.getTokenAt({line:0,ch:1}) === null": false,
+ "command::goCharLeft|1:8": "first line here\n    indented line\nlast\n|1:7",
+ "command::goCharLeft|0:0": "first line here\n    indented line\nlast\n|0:0",
+ "command::goCharLeft|2:4": "first line here\n    indented line\nlast\n|2:3",
+ "command::goCharLeft|1:0": "first line here\n    indented line\nlast\n|0:15",
+ "command::goCharRight|1:8": "first line here\n    indented line\nlast\n|1:9",
+ "command::goCharRight|0:0": "first line here\n    indented line\nlast\n|0:1",
+ "command::goCharRight|2:4": "first line here\n    indented line\nlast\n|3:0",
+ "command::goCharRight|1:0": "first line here\n    indented line\nlast\n|1:1",
+ "command::goLineUp|1:8": "first line here\n    indented line\nlast\n|0:8",
+ "command::goLineUp|0:0": "first line here\n    indented line\nlast\n|0:0",
+ "command::goLineUp|2:4": "first line here\n    indented line\nlast\n|1:4",
+ "command::goLineUp|1:0": "first line here\n    indented line\nlast\n|0:0",
+ "command::goLineDown|1:8": "first line here\n    indented line\nlast\n|2:4",
+ "command::goLineDown|0:0": "first line here\n    indented line\nlast\n|1:0",
+ "command::goLineDown|2:4": "first line here\n    indented line\nlast\n|3:0",
+ "command::goLineDown|1:0": "first line here\n    indented line\nlast\n|2:0",
+ "command::goLineStart|1:8": "first line here\n    indented line\nlast\n|1:0",
+ "command::goLineStart|0:0": "first line here\n    indented line\nlast\n|0:0",
+ "command::goLineStart|2:4": "first line here\n    indented line\nlast\n|2:0",
+ "command::goLineStart|1:0": "first line here\n    indented line\nlast\n|1:0",
+ "command::goLineEnd|1:8": "first line here\n    indented line\nlast\n|1:17",
+ "command::goLineEnd|0:0": "first line here\n    indented line\nlast\n|0:15",
+ "command::goLineEnd|2:4": "first line here\n    indented line\nlast\n|2:4",
+ "command::goLineEnd|1:0": "first line here\n    indented line\nlast\n|1:17",
+ "command::goDocStart|1:8": "first line here\n    indented line\nlast\n|0:0",
+ "command::goDocStart|0:0": "first line here\n    indented line\nlast\n|0:0",
+ "command::goDocStart|2:4": "first line here\n    indented line\nlast\n|0:0",
+ "command::goDocStart|1:0": "first line here\n    indented line\nlast\n|0:0",
+ "command::goDocEnd|1:8": "first line here\n    indented line\nlast\n|3:0",
+ "command::goDocEnd|0:0": "first line here\n    indented line\nlast\n|3:0",
+ "command::goDocEnd|2:4": "first line here\n    indented line\nlast\n|3:0",
+ "command::goDocEnd|1:0": "first line here\n    indented line\nlast\n|3:0",
+ "command::goWordLeft|1:8": "first line here\n    indented line\nlast\n|1:4",
+ "command::goWordLeft|0:0": "first line here\n    indented line\nlast\n|0:0",
+ "command::goWordLeft|2:4": "first line here\n    indented line\nlast\n|2:0",
+ "command::goWordLeft|1:0": "first line here\n    indented line\nlast\n|0:11",
+ "command::goWordRight|1:8": "first line here\n    indented line\nlast\n|1:12",
+ "command::goWordRight|0:0": "first line here\n    indented line\nlast\n|0:5",
+ "command::goWordRight|2:4": "first line here\n    indented line\nlast\n|3:0",
+ "command::goWordRight|1:0": "first line here\n    indented line\nlast\n|1:12",
+ "command::goGroupLeft|1:8": "first line here\n    indented line\nlast\n|1:4",
+ "command::goGroupLeft|0:0": "first line here\n    indented line\nlast\n|0:0",
+ "command::goGroupLeft|2:4": "first line here\n    indented line\nlast\n|2:0",
+ "command::goGroupLeft|1:0": "first line here\n    indented line\nlast\n|0:15",
+ "command::goGroupRight|1:8": "first line here\n    indented line\nlast\n|1:12",
+ "command::goGroupRight|0:0": "first line here\n    indented line\nlast\n|0:5",
+ "command::goGroupRight|2:4": "first line here\n    indented line\nlast\n|3:0",
+ "command::goGroupRight|1:0": "first line here\n    indented line\nlast\n|1:4",
+ "command::goLineStartSmart|1:8": "first line here\n    indented line\nlast\n|1:4",
+ "command::goLineStartSmart|0:0": "first line here\n    indented line\nlast\n|0:0",
+ "command::goLineStartSmart|2:4": "first line here\n    indented line\nlast\n|2:0",
+ "command::goLineStartSmart|1:0": "first line here\n    indented line\nlast\n|1:4",
+ "command::delCharBefore|1:8": "first line here\n    indnted line\nlast\n|1:7",
+ "command::delCharBefore|0:0": "first line here\n    indented line\nlast\n|0:0",
+ "command::delCharBefore|2:4": "first line here\n    indented line\nlas\n|2:3",
+ "command::delCharBefore|1:0": "first line here    indented line\nlast\n|0:15",
+ "command::delCharAfter|1:8": "first line here\n    indeted line\nlast\n|1:8",
+ "command::delCharAfter|0:0": "irst line here\n    indented line\nlast\n|0:0",
+ "command::delCharAfter|2:4": "first line here\n    indented line\nlast|2:4",
+ "command::delCharAfter|1:0": "first line here\n   indented line\nlast\n|1:0",
+ "command::delWordBefore|1:8": "first line here\n    nted line\nlast\n|1:4",
+ "command::delWordBefore|0:0": "first line here\n    indented line\nlast\n|0:0",
+ "command::delWordBefore|2:4": "first line here\n    indented line\n\n|2:0",
+ "command::delWordBefore|1:0": "first line     indented line\nlast\n|0:11",
+ "command::delWordAfter|1:8": "first line here\n    inde line\nlast\n|1:8",
+ "command::delWordAfter|0:0": " line here\n    indented line\nlast\n|0:0",
+ "command::delWordAfter|2:4": "first line here\n    indented line\nlast|2:4",
+ "command::delWordAfter|1:0": "first line here\n line\nlast\n|1:0",
+ "command::delGroupBefore|1:8": "first line here\n    nted line\nlast\n|1:4",
+ "command::delGroupBefore|0:0": "first line here\n    indented line\nlast\n|0:0",
+ "command::delGroupBefore|2:4": "first line here\n    indented line\n\n|2:0",
+ "command::delGroupBefore|1:0": "first line here    indented line\nlast\n|0:15",
+ "command::delGroupAfter|1:8": "first line here\n    inde line\nlast\n|1:8",
+ "command::delGroupAfter|0:0": " line here\n    indented line\nlast\n|0:0",
+ "command::delGroupAfter|2:4": "first line here\n    indented line\nlast|2:4",
+ "command::delGroupAfter|1:0": "first line here\nindented line\nlast\n|1:0",
+ "command::delLineLeft|1:8": "first line here\nnted line\nlast\n|1:0",
+ "command::delLineLeft|0:0": "first line here\n    indented line\nlast\n|0:0",
+ "command::delLineLeft|2:4": "first line here\n    indented line\n\n|2:0",
+ "command::delLineLeft|1:0": "first line here\n    indented line\nlast\n|1:0",
+ "command::killLine|1:8": "first line here\n    inde\nlast\n|1:8",
+ "command::killLine|0:0": "\n    indented line\nlast\n|0:0",
+ "command::killLine|2:4": "first line here\n    indented line\nlast|2:4",
+ "command::killLine|1:0": "first line here\n\nlast\n|1:0",
+ "command::deleteLine|1:8": "first line here\nlast\n|1:0",
+ "command::deleteLine|0:0": "    indented line\nlast\n|0:0",
+ "command::deleteLine|2:4": "first line here\n    indented line\n|2:0",
+ "command::deleteLine|1:0": "first line here\nlast\n|1:0",
+ "command::newlineAndIndent|1:8": "first line here\n    inde\n    nted line\nlast\n|2:4",
+ "command::newlineAndIndent|0:0": "\nfirst line here\n    indented line\nlast\n|1:0",
+ "command::newlineAndIndent|2:4": "first line here\n    indented line\nlast\n\n|3:0",
+ "command::newlineAndIndent|1:0": "first line here\n\nindented line\nlast\n|2:0",
+ "command::transposeChars|1:8": "first line here\n    indneted line\nlast\n|1:9",
+ "command::transposeChars|0:0": "first line here\n    indented line\nlast\n|0:0",
+ "command::transposeChars|2:4": "first line here\n    indented line\nlats\n|2:4",
+ "command::transposeChars|1:0": "first line her \ne   indented line\nlast\n|1:1",
+ "sublime::duplicateLine": {
+  "value": "gamma\ngamma\nalpha\nbeta\n",
+  "cursors": [
+   "1:0"
+  ]
+ },
+ "sublime::swapLineDown": {
+  "value": "alpha\ngamma\nbeta\n",
+  "cursors": [
+   "1:0"
+  ]
+ },
+ "sublime::swapLineUp": {
+  "value": "gamma\nbeta\nalpha\n",
+  "cursors": [
+   "1:0"
+  ]
+ },
+ "sublime::sortLines": {
+  "value": "alpha\nbeta\ngamma\n",
+  "cursors": [
+   "3:0"
+  ]
+ },
+ "sublime::sortLinesInsensitive": {
+  "value": "alpha\nbeta\ngamma\n",
+  "cursors": [
+   "3:0"
+  ]
+ },
+ "sublime::selectNextOccurrence": {
+  "value": "gamma\nalpha\nbeta\n",
+  "cursors": [
+   "1:5"
+  ]
+ },
+ "sublime::addCursorToNextLine": {
+  "value": "gamma\nalpha\nbeta\n",
+  "cursors": [
+   "0:0",
+   "1:0"
+  ]
+ },
+ "sublime::addCursorToPrevLine": {
+  "value": "gamma\nalpha\nbeta\n",
+  "cursors": [
+   "1:0",
+   "2:0"
+  ]
+ },
+ "sublime::splitSelectionByLine": {
+  "value": "gamma\nalpha\nbeta\n",
+  "cursors": [
+   "0:5",
+   "1:5",
+   "2:4"
+  ]
+ },
+ "sublime::goToBracket": {
+  "value": "foo(bar, baz)\n",
+  "cursors": [
+   "0:12"
+  ]
+ },
+ "editor::ed.getLine(99)": {
+  "__undefined__": true
+ },
+ "treesitter::painted-classes": [
+  "cm-ts-function",
+  "cm-ts-keyword",
+  "cm-ts-operator",
+  "cm-ts-property",
+  "cm-ts-punctuation",
+  "cm-ts-punctuation-bracket",
+  "cm-ts-punctuation-bracket-1",
+  "cm-ts-punctuation-delimiter",
+  "cm-ts-type",
+  "cm-ts-type-builtin",
+  "cm-ts-variable",
+  "cm-ts-variable-parameter"
+ ]
+}

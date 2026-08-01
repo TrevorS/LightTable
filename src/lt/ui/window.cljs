@@ -22,7 +22,6 @@
             [lt.objs.tabs :as tabs]
             [lt.state :as state]
             [lt.state.objects :as from-objects]
-            [lt.ui.bands :as bands]
             [lt.ui.view :as view]
             [replicant.dom :as r]
             [singultus.core :as crate])
@@ -49,15 +48,11 @@
           :reaction (fn [ed & _]
                       (reset! state/cursor (editor/->cursor ed))))
 
-(behavior ::retire-bands
-          :triggers #{:close :destroy}
-          :desc "State: Take this editor's bands off when it closes"
-          :doc "A band is a line widget in an editor, and an editor that has
-                gone takes its widgets with it — but not the table that
-                remembers them, which would then hand out a node nobody can
-                see."
-          :reaction (fn [_ & _]
-                      (bands/forget-editor!)))
+;; There was a `::retire-bands` behavior here, which swept the table of drawn
+;; bands when an editor closed. There is no such table any more: on CodeMirror 6
+;; the widgets are state the editor holds, and on CodeMirror 5 the bookkeeping
+;; lives on the CodeMirror object itself — see `lt.objs.editor.bands`. Either
+;; way the bands go when the editor does, and nothing has to be told.
 
 (behavior ::on-close-destroy
           :triggers #{:close}

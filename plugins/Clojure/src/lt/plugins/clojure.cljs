@@ -70,14 +70,6 @@
 ;; highlighting
 ;;****************************************************
 
-(behavior ::highlight-comment-forms
-          :triggers #{:object.instant}
-          :desc "Clojure: Highlight comment forms as comments"
-          :type :user
-          :reaction (fn [this]
-                      (when-let [m ^js (ed/inner-mode this)]
-                        (set! (.-commentForms m) true))))
-
 ;;****************************************************
 ;; Lang object
 ;;****************************************************
