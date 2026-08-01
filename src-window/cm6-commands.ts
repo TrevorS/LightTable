@@ -353,6 +353,51 @@ const joinLines: Command = (view) => {
     return true;
 };
 
+/**
+ * The bracket enclosing `pos`, scanning in `dir`.
+ *
+ * This is CodeMirror 5's `scanForBracket`, and it is *not* bracket matching:
+ * matching answers "what closes the bracket under the cursor", and this answers
+ * "what bracket am I inside". The cursor is usually not on a bracket at all
+ * when you press the key, so the matching extension has nothing to say.
+ */
+const OPEN = '([{';
+const CLOSE = ')]}';
+
+const scanForBracket = (state: EditorState, pos: number, dir: 1 | -1): number | null => {
+    const doc = state.doc;
+    let depth = 0;
+    for (let at = pos; dir > 0 ? at < doc.length : at > 0; at += dir) {
+        const ch = dir > 0 ? doc.sliceString(at, at + 1) : doc.sliceString(at - 1, at);
+        const opening = OPEN.includes(ch);
+        const closing = CLOSE.includes(ch);
+        // Going forward, an opener is one level deeper and a closer is the way
+        // out; going back it is the other way round.
+        if (dir > 0 ? opening : closing) depth += 1;
+        else if (dir > 0 ? closing : opening) {
+            if (depth === 0) return dir > 0 ? at : at - 1;
+            depth -= 1;
+        }
+    }
+    return null;
+};
+
+/** Move to the bracket enclosing each cursor: the one after, else the one before. */
+const goToBracket: Command = (view) => {
+    const state = view.state;
+    const moved = state.selection.ranges.map((range) => {
+        const forward = scanForBracket(state, range.head, 1);
+        if (forward !== null && forward !== range.head) return EditorSelection.cursor(forward);
+        const back = scanForBracket(state, range.head, -1);
+        return EditorSelection.cursor(back !== null ? back + 1 : range.head);
+    });
+    view.dispatch({
+        selection: EditorSelection.create(moved, state.selection.mainIndex),
+        scrollIntoView: true
+    });
+    return true;
+};
+
 /** The state extension multiple selections need to exist at all. */
 export const multipleSelections = EditorState.allowMultipleSelections.of(true);
 
@@ -416,6 +461,7 @@ export const commands: Record<string, Command | StateCommand> = {
     selectLinesDownward: addCursorToLine(true),
     selectLinesUpward: addCursorToLine(false),
     selectScope: selectParentSyntax,
+    goToBracket,
     selectBetweenBrackets: selectMatchingBracket,
     duplicateLine: copyLineDown,
     swapLineUp: moveLineUp,
@@ -428,17 +474,19 @@ export const commands: Record<string, Command | StateCommand> = {
 };
 
 /**
- * Sublime commands with no CodeMirror 6 equivalent here, and why.
+ * Sublime commands with no CodeMirror 6 equivalent, and why.
  *
- * One left of the three. `selectScope` is `selectParentSyntax` — selecting the
- * enclosing syntax node is exactly what that is — and `selectBetweenBrackets`
- * is `selectMatchingBracket`. `goToBracket` only *moves* to the match, and
- * CodeMirror 6 has no command that does, so it wants writing against the
- * bracket-matching extension rather than mapping to a name.
+ * Empty, which is the answer for all twenty-one. Two of the three that looked
+ * like gaps turned out to be names — `selectScope` is `selectParentSyntax` and
+ * `selectBetweenBrackets` is `selectMatchingBracket` — and the third,
+ * `goToBracket`, wanted writing rather than mapping, because it scans for the
+ * bracket you are *inside* rather than the one you are *on*.
+ *
+ * Kept rather than deleted: the next command someone adds to the keymap goes
+ * here when it has no answer, and an empty list is a claim rather than an
+ * oversight.
  */
-export const UNSUPPORTED_COMMANDS: Record<string, string> = {
-    goToBracket: 'moves to the match rather than selecting to it; wants matchBrackets'
-};
+export const UNSUPPORTED_COMMANDS: Record<string, string> = {};
 
 /** Run a CodeMirror 5 command by name. False when there is no such command. */
 export function runCommand(name: string, view: EditorView): boolean {

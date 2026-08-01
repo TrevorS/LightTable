@@ -95,13 +95,23 @@ test('singleSelectionTop keeps the first cursor, not the last one', async ({ win
     expect(line).toEqual([1, 0]);
 });
 
+test('goToBracket goes to the bracket you are inside, not the one you are on', async ({ window }) => {
+    // The distinction that made this the last one. Bracket *matching* answers
+    // "what closes the bracket under the cursor", and the cursor is usually not
+    // on a bracket when you press this — so the matching extension had nothing
+    // to say and it had to be scanned for.
+    const [five, six] = await bothEngines(window, 'foo(bar, baz)\n',
+        'goToBracket', 'ed.setCursor({line: 0, ch: 6});');
+    expect(six).toEqual(five);
+});
+
 test('a command with no CodeMirror 6 answer is named rather than silently absent',
     async ({ window }) => {
     const gaps = await window.evaluate(
         () => Object.keys((globalThis as any).ltCm6Commands.UNSUPPORTED_COMMANDS));
-    // One left of the twenty-one, and it is the one that only *moves* to a
-    // bracket rather than selecting to it — CodeMirror 6 has no such command.
-    expect(gaps).toEqual(['goToBracket']);
+    // None of the twenty-one, now that goToBracket is written. The list stays
+    // so the next command someone adds has somewhere to be absent from.
+    expect(gaps).toEqual([]);
 
     // And every other sublime command Light Table registers is answered.
     const missing = await window.evaluate(() => {
