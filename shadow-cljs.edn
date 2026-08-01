@@ -12,7 +12,10 @@
                 "plugins/Javascript/src" "plugins/CSS/src" "plugins/HTML/src"
                 "plugins/Python/src"]
 
- :dependencies []
+ ;; Replicant renders the UI that is being written now: hiccup in, DOM out, by
+ ;; diffing rather than by binding into a node. See doc/rendering.md for how it
+ ;; sits beside singultus, which stays because `defui` is plugin API.
+ :dependencies [[no.cjohansen/replicant "2026.07.1"]]
 
  ;; Closure Compiler bundles a protobuf that reads memory through
  ;; sun.misc.Unsafe, and every JDK since 24 prints four lines about it on every
@@ -126,7 +129,14 @@
    ;; Nothing anyone evaluates in this editor needs to macroexpand the
    ;; compiler, and lt.core reaches it only because lt.objs.cljs-compiler is
    ;; what runs it.
-   :exclude    #{cljs.js}
+   ;;
+   ;; replicant.env is a macro namespace that calls `require` inside a `def` to
+   ;; find out whether it is compiling ClojureScript. Self-hosted ClojureScript
+   ;; will not compile that — `require` has to be top level — and it does not
+   ;; need to: nothing evaluated in the window recompiles Replicant itself, only
+   ;; the views that call it, and those need `replicant.dom`'s analysis rather
+   ;; than its macros.
+   :exclude    #{cljs.js replicant.env}
 
    ;; The same npm resolution as the app build. This target does not inherit
    ;; it, and without it the walk stops at the first `(:require ["codemirror"])`.

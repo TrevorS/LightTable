@@ -105,3 +105,60 @@ test('an object that is destroyed lets go of what it was watching', async ({ win
             :closed)`);
     await expect.poll(counts).toBe(before);
 });
+
+// ---------------------------------------------------------------------------
+// The UI that has actually been moved over.
+// ---------------------------------------------------------------------------
+
+test('a Replicant-rendered statusbar item updates where it sits', async ({ window }) => {
+    // The regression that the obvious implementation has. Rendering into a
+    // detached holder and handing out its first child passes every test until
+    // the node is moved somewhere — which the statusbar does immediately — and
+    // then updates land in the holder and the item on screen never changes
+    // again. It fails silently, so it needs asserting rather than watching.
+    const message = () => window.textContent('#statusbar .log .message');
+
+    await evalClj(window, '(do (lt.objs.notifos/set-msg! "first thing") :said)');
+    await expect.poll(message).toBe('first thing');
+
+    await evalClj(window, '(do (lt.objs.notifos/set-msg! "second thing") :said)');
+    await expect.poll(message).toBe('second thing');
+
+    // And the node is the one the object is holding, not a replacement — the
+    // statusbar appended this and would not learn about a new one.
+    expect(await evalClj(window, `
+        (= (object/->content lt.objs.statusbar/statusbar-loader)
+           (.closest (js/document.querySelector "#statusbar .log") "li"))`)).toBe('true');
+});
+
+test('and its class changes with the state it is rendered from', async ({ window }) => {
+    const toggle = () => window.getAttribute('#statusbar .console-toggle', 'class');
+    const count = () => window.textContent('#statusbar .console-toggle');
+
+    await evalClj(window, '(do (lt.objs.statusbar/clean) :clean)');
+    await expect.poll(count).toBe('0');
+    expect(await toggle()).not.toContain('dirty');
+
+    await evalClj(window, '(do (lt.objs.statusbar/dirty) (lt.objs.statusbar/dirty) :dirtied)');
+    await expect.poll(count).toBe('2');
+    expect(await toggle()).toContain('dirty');
+});
+
+test('the welcome screen renders and its buttons still do something', async ({ window }) => {
+    // Not reached by the style snapshot: `::show-intro` stands down when the
+    // window was given arguments, and every automated run gives it some.
+    await evalClj(window, '(do (def intro (object/create :lt.objs.intro/intro)) (tabs/add! intro) (tabs/active! intro) :shown)');
+
+    const root = window.locator('#intro');
+    await expect(root).toHaveCount(1);
+    expect(await root.locator('h1 img').getAttribute('src')).toBe('img/lighttabletextdark.png');
+    await expect(root.locator('p')).toHaveCount(3);
+    await expect(root.locator('button')).toHaveCount(3);
+
+    // The buttons carry their handlers, which is the part a renderer swap can
+    // quietly drop: the markup looks right and nothing responds.
+    await root.getByText('changelog').click();
+    await expect.poll(async () => await window.locator('#version-info').count()).toBe(1);
+
+    await evalClj(window, '(do (object/destroy! intro) :gone)');
+});

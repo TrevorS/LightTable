@@ -132,6 +132,16 @@ async function snapshot(out: string, files: string[]): Promise<void> {
     await window.waitForFunction("typeof lt !== 'undefined' && !!lt.objs && !!lt.objs.app");
     await window.waitForSelector('#multi');
 
+    // A fixed size, because almost every value here is a length. Light Table
+    // restores its window from localStorage, and localStorage lives in
+    // Electron's userData rather than under LT_USER_DIR — so without this a
+    // snapshot inherits whatever size the developer last left a window at, and
+    // two runs on different days disagree about 1,175 elements.
+    await app.evaluate(({ BrowserWindow }) => {
+        for (const w of BrowserWindow.getAllWindows()) w.setSize(1024, 700);
+    });
+    await window.waitForTimeout(500);
+
     for (const file of files) {
         await window.evaluate(
             (f) => (globalThis as any).lt.objs.command.exec_BANG_(

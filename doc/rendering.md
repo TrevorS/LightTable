@@ -11,6 +11,17 @@ It is also part of the plugin API: `lt.macros/defui` and `defpartial` compile to
 singultus calls, and published plugins use them. So singultus stays in the
 bundle whatever else happens. The question is only what *new* UI is written in.
 
+## What is where, today
+
+| | |
+|---|---|
+| singultus | everything, minus the list below. Stays: `defui` is plugin API |
+| Replicant | the three statusbar items, and the welcome screen |
+
+The swap is one object at a time and the two render side by side in the same
+document, which is what makes it safe to do gradually rather than as one
+change nobody can review.
+
 ## The seam
 
 `lt.object/->dom`:
@@ -47,6 +58,49 @@ count and the watch count on the tabset's atom to exactly where they started.
 `bound` adds a watch and destroying the object is what ends it, so the binding
 layer does not leak — which means the object model is a foundation to render
 onto rather than a second thing to replace at the same time.
+
+## Rendering an object with Replicant
+
+[[lt.ui/node]] takes the object, the root element as static hiccup, and a view:
+
+```clojure
+(defn- console-toggle-ui [this]
+  (let [{:keys [dirty] :as state} @this]
+    [:span {:class (toggle-class state)
+            :on {:click (fn [_] (cmd/exec! :toggle-console))}}
+     dirty]))
+
+(object/object* ::statusbar.console-toggle
+                :init (fn [this]
+                        (ui/node this [:li {:class ""}] console-toggle-ui)))
+```
+
+The root is separate from the view because the rest of the editor holds a
+reference to it — `object/->content` hands it out, the statusbar appends it, a
+tabset moves it, `dom/css` writes to it. Replicant is given that node as its
+container and owns everything inside, so nothing is wrapped and the document
+keeps the shape every stylesheet is written against.
+
+The obvious alternative fails, and fails quietly: render into a detached holder
+and hand out its first child, and the moment anything moves that node it is no
+longer the holder's child, so the next render patches nothing and the panel
+stops updating. That is what `test-e2e/renderer.spec.ts` asserts against by
+setting a status message twice.
+
+The view re-runs on every change to the object. `bound` was finer than that —
+it wrote one attribute when one path changed — so a view over an object that
+changes on every keystroke is worth measuring before converting.
+
+## What cannot be swapped one-for-one
+
+**Anything composing another object's content.** `map-bound` over a collection
+of objects, splicing `(object/->content %)` — the tabs, the statusbar's own
+list, the sidebar, the client list. Replicant renders hiccup, and a DOM node
+another object owns is not hiccup. Those stay on singultus until the thing
+they are composing is a view rather than an object with a node.
+
+That is most of the composition in the editor, and it is the reason this is a
+migration rather than a swap.
 
 ## Two things a new renderer must not do
 

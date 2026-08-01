@@ -9,8 +9,8 @@
             [lt.objs.tabs :as tabs]
             [lt.util.dom :as dom]
             [singultus.core]
-            [singultus.binding :refer [bound]])
-  (:require-macros [lt.macros :refer [behavior defui]]))
+            [lt.ui :as ui])
+  (:require-macros [lt.macros :refer [behavior]]))
 
 (behavior ::on-close-destroy
                   :triggers #{:close}
@@ -19,42 +19,36 @@
 
 (def ->lt-image (constantly "img/lighttabletextdark.png"))
 
-(defui docs []
-  [:button "Light Table's online docs"]
-  :click (fn []
-           (cmd/exec! :show-docs)))
+(defn- button [label command & args]
+  [:button {:on {:click (fn [_] (apply cmd/exec! command args))}} label])
 
-(defui reports []
-  [:button "GitHub"]
-  :click (fn []
-           (cmd/exec! :add-browser-tab (repo/at "issues"))))
-
-
-(defui changelog []
-  [:button "changelog"]
-  :click (fn []
-           (cmd/exec! :version)))
+(defn- intro-ui [_]
+  ;; A list rather than a vector: Replicant renders either one node or several,
+  ;; and this is the several.
+  (list
+   [:h1 [:img {:height 40 :src (->lt-image @style/styles)}]]
+   ;; What this said until now was the release notes for 0.8, announcing Python
+   ;; eval as a new feature. It had been the first thing every user saw for a
+   ;; decade.
+   [:p "Light Table connects you to your creation with instant feedback: evaluate
+    code as you write it, see the results beside it, and reshape the editor from
+    inside itself."]
+   [:p "This build is a modernized Light Table — a current runtime, an isolated
+    window, and a named list of capabilities where ambient system access used to
+    be. What changed and why is in the " (button "changelog" :version) "."]
+   [:p "New here? " (button "Light Table's online docs" :show-docs)
+    " is the place to start. Something broken? It probably
+    is — say so on " (button "GitHub" :add-browser-tab (repo/at "issues")) "."]))
 
 (object/object* ::intro
                 :tags #{:intro}
                 :behaviors [::on-close-destroy]
                 :name "Welcome"
                 :init (fn [this]
-                        [:div#intro
-                         [:h1
-                          [:img {:height 40 :src (bound style/styles ->lt-image)}]]
-                         ;; What this said until now was the release notes for
-                         ;; 0.8, announcing Python eval as a new feature. It had
-                         ;; been the first thing every user saw for a decade.
-                         [:p "Light Table connects you to your creation with instant feedback: evaluate
-                          code as you write it, see the results beside it, and reshape the editor from
-                          inside itself."]
-                         [:p "This build is a modernized Light Table — a current runtime, an isolated
-                          window, and a named list of capabilities where ambient system access used to
-                          be. What changed and why is in the " (changelog) "."]
-                         [:p "New here? " (docs) " is the place to start. Something broken? It probably
-                          is — say so on " (reports) "."]
-                         ]))
+                        ;; The image is the skin's, so this redraws when the
+                        ;; skin changes as well as when the object does.
+                        (ui/watch this style/styles)
+                        (ui/node this [:div#intro] intro-ui)))
 
 (behavior ::show-intro
           :triggers #{:post-init}

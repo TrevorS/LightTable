@@ -9,7 +9,8 @@
             [lt.objs.editor :as ed]
             [lt.util.dom :as dom]
             [lt.util.cljs :as cljs]
-            [singultus.binding :refer [bound map-bound]])
+            [lt.ui :as ui]
+            [singultus.binding :refer [map-bound]])
   (:require-macros [lt.macros :refer [behavior defui]]))
 
 ;;**********************************************************
@@ -100,13 +101,15 @@
           :reaction (fn [this pos]
                       (object/merge! this {:pos pos})))
 
+(defn- cursor-ui [this]
+  (->cursor-str @this))
+
 (object/object* ::statusbar.cursor
                 :triggers #{}
                 :behaviors #{::update-cursor-location}
                 :pos {:line 0 :ch 0}
                 :init (fn [this]
-                        (statusbar-item (bound this ->cursor-str) "")
-                        ))
+                        (ui/node this [:li {:class ""}] cursor-ui)))
 
 (def statusbar-cursor (object/create ::statusbar.cursor))
 (add-statusbar-item statusbar-cursor)
@@ -132,31 +135,23 @@
     ""))
 
 
-(defui loader [this]
-  [:span.load-wrapper {:style {:display (bound this loader-disp)}}
-   [:span.img]]
-  :click (fn []
-           (object/raise this :toggle)))
-
-(defui log-item [i]
-  [:li (bound i :text)])
-
 (defn ->message-class [m]
   (str "message " (or m "")))
 
-(defui log [this]
-  [:div.log
-   (loader this)
-   [:span {:class (bound this #(-> % :class ->message-class))} (bound this :message)]
-   ])
+(defn- loader-ui [this]
+  (let [{:keys [class message] :as state} @this]
+    [:div.log
+     [:span.load-wrapper {:style {:display (loader-disp state)}
+                          :on {:click (fn [_] (object/raise this :toggle))}}
+      [:span.img]]
+     [:span {:class (->message-class class)} message]]))
 
 (object/object* ::statusbar.loader
                 :tags #{:statusbar.console}
                 :loaders 0
                 :message ""
                 :init (fn [this]
-                        (statusbar-item (log this) "left")
-                        ))
+                        (ui/node this [:li {:class "left"}] loader-ui)))
 
 (def statusbar-loader (object/create ::statusbar.loader))
 (add-statusbar-item statusbar-loader)
@@ -178,17 +173,17 @@
 (defn toggle-class [{:keys [dirty class]}]
   (str "console-toggle " (when class (str class " ")) (when (> dirty 0) "dirty")))
 
-(defui toggle-span [this]
-  [:span {:class (bound this toggle-class)}
-   (bound this :dirty)]
-  :click (fn []
-           (cmd/exec! :toggle-console)))
+(defn- console-toggle-ui [this]
+  (let [{:keys [dirty] :as state} @this]
+    [:span {:class (toggle-class state)
+            :on {:click (fn [_] (cmd/exec! :toggle-console))}}
+     dirty]))
 
 (object/object* ::statusbar.console-toggle
                 :dirty 0
                 :tags [:statusbar.console-toggle]
                 :init (fn [this]
-                        (statusbar-item (toggle-span this) "")))
+                        (ui/node this [:li {:class ""}] console-toggle-ui)))
 
 (def console-toggle (object/create ::statusbar.console-toggle))
 (add-statusbar-item console-toggle)
