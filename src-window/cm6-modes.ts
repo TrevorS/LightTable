@@ -307,6 +307,10 @@ const LEGACY: Record<string, [string, string]> = {
     'q': ['q', 'q'],
     'r': ['r', 'r'],
     'rpm': ['rpm', 'rpmSpec'],
+    // One file, two modes, and neither is called `rpm`: CodeMirror 5 defines
+    // `rpm-spec` and `rpm-changes`, which is what the MIMEs resolve to.
+    'rpm-spec': ['rpm', 'rpmSpec'],
+    'rpm-changes': ['rpm', 'rpmChanges'],
     'ruby': ['ruby', 'ruby'],
     'rust': ['rust', 'rust'],
     'sas': ['sas', 'sas'],
@@ -357,6 +361,15 @@ const LEZER: Record<string, () => Extension> = {
     htmlmixed: () => html(),
     html: () => html(),
     jsx: () => javascript({ jsx: true }),
+    // TypeScript is not a mode of its own in CodeMirror 5 — it is the
+    // javascript mode with `typescript: true` in the MIME's configuration, and
+    // the legacy parser here is built from the mode name alone, which loses
+    // that. So they are named, and get the grammar that knows the difference:
+    // without this a `.ts` file has no language at all, and everything that
+    // reads a syntax tree — the token under the cursor, indentation, folding —
+    // has nothing to read.
+    typescript: () => javascript({ typescript: true }),
+    tsx: () => javascript({ jsx: true, typescript: true }),
     php: () => php()
 };
 
@@ -393,6 +406,139 @@ const FALLBACK: Record<string, string | null> = {
 const loaded = new Map<string, Extension>();
 
 /**
+ * The mode a MIME type means, where the name does not simply fall out of it.
+ *
+ * Light Table opens a file as a MIME rather than as a mode name, and stripping
+ * the prefix off one is right about half the time: `text/x-clojure` really is
+ * `clojure`, but `text/x-clojurescript` is *also* `clojure`, `text/x-c` is
+ * `clike`, `application/json` is `javascript` and `text/x-rsrc` is `r`. This is
+ * every MIME the 130 bundled modes register where the answer is not the name.
+ *
+ * Ninety-eight of two hundred, which is why it is a table rather than a rule.
+ * Generated once from `CodeMirror.mimeModes` — the modes fill that in as they
+ * load — and kept, rather than read at runtime, because the point of the port
+ * is that CodeMirror 5 stops being here to ask.
+ *
+ * The MIME can also carry *configuration* — `text/typescript` is the javascript
+ * mode with `typescript: true` — and a name cannot. Where that difference
+ * matters, the entry is in LEZER above under the name the MIME strips to.
+ */
+const MIME_MODES: Record<string, string> = {
+    'application/dart': 'clike',
+    'application/ecmascript': 'javascript',
+    'application/edn': 'clojure',
+    'application/javascript': 'javascript',
+    'application/json': 'javascript',
+    'application/ld+json': 'javascript',
+    'application/manifest+json': 'javascript',
+    'application/mbox': 'mbox',
+    'application/n-quads': 'ntriples',
+    'application/n-triples': 'ntriples',
+    'application/pgp': 'asciiarmor',
+    'application/pgp-encrypted': 'asciiarmor',
+    'application/pgp-keys': 'asciiarmor',
+    'application/pgp-signature': 'asciiarmor',
+    'application/sieve': 'sieve',
+    'application/sparql-query': 'sparql',
+    'application/typescript': 'javascript',
+    'application/vnd.coffeescript': 'coffeescript',
+    'application/x-aspx': 'htmlembedded',
+    'application/x-cypher-query': 'cypher',
+    'application/x-ejs': 'htmlembedded',
+    'application/x-erb': 'htmlembedded',
+    'application/x-httpd-php': 'php',
+    'application/x-httpd-php-open': 'php',
+    'application/x-json': 'javascript',
+    'application/x-jsp': 'htmlembedded',
+    'application/x-sh': 'shell',
+    'application/xml': 'xml',
+    'application/xml-dtd': 'dtd',
+    'application/xquery': 'xquery',
+    'message/http': 'http',
+    'script/x-vue': 'vue',
+    'text/ecmascript': 'javascript',
+    'text/html': 'htmlmixed',
+    'text/n-triples': 'ntriples',
+    'text/plain': 'null',
+    'text/typescript': 'javascript',
+    'text/typescript-jsx': 'jsx',
+    'text/webassembly': 'wast',
+    'text/x-c': 'clike',
+    'text/x-c++hdr': 'clike',
+    'text/x-c++src': 'clike',
+    'text/x-cassandra': 'sql',
+    'text/x-ceylon': 'clike',
+    'text/x-chdr': 'clike',
+    'text/x-clojurescript': 'clojure',
+    'text/x-common-lisp': 'commonlisp',
+    'text/x-csharp': 'clike',
+    'text/x-csrc': 'clike',
+    'text/x-cython': 'python',
+    'text/x-esper': 'sql',
+    'text/x-ez80': 'z80',
+    'text/x-feature': 'gherkin',
+    'text/x-fsharp': 'mllike',
+    'text/x-gpsql': 'sql',
+    'text/x-gql': 'sql',
+    'text/x-gss': 'css',
+    'text/x-handlebars-template': 'handlebars',
+    'text/x-hive': 'sql',
+    'text/x-ini': 'properties',
+    'text/x-jade': 'pug',
+    'text/x-java': 'clike',
+    'text/x-kotlin': 'clike',
+    'text/x-latex': 'stex',
+    'text/x-less': 'css',
+    'text/x-literate-haskell': 'haskell-literate',
+    'text/x-mariadb': 'sql',
+    'text/x-msgenny': 'mscgen',
+    'text/x-mssql': 'sql',
+    'text/x-mysql': 'sql',
+    'text/x-nesc': 'clike',
+    'text/x-nginx-conf': 'nginx',
+    'text/x-objectivec': 'clike',
+    'text/x-objectivec++': 'clike',
+    'text/x-ocaml': 'mllike',
+    'text/x-pgsql': 'sql',
+    'text/x-php': 'clike',
+    'text/x-plsql': 'sql',
+    'text/x-rsrc': 'r',
+    'text/x-rustsrc': 'rust',
+    'text/x-scala': 'clike',
+    'text/x-scss': 'css',
+    'text/x-sh': 'shell',
+    'text/x-sml': 'mllike',
+    'text/x-sparksql': 'sql',
+    'text/x-sqlite': 'sql',
+    'text/x-squirrel': 'clike',
+    'text/x-stsrc': 'smalltalk',
+    'text/x-styl': 'stylus',
+    'text/x-systemverilog': 'verilog',
+    'text/x-tlv': 'verilog',
+    'text/x-trino': 'sql',
+    'text/x-ttcn-asn': 'asn.1',
+    'text/x-ttcn3': 'ttcn',
+    'text/x-ttcnpp': 'ttcn',
+    'text/x-xu': 'mscgen',
+    'x-shader/x-fragment': 'clike',
+    'x-shader/x-vertex': 'clike',
+};
+
+/**
+ * What to look this name up as.
+ *
+ * The stripped name first, so `typescript` and `tsx` reach the entries written
+ * for them here rather than being resolved through CodeMirror 5's table to
+ * plain `javascript` — which is what that table says they are, because there
+ * the difference is carried in the MIME's configuration and not in the name.
+ */
+function resolve(name: string): string {
+    const stripped = (name || '').replace(/^text\/x-|^application\/x-|^text\//, '').toLowerCase();
+    if (stripped in LEZER || stripped in LEGACY || stripped in FALLBACK) return stripped;
+    return MIME_MODES[(name || '').toLowerCase()] ?? stripped;
+}
+
+/**
  * The extension for `name`, or an empty one when nothing here knows it.
  *
  * An empty extension is a document with no highlighting, which is what
@@ -400,7 +546,7 @@ const loaded = new Map<string, Extension>();
  * same non-event it always was.
  */
 export function modeExtension(name: string): Extension {
-    const mode = (name || '').replace(/^text\/x-|^application\/x-|^text\//, '').toLowerCase();
+    const mode = resolve(name);
     if (loaded.has(mode)) return loaded.get(mode)!;
 
     let extension: Extension = [];

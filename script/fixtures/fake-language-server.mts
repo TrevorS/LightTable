@@ -103,7 +103,8 @@ function handle(msg: LspMessage): void {
                     // send a request worth answering.
                     DIAGNOSTICS_ONLY ? {} : {
                         documentFormattingProvider: true,
-                        codeActionProvider: true
+                        codeActionProvider: true,
+                        hoverProvider: true
                     }),
                 serverInfo: { name: 'fake-language-server (' + SOURCE + ')' }
             }
@@ -138,6 +139,22 @@ function handle(msg: LspMessage): void {
                 newText: 'FORMATTED tabSize=' + msg.params.options.tabSize +
                          ' insertSpaces=' + msg.params.options.insertSpaces
             }]
+        });
+    case 'textDocument/hover':
+        // Markdown in an object, which is what a modern server sends and the
+        // shape with the most ways to be read wrong — the other two legal ones
+        // are a bare string and an array. The position is echoed back so a test
+        // can tell a hover that answered the cursor from one that answered
+        // wherever the client felt like asking.
+        return send({
+            id: msg.id,
+            result: {
+                contents: {
+                    kind: 'markdown',
+                    value: 'HOVER at ' + msg.params.position.line + ':' +
+                           msg.params.position.character
+                }
+            }
         });
     case 'textDocument/codeAction':
         // Two, so the client has to offer a choice rather than apply the only

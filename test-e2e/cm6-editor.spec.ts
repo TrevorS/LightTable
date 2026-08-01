@@ -143,12 +143,24 @@ test('the rest of the surface answers rather than throwing', async ({ window }) 
         '(ed.indentLine(1), ed.getLine(1).length > "one line".length)',
         '(ed.setSelection({line:0,ch:0},{line:1,ch:0}), ed.indentSelection(), ed.getValue().length > 30)',
         'typeof ed.charCoords({line:0,ch:0}).left',
-        '(ed.scrollTo(0, 0), ed.getValue().length)',
-        'ed.getTokenAt({line:0,ch:1}) === null'
+        '(ed.scrollTo(0, 0), ed.getValue().length)'
     ]) {
         const [five, six] = await bothEngines(window, DOC, call);
         expect(six, `${call} — CodeMirror 5 said ${JSON.stringify(five)}`).toEqual(five);
     }
+
+    // `getTokenAt` in a document with no language is where they part, and it
+    // used to be listed above as though they agreed. CodeMirror 5's null mode
+    // tokenizes: it hands back the whole line as one token with a null type.
+    // CodeMirror 6 has no tokenizer to ask, only an empty syntax tree, and
+    // taking that at face value produced a token of the empty string at a
+    // negative offset — which read as "the thing under your cursor is called
+    // nothing", and stopped Toggle documentation from drawing anything at all.
+    // Null is the honest answer, and the callers that check were already right.
+    const [fiveToken, sixToken] = await bothEngines(
+        window, DOC, 'ed.getTokenAt({line:0,ch:1}) === null');
+    expect(fiveToken).toBe(false);
+    expect(sixToken).toBe(true);
 });
 
 test('every method lt.objs.editor calls exists on the adapter', async ({ window }) => {

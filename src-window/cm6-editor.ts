@@ -62,6 +62,7 @@ interface Marker {
     className: string;
     clear: () => void;
     find: () => { from: Pos, to: Pos } | null;
+    changed: () => void;
 }
 
 const addMarker = StateEffect.define<MarkerSpec>();
@@ -82,19 +83,40 @@ interface MarkerSpec {
     to: number;
     kind: 'mark' | 'line' | 'point';
     className: string;
+    /** A point's DOM, when the caller brought one. CodeMirror 5 calls it `widget`. */
+    node?: HTMLElement;
+    /** Which side of the position it sits on. CodeMirror 5 spells it `insertLeft`. */
+    side?: number;
 }
 
 interface MarkerState { specs: MarkerSpec[], decorations: DecorationSet }
 
-/** The DOM for a bookmark: an empty span the caller can style or fill. */
+/**
+ * The DOM for a bookmark: the caller's node, or an empty span to style.
+ *
+ * The node matters more than it looks. A bookmark carrying one is how every
+ * inline evaluation result is drawn — the value beside the expression that
+ * produced it, which is the thing this editor is for — and the node belongs to
+ * whoever made it, rendered and updated somewhere else entirely. So it is shown
+ * rather than copied, and `eq` compares identity: handed the same node again,
+ * nothing is touched and whatever was rendered into it stays.
+ */
 class PointWidget extends WidgetType {
-    constructor(readonly className: string) { super(); }
-    override eq(other: PointWidget): boolean { return other.className === this.className; }
+    constructor(readonly className: string, readonly node?: HTMLElement) { super(); }
+
+    override eq(other: PointWidget): boolean {
+        return other.className === this.className && other.node === this.node;
+    }
+
     override toDOM(): HTMLElement {
+        if (this.node) return this.node;
         const node = document.createElement('span');
         if (this.className) node.className = this.className;
         return node;
     }
+
+    /** A result widget has its own click handlers; the editor is not to read them. */
+    override ignoreEvent(): boolean { return true; }
 }
 
 function markerDecorations(specs: MarkerSpec[]): DecorationSet {
@@ -106,7 +128,10 @@ function markerDecorations(specs: MarkerSpec[]): DecorationSet {
             // A mark that has become empty — its text was deleted — is a point
             // now. Drawing it as a mark would throw, and dropping it would take
             // the marker away from a caller still holding it.
-            ranges.push(Decoration.widget({ widget: new PointWidget(m.className), side: 1 }).range(m.from));
+            ranges.push(Decoration.widget({
+                widget: new PointWidget(m.className, m.node),
+                side: m.side ?? 1
+            }).range(m.from));
         } else {
             ranges.push(Decoration.mark({ class: m.className }).range(m.from, m.to));
         }
@@ -189,6 +214,7 @@ export class Cm6Editor {
     private readonly highlighting = new Compartment();
     private readonly theme = new Compartment();
     private readonly settings = new Options();
+    private readonly lineHandles = new Map<number, LineHandle>();
     private declared: Band[] = [];
     private widgets: Band[] = [];
     private widgetId = 0;
@@ -351,10 +377,30 @@ export class Cm6Editor {
     indexFromPos(pos: Pos): number { return this.offset(pos); }
     posFromIndex(index: number): Pos { return this.position(index); }
 
-    // A handle in CodeMirror 5 is an object that tracks a line through edits.
-    // Here it is the line number, which is what every caller in this codebase
-    // then asks it for — see getLineNumber.
-    getLineHandle(n: number): LineHandle { return { line: n }; }
+    /**
+     * A handle in CodeMirror 5 is an object that tracks a line through edits.
+     * Here it is the line number, which is what every caller in this codebase
+     * then asks it for — see getLineNumber.
+     *
+     * One object per line, kept, because callers use a handle as a *key*:
+     * `lt.objs.eval` and `lt.plugins.doc` file a widget under
+     * `[handle :underline]` and later look it up by asking for the handle
+     * again. CodeMirror 5 hands back the same object both times. Handing back a
+     * fresh one is a lookup that always misses — which is a doc that opens and
+     * cannot be closed, and a widget that is replaced instead of reused.
+     *
+     * Held per editor and never swept: a document has as many lines as it has,
+     * and this is one small object each for the lines somebody asked about.
+     */
+    getLineHandle(n: number): LineHandle {
+        let handle = this.lineHandles.get(n);
+        if (!handle) {
+            handle = { line: n };
+            this.lineHandles.set(n, handle);
+        }
+        return handle;
+    }
+
     getLineNumber(handle: LineHandle): number { return handle.line; }
 
     // --- cursor and selection ---------------------------------------------
@@ -672,16 +718,22 @@ export class Cm6Editor {
 
     // --- marks and line classes -------------------------------------------
 
-    private marker(from: number, to: number, kind: 'mark' | 'line' | 'point', className: string): Marker {
+    private marker(from: number, to: number, kind: 'mark' | 'line' | 'point',
+                   className: string, extra: Partial<MarkerSpec> = {}): Marker {
         const id = ++this.markerId;
-        this.view.dispatch({ effects: addMarker.of({ id, from, to, kind, className }) });
+        this.view.dispatch({ effects: addMarker.of({ ...extra, id, from, to, kind, className }) });
         return {
             id, from, to, kind, className,
             clear: () => { this.view.dispatch({ effects: dropMarker.of(id) }); },
             find: () => {
                 const m = this.view.state.field(markerField).specs.find((x) => x.id === id);
                 return m ? { from: this.position(m.from), to: this.position(m.to) } : null;
-            }
+            },
+            // CodeMirror 5's "the widget you gave me is a different size now".
+            // There is nothing to tell here — the view measures what it draws —
+            // but a result that expands calls it, and a missing method is a
+            // TypeError rather than a no-op.
+            changed: () => { this.view.requestMeasure(); }
         };
     }
 
@@ -689,9 +741,20 @@ export class Cm6Editor {
         return this.marker(this.offset(from), this.offset(to), 'mark', options.className ?? '');
     }
 
-    setBookmark(pos: Pos, options: { className?: string } = {}): Marker {
+    /**
+     * A point in the text, optionally showing a node the caller owns.
+     *
+     * `widget` is the whole reason this exists in Light Table: an inline
+     * evaluation result is a bookmark carrying the element that shows the
+     * value. `insertLeft` is which side of it text typed at that position goes.
+     */
+    setBookmark(pos: Pos, options: { className?: string, widget?: HTMLElement,
+                                     insertLeft?: boolean } = {}): Marker {
         const at = this.offset(pos);
-        return this.marker(at, at, 'point', options.className ?? '');
+        return this.marker(at, at, 'point', options.className ?? '', {
+            ...(options.widget ? { node: options.widget } : {}),
+            side: options.insertLeft ? -1 : 1
+        });
     }
 
     findMarksAt(pos: Pos): Marker[] {
@@ -839,6 +902,26 @@ export class Cm6Editor {
     // --- tokens -------------------------------------------------------------
 
     /**
+     * The node at a position, or null when there is no tree to ask.
+     *
+     * A document with no language still has a syntax tree — an empty one, whose
+     * root is a zero-width node with no name — and `resolveInner` answers from
+     * it rather than declining. Taken at face value that is a token: an empty
+     * string, at a position before the line it was asked about, with a type of
+     * `""`.
+     *
+     * Which is not a hypothetical. `lt.plugins.doc` names a doc after the token
+     * under the cursor and declines to draw one whose name is empty, so
+     * Toggle documentation did nothing at all, reported nothing, and looked
+     * like a language server that had not answered.
+     */
+    private nodeAt(pos: Pos): { from: number, to: number, name: string } | null {
+        const node = syntaxTree(this.view.state).resolveInner(this.offset(pos), -1);
+        if (!node || !node.name || node.name === 'Document') return null;
+        return node;
+    }
+
+    /**
      * The token at a position, from the syntax tree.
      *
      * Null when no language is configured, which is what CodeMirror 5 answers
@@ -846,10 +929,9 @@ export class Cm6Editor {
      * way, and one that does not was already wrong.
      */
     getTokenAt(pos: Pos): { start: number, end: number, string: string, type: string | null } | null {
-        const at = this.offset(pos);
-        const node = syntaxTree(this.view.state).resolveInner(at, -1);
-        if (!node || node.name === 'Document') return null;
-        const line = this.view.state.doc.lineAt(at);
+        const node = this.nodeAt(pos);
+        if (!node) return null;
+        const line = this.view.state.doc.lineAt(this.offset(pos));
         return {
             start: node.from - line.from,
             end: node.to - line.from,
@@ -864,8 +946,7 @@ export class Cm6Editor {
         // tags would mean a highlight style being configured, which a document
         // in no language does not have. The name is what callers here compare
         // against anyway — see lt.objs.editor/->token-type.
-        const node = syntaxTree(this.view.state).resolveInner(this.offset(pos), -1);
-        return node && node.name !== 'Document' ? node.name : null;
+        return this.nodeAt(pos)?.name ?? null;
     }
 
     getDoc(): Cm6Editor { return this; }
