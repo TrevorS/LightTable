@@ -10,7 +10,9 @@
 // belongs here is the consequence, which no unit test can see: that a second
 // window is a working editor.
 
-import { test, expect, ready } from './fixtures';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import { test, expect, ready, launch, editorWindow, scratchDir } from './fixtures';
 
 test('the editor builds itself in the first window', async ({ window }) => {
     expect(await window.evaluate("typeof lt.objs.app")).toBe('object');
@@ -84,4 +86,35 @@ test('user data is written outside the application, not inside it', async ({ app
     expect(info.userDir.startsWith(info.appPath)).toBe(false);
     // Reading is a different directory, and still the application's.
     expect(info.home.length).toBeGreaterThan(0);
+});
+
+test('the User plugin is refreshed from the build, not left stale', async () => {
+    // user_compiled.js references the bundle's hoisted constants, and those
+    // are numbered per compilation — so a copy made by one build throws
+    // `cljs$cst$110$tags is not defined` when a later build loads it. It was
+    // copied once and never refreshed, which was invisible only because the
+    // user directory used to *be* the application directory.
+    const home = scratchDir('user-plugin');
+    const copied = path.join(home, 'User', 'user_compiled.js');
+
+    const first = await launch({ LT_USER_DIR: home });
+    await editorWindow(first);
+    await expect.poll(() => fs.existsSync(copied)).toBe(true);
+    // Something a previous build could have left.
+    fs.writeFileSync(copied, 'cljs$cst$1$stale;\n');
+    await first.close().catch(() => { /* already gone */ });
+
+    const second = await launch({ LT_USER_DIR: home });
+    const window = await editorWindow(second);
+    expect(fs.readFileSync(copied, 'utf8')).not.toContain('cljs$cst$1$stale');
+
+    const errors = await window.evaluate(`(function () {
+        var el = lt.object.__GT_content(lt.objs.console.console);
+        return Array.from(el.querySelectorAll('li.error')).map(function (n) {
+            return (n.innerText || '').slice(0, 200); });
+    })()`) as string[];
+    expect(errors.join(' ')).not.toContain('user_compiled.js');
+
+    await second.close().catch(() => { /* already gone */ });
+    fs.rmSync(home, { recursive: true, force: true });
 });

@@ -338,12 +338,29 @@
 (def user-behaviors-path (files/join user-plugin-dir "user.behaviors"))
 (def user-keymap-path (files/join user-plugin-dir "user.keymap"))
 (def user-cljs-path (files/join user-plugin-dir "src" "lt" "plugins" "user.cljs"))
-(def user-plugin-paths ["user.behaviors" "user.keymap" "src" "project.clj" "plugin.edn" "user_compiled.js"])
+(def user-plugin-paths
+  "What the User plugin is made of, and who owns each part.
+
+  `:yours` is copied once and then left alone — it is what you write in.
+  `:ours` is refreshed from the application every start, because it belongs to
+  the build rather than to you.
+
+  That split matters because of how ClojureScript modules are compiled.
+  `user_compiled.js` references the bundle's hoisted constants — `cljs$cst$NNN`
+  — and those are numbered per compilation, so a copy made by one build throws
+  `cljs$cst$110$tags is not defined` when a later build loads it. Copied once
+  and never refreshed, the User plugin breaks on the next release.
+
+  It was invisible until the user directory moved. It used to be the
+  application directory, so this copied `core/User/user_compiled.js` on top of
+  itself and the file was always the one just built."
+  {:yours ["user.behaviors" "user.keymap" "src"]
+   :ours ["project.clj" "plugin.edn" "user_compiled.js"]})
 
 (behavior ::create-user-plugin
           :triggers #{:create-user-plugin}
           :reaction (fn [app]
-                      (doseq [path user-plugin-paths]
+                      (doseq [path (:yours user-plugin-paths)]
                         (let [full-path (files/join user-plugin-dir path)]
                           (when-not (files/exists? full-path)
                             (if (and (contains? #{"user.behaviors" "user.keymap"} path)
@@ -352,7 +369,16 @@
                               (files/copy (files/lt-user-dir (str "/settings/" path))
                                           full-path)
                               (files/copy (files/lt-home (files/join "core" "User" path))
-                                          full-path)))))))
+                                          full-path)))))
+                      (doseq [path (:ours user-plugin-paths)]
+                        (let [from (files/lt-home (files/join "core" "User" path))
+                              to (files/join user-plugin-dir path)]
+                          ;; Unconditionally: this is the application's copy of
+                          ;; its own file, and the one already there is from
+                          ;; whichever build wrote it.
+                          (when (and (files/exists? from)
+                                     (not= from to))
+                            (files/copy from to))))))
 
 (declare map->flat-keymap)
 
