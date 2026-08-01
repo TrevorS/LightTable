@@ -33,4 +33,12 @@
             [lt.plugins.auto-paren]
             [lt.plugins.doc]
             [lt.plugins.watches]
+            ;; The component kit and the dispatch table it renders against.
+            [lt.actions :as actions]
+            [lt.ui.catalogue]
             [lt.util.style]))
+
+;; Teach Replicant that an event handler may be data rather than a closure.
+;; Global, and set once: without it every `:on {:click [[:review/goto 3]]}` in
+;; the kit is a vector where a function was expected, and nothing happens.
+(actions/install!)

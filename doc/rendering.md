@@ -16,7 +16,7 @@ bundle whatever else happens. The question is only what *new* UI is written in.
 | | |
 |---|---|
 | singultus | everything, minus the list below. Stays: `defui` is plugin API |
-| Replicant | the three statusbar items, and the welcome screen |
+| Replicant | the three statusbar items, the welcome screen, and the component kit |
 
 The swap is one object at a time and the two render side by side in the same
 document, which is what makes it safe to do gradually rather than as one
@@ -101,6 +101,57 @@ they are composing is a view rather than an object with a node.
 
 That is most of the composition in the editor, and it is the reason this is a
 migration rather than a swap.
+
+## The kit
+
+[`lt.ui.row`](../src/lt/ui/row.cljs), [`lt.ui.chrome`](../src/lt/ui/chrome.cljs)
+and [`lt.ui.band`](../src/lt/ui/band.cljs) are the twenty-five components the
+design draws, as Replicant aliases. They sort into three kinds, and the sort is
+the architecture:
+
+| | | |
+|---|---|---|
+| alias | 17, in `row` and `chrome` | markup, no state, no data access |
+| band | 6, in `band` | the same, but rendered into a node the editor owns |
+| view | none yet | a function of the whole state, composing aliases |
+
+Only views read state, so every question about correctness is a question about
+however many views there are. There are none yet — the existing UI is still
+objects — which is the honest state of the migration.
+
+**Light Table: Component kit** opens
+[the catalogue](../src/lt/ui/catalogue.cljs): every component, in every state
+it has, rendered from the same aliases the editor uses. That is the point of
+it. A picture of a component that is not the component goes stale, and this
+one cannot.
+
+No component names a colour. It names a role, and
+[`deploy/core/css/kit.css`](../css/kit.css) resolves it as a CSS custom
+property — which is the design's fifth open question answered the way it
+suggested, so a flavour swap is a variable list rather than a sweep through
+the markup. The palette is Catppuccin Mocha.
+
+## Handlers are data
+
+```clojure
+[::row/list-row {:on-select [[:review/goto i]]} …]
+```
+
+A vector, not a closure. [`lt.actions`](../src/lt/actions.cljs) is the table it
+dispatches through, and `lt.actions/install!` is what teaches Replicant that a
+handler may be a value — without it the vector is silently not a function and
+nothing happens.
+
+The claim worth stating plainly: this is the same design
+`deploy/settings/default/default.behaviors` has had since 2013, arriving from
+the other direction. That file is `[tag behavior-keyword]` pairs merged from
+every plugin on load. An action table is `[kind & args]` vectors resolved
+through a registry. Both are a UI whose wiring is data you can read, and the
+two registries can eventually be one.
+
+What it buys immediately: an action is a pure function of state and arguments,
+so what a click does is asserted by calling it. `test/lt/actions_test.cljs`
+tests seven actions without a window, a DOM, or a click.
 
 ## Two things a new renderer must not do
 

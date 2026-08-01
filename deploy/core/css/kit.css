@@ -1,0 +1,483 @@
+/* The component kit, as a stylesheet.
+ *
+ * "Does the token sheet ship as CSS custom properties, or as Clojure data the
+ * views inline?" — the design's fifth open question, answered the way it
+ * suggests: custom properties, so a flavour swap is free and the hiccup stays
+ * clean. No component names a colour; it names a role, and this resolves it.
+ *
+ * Palette is Catppuccin Mocha, which is where the design's literals come from.
+ * The role names below are the ones the kit uses when it describes itself —
+ * "element.selected — sky @ 15%", "text.disabled", "warning.tint" — so a
+ * declaration here can be checked against the document by reading it.
+ */
+
+:root {
+  /* Ground, back to front. */
+  --lt-crust: #11111b;
+  --lt-mantle: #181825;
+  --lt-base: #1e1e2e;
+  --lt-surface0: #313244;
+  --lt-surface2: #585b70;
+  --lt-overlay0: #6c7086;
+  --lt-overlay1: #7f849c;
+  --lt-overlay2: #9399b2;
+
+  /* Text, back to front. */
+  --lt-subtext0: #a6adc8;
+  --lt-subtext1: #bac2de;
+  --lt-text: #cdd6f4;
+  --lt-text-disabled: var(--lt-overlay0);
+
+  /* Accents, named for what they are rather than what they mean. */
+  --lt-sky: #89dceb;
+  --lt-lavender: #b4befe;
+  --lt-mauve: #cba6f7;
+  --lt-blue: #89b4fa;
+  --lt-green: #a6e3a1;
+  --lt-yellow: #f9e2af;
+  --lt-peach: #fab387;
+  --lt-red: #f38ba8;
+  --lt-maroon: #eba0ac;
+  --lt-teal: #94e2d5;
+  --lt-flamingo: #f2cdcd;
+
+  /* Roles. A component names one of these, never a colour above. */
+  --lt-agent: var(--lt-mauve);
+  --lt-result: var(--lt-sky);
+  --lt-watch: var(--lt-teal);
+  --lt-warning: var(--lt-yellow);
+  --lt-error: var(--lt-red);
+
+  --lt-element-hover: rgba(205, 214, 244, 0.06);
+  --lt-element-selected: rgba(137, 220, 235, 0.15);
+  --lt-agent-tint: rgba(203, 166, 247, 0.10);
+  --lt-watch-tint: rgba(148, 226, 213, 0.08);
+  --lt-warning-tint: rgba(249, 226, 175, 0.10);
+  --lt-error-tint: rgba(243, 139, 168, 0.10);
+  --lt-quiet-tint: rgba(205, 214, 244, 0.035);
+
+  /* The seven execution states plus connection health, as one vocabulary. */
+  --lt-status-queued: var(--lt-overlay1);
+  --lt-status-connecting: var(--lt-yellow);
+  --lt-status-executing: var(--lt-sky);
+  --lt-status-finished: var(--lt-teal);
+  --lt-status-restarting: var(--lt-yellow);
+  --lt-status-shutting-down: var(--lt-maroon);
+  --lt-status-lost: var(--lt-red);
+  --lt-status-idle: var(--lt-overlay0);
+
+  --lt-mono: 'Geist Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  --lt-sans: Geist, -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  /* Comments are the only cursive in the product. */
+  --lt-cursive: 'Victor Mono', var(--lt-mono);
+
+  --lt-radius-sm: 5px;
+  --lt-radius: 8px;
+  --lt-gutter: 40px;
+}
+
+/* ---- atoms ------------------------------------------------------------- */
+
+.dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: inline-block;
+  background: var(--lt-status-idle);
+}
+
+.dot--queued { background: transparent; box-shadow: inset 0 0 0 1.5px var(--lt-status-queued); }
+.dot--connecting { background: var(--lt-status-connecting); }
+.dot--executing { background: var(--lt-status-executing); }
+.dot--finished { background: var(--lt-status-finished); }
+.dot--restarting { background: var(--lt-status-restarting); }
+.dot--shutting-down { background: var(--lt-status-shutting-down); }
+.dot--lost { background: var(--lt-status-lost); }
+.dot--idle { background: var(--lt-status-idle); }
+.dot--agent { background: var(--lt-agent); }
+.dot--result { background: var(--lt-result); }
+
+/* Hollow means nothing has run yet, whatever the status. */
+.dot--hollow { background: transparent !important; box-shadow: inset 0 0 0 1.5px currentColor; }
+
+@keyframes lt-dot-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+.dot--pulse { animation: lt-dot-pulse 1.4s ease-in-out infinite; }
+
+.status {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  color: var(--lt-overlay2);
+}
+
+/* A count that belongs to the thing beside it. Never a notification. */
+.pill {
+  display: inline-block;
+  padding: 1px 7px;
+  border-radius: var(--lt-radius);
+  font-family: var(--lt-mono);
+  font-size: 11.5px;
+  background: var(--lt-element-hover);
+  color: var(--lt-overlay2);
+}
+
+.pill--agent { background: var(--lt-agent); color: var(--lt-crust); }
+.pill--result { background: var(--lt-result); color: var(--lt-crust); }
+
+/* A binding, never a button. Symbols only, never spelled out. */
+.kbd {
+  display: inline-block;
+  padding: 2px 6px;
+  border-radius: var(--lt-radius-sm);
+  font-family: var(--lt-mono);
+  font-size: 11.5px;
+  background: var(--lt-element-hover);
+  color: var(--lt-subtext1);
+}
+
+/* A scoped fact: what a run will carry, or which frames a trace shows. */
+.chip {
+  display: inline-block;
+  padding: 4px 9px;
+  border-radius: var(--lt-radius-sm);
+  font-size: 11.5px;
+  background: var(--lt-element-hover);
+  color: var(--lt-overlay2);
+}
+
+.chip--selected { background: rgba(137, 220, 235, 0.15); color: var(--lt-subtext1); }
+.chip--agent { background: var(--lt-agent-tint); color: var(--lt-agent); }
+.chip--warning { background: var(--lt-warning-tint); color: var(--lt-warning); }
+
+/* A path where only the leaf matters. Directories recede, the file does not. */
+.path {
+  font-family: var(--lt-mono);
+  font-size: 12.5px;
+  color: var(--lt-subtext1);
+}
+
+.path__dir { color: var(--lt-overlay2); }
+.path__range { color: var(--lt-overlay2); }
+
+/* Time, only while it is still running or still relevant. */
+.elapsed {
+  font-family: var(--lt-mono);
+  font-size: 12px;
+  color: var(--lt-overlay2);
+}
+
+.elapsed--live { color: var(--lt-status-executing); }
+
+/* ---- rows -------------------------------------------------------------- */
+
+/* The one row primitive. Tree, queue, runs, commands, connections are all this.
+ * A row tints entirely or not at all — no left-border accent strips. */
+.row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 26px;
+  padding: 0 8px;
+  border-radius: var(--lt-radius-sm);
+  font-family: var(--lt-mono);
+  font-size: 12.5px;
+  color: var(--lt-subtext0);
+  cursor: default;
+  box-sizing: border-box;
+}
+
+.row:hover { background: var(--lt-element-hover); }
+.row--selected { background: var(--lt-element-selected); color: var(--lt-text); }
+.row--focus { box-shadow: inset 0 0 0 1px var(--lt-sky); }
+.row--disabled { color: var(--lt-text-disabled); }
+.row--warning { background: var(--lt-warning-tint); color: var(--lt-warning); }
+.row--error { background: var(--lt-error-tint); color: var(--lt-error); }
+
+.row__num { color: var(--lt-overlay0); flex-shrink: 0; }
+.row__trailing { margin-left: auto; color: var(--lt-overlay2); }
+
+/* ListRow with depth and disclosure. Dirty is a dot, not a colour change. */
+.tree__twist {
+  width: 10px;
+  flex-shrink: 0;
+  color: var(--lt-overlay2);
+  font-size: 11.5px;
+}
+
+/* ---- chrome ------------------------------------------------------------ */
+
+/* Lives in the titlebar. Active is the editor ground pulled up into the chrome. */
+.tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 16px;
+  font-family: var(--lt-mono);
+  font-size: 12.5px;
+  color: var(--lt-overlay2);
+  background: var(--lt-crust);
+  cursor: default;
+}
+
+.tab--active { background: var(--lt-base); color: var(--lt-text); }
+
+/* Names the file and range a multibuffer region came from, and whose edit it is. */
+.excerpt {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 14px;
+  background: var(--lt-mantle);
+  font-family: var(--lt-mono);
+  font-size: 11.5px;
+  color: var(--lt-overlay2);
+  box-sizing: border-box;
+}
+
+.excerpt__path { color: var(--lt-subtext1); font-size: 12.5px; }
+.excerpt--agent .excerpt__whose { color: var(--lt-agent); }
+.excerpt--conflict .excerpt__whose { color: var(--lt-warning); }
+
+/* Stands in for the lines nobody needs to see. Never a number without a count. */
+.fold {
+  padding: 5px 14px 5px var(--lt-gutter);
+  background: rgba(205, 214, 244, 0.02);
+  font-family: var(--lt-mono);
+  font-size: 11.5px;
+  color: var(--lt-overlay2);
+}
+
+/* The path you walked into a value. Every segment is still addressable. */
+.crumbs {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-radius: var(--lt-radius);
+  background: rgba(137, 220, 235, 0.06);
+  font-family: var(--lt-mono);
+  font-size: 12px;
+  color: var(--lt-overlay2);
+}
+
+.crumbs__sep { color: var(--lt-surface2); }
+.crumbs__seg { color: var(--lt-sky); cursor: default; }
+.crumbs__seg--last { color: var(--lt-text); }
+
+/* One link in a cause chain. The root is the only one that gets actions. */
+.cause {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 7px 0;
+  font-family: var(--lt-mono);
+  font-size: 12.5px;
+  color: var(--lt-subtext1);
+}
+
+.cause__depth {
+  width: 14px;
+  flex-shrink: 0;
+  color: var(--lt-overlay2);
+  font-size: 11.5px;
+}
+
+.cause__kind { color: var(--lt-maroon); }
+.cause--root { background: rgba(205, 214, 244, 0.03); border-radius: var(--lt-radius-sm); padding: 8px 8px; }
+
+/* Three weights, one row, and the narrowest grant is always leftmost. */
+.actions { display: flex; align-items: center; gap: 8px; }
+
+.action {
+  padding: 4px 10px;
+  border: 0;
+  border-radius: var(--lt-radius-sm);
+  font-family: var(--lt-mono);
+  font-size: 11.5px;
+  font-weight: 500;
+  background: transparent;
+  color: var(--lt-overlay2);
+  cursor: default;
+}
+
+.action--primary { background: var(--lt-sky); color: var(--lt-crust); }
+.action--secondary { background: var(--lt-element-hover); color: var(--lt-subtext1); }
+.action--tertiary { background: transparent; color: var(--lt-overlay2); }
+
+/* What an eval will actually reach. The agent is a client like the others. */
+.connection {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 10px;
+  border-radius: var(--lt-radius);
+  font-family: var(--lt-mono);
+  font-size: 12.5px;
+  color: var(--lt-subtext0);
+  box-sizing: border-box;
+}
+
+.connection--bound { background: rgba(137, 220, 235, 0.07); }
+.connection__name { width: 140px; flex-shrink: 0; color: var(--lt-text); }
+.connection__what { color: var(--lt-overlay2); font-size: 12px; }
+.connection__trailing { margin-left: auto; color: var(--lt-overlay2); font-size: 12px; }
+.connection--agent .connection__name { color: var(--lt-agent); }
+
+/* A label and a count. Panels do not get toolbars. */
+.panel-header {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 2px 8px 10px;
+  font-family: var(--lt-mono);
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--lt-overlay2);
+}
+
+/* Says what is missing and offers the narrowest way to fix it.
+ * Never an illustration. */
+.empty {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  padding: 22px 16px;
+  box-sizing: border-box;
+}
+
+.empty__what { font-size: 13px; color: var(--lt-subtext1); }
+.empty__why { font-size: 12.5px; line-height: 1.6; color: var(--lt-overlay2); }
+
+/* ---- bands ------------------------------------------------------------- */
+
+/* Everything between two lines of code. The gutter column is reserved so the
+ * band's own content lands where the code does. */
+.band {
+  display: flex;
+  align-items: flex-start;
+  gap: 0;
+  font-family: var(--lt-mono);
+  font-size: 12.5px;
+  line-height: 1.55;
+  border-radius: var(--lt-radius);
+}
+
+.band__gutter {
+  width: var(--lt-gutter);
+  flex-shrink: 0;
+  padding: 7px 0;
+  text-align: right;
+  color: var(--lt-surface2);
+  font-size: 12px;
+  box-sizing: border-box;
+}
+
+.band__body { flex: 1; padding: 7px 11px; min-width: 0; }
+.band__value { color: var(--lt-text); white-space: pre-wrap; }
+.band__note { color: var(--lt-overlay2); font-size: 12px; }
+
+.band--result { background: rgba(137, 220, 235, 0.06); }
+.band--watch { background: var(--lt-watch-tint); }
+.band--watch .band__value { color: var(--lt-watch); }
+.band--agent { background: var(--lt-agent-tint); }
+.band--conflict { background: var(--lt-warning-tint); }
+.band--diagnostic { background: var(--lt-error-tint); }
+
+.band__reads { color: var(--lt-watch); font-size: 11.5px; }
+.band__code { color: var(--lt-subtext1); }
+
+/* Struck original, tinted replacement, both on the same code column. */
+.edit__before { color: var(--lt-overlay0); text-decoration: line-through; opacity: 0.38; }
+.edit__after { color: var(--lt-text); }
+
+/* The whole argument of the design: what the value was, and what it becomes. */
+.evidence {
+  padding: 10px 12px;
+  border-radius: var(--lt-radius);
+  background: var(--lt-quiet-tint);
+  font-family: var(--lt-mono);
+  font-size: 12.5px;
+}
+
+.evidence__label {
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--lt-sky);
+  margin-bottom: 6px;
+}
+
+.evidence__row { display: flex; gap: 10px; padding: 4px 0; }
+.evidence__side { width: 44px; flex-shrink: 0; color: var(--lt-overlay2); font-size: 11.5px; }
+.evidence__before { color: var(--lt-red); }
+.evidence__after { color: var(--lt-green); }
+
+/* An LSP diagnostic, in the buffer, with the reason beside the line.
+ * No left border — Zed uses one here, this does not. */
+.diagnostic__code { color: var(--lt-maroon); }
+.diagnostic__message { font-family: var(--lt-sans); color: var(--lt-subtext1); }
+
+/* ---- the catalogue ----------------------------------------------------- */
+
+/* The kit rendered from the same aliases the editor uses, so the design
+ * document and the implementation cannot disagree about a component. */
+.kit {
+  padding: 32px 34px 64px;
+  background: var(--lt-crust);
+  font-family: var(--lt-sans);
+  color: var(--lt-text);
+  overflow-y: auto;
+  height: 100%;
+  box-sizing: border-box;
+}
+
+.kit__title { font-size: 26px; font-weight: 600; letter-spacing: -0.01em; }
+.kit__blurb { font-size: 13.5px; line-height: 1.65; color: var(--lt-subtext0); max-width: 720px; margin-top: 8px; }
+.kit__section { margin-top: 34px; }
+.kit__section-name {
+  font-family: var(--lt-mono);
+  font-size: 12px;
+  color: var(--lt-sky);
+  margin-bottom: 12px;
+}
+
+.kit__cards { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start; }
+
+.kit__card {
+  border-radius: 14px;
+  overflow: hidden;
+  background: var(--lt-mantle);
+  box-shadow: inset 0 0 0 1px var(--lt-surface0);
+  width: 480px;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.kit__card--wide { width: 100%; }
+
+.kit__card-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 12px 16px 11px;
+  flex-wrap: wrap;
+}
+
+.kit__name { font-family: var(--lt-mono); font-size: 13px; font-weight: 500; color: var(--lt-text); }
+.kit__desc { font-size: 12.5px; color: var(--lt-overlay2); flex: 1; min-width: 180px; }
+
+/* The ground each component actually sits on. */
+.kit__demo {
+  background: var(--lt-base);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.kit__demo-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }

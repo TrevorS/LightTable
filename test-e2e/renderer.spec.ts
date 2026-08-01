@@ -162,3 +162,52 @@ test('the welcome screen renders and its buttons still do something', async ({ w
 
     await evalClj(window, '(do (object/destroy! intro) :gone)');
 });
+
+test('the component kit renders from the aliases the editor uses', async ({ window }) => {
+    // The design document draws twenty-five components; this draws the same
+    // twenty-five from lt.ui.row, lt.ui.chrome and lt.ui.band. If the two ever
+    // disagree about one, the disagreement is visible rather than theoretical —
+    // which is the only reason a catalogue is worth having.
+    await evalClj(window, '(do (cmd/exec! :kit.catalogue) :opened)');
+
+    const kit = window.locator('.kit');
+    await expect(kit).toHaveCount(1);
+
+    // Every alias is exercised, so a component that throws takes this down.
+    await expect(kit.locator('.kit__card')).toHaveCount(23);
+    await expect(kit.locator('.dot')).toHaveCount(15);
+    await expect(kit.locator('.row')).toHaveCount(11);
+    await expect(kit.locator('.band')).toHaveCount(7);
+
+    // Roles resolve through the token sheet rather than a literal in the
+    // markup: the class is what the component names, the colour is the CSS.
+    const selected = kit.locator('.row--selected').first();
+    expect(await selected.evaluate((n) => getComputedStyle(n).backgroundColor))
+        .toBe('rgba(137, 220, 235, 0.15)');
+    const agentDot = kit.locator('.dot--agent').first();
+    expect(await agentDot.evaluate((n) => getComputedStyle(n).backgroundColor))
+        .toBe('rgb(203, 166, 247)');
+
+    // And a token can be moved without touching a component, which is the
+    // whole argument for the sheet.
+    await window.evaluate("document.documentElement.style.setProperty('--lt-agent', 'rgb(1, 2, 3)')");
+    expect(await agentDot.evaluate((n) => getComputedStyle(n).backgroundColor)).toBe('rgb(1, 2, 3)');
+    await window.evaluate("document.documentElement.style.removeProperty('--lt-agent')");
+});
+
+test('a handler in the kit is data, and dispatching it changes state', async ({ window }) => {
+    // Section 05's claim, end to end in the assembled application: the vector
+    // in the hiccup is what runs, through replicant's dispatch rather than a
+    // closure the view captured.
+    expect(await evalClj(window, `
+        (do (reset! lt.state/app {:runs {"r" {:grants #{}}} :review {:at 0}})
+            (lt.actions/dispatch! [[:review/goto 4] [:run/grant "r" :write/src-worker]])
+            [(get-in @lt.state/app [:review :at])
+             (vec (get-in @lt.state/app [:runs "r" :grants]))])`))
+        .toBe('[4 [:write/src-worker]]');
+
+    // An unknown action is reported rather than thrown, because a rebindable
+    // table will be asked for actions that have gone away.
+    expect(await evalClj(window, `
+        (do (lt.actions/dispatch! [[:nope/at-all]]) :survived)`)).toBe(':survived');
+});

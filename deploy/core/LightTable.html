@@ -10,7 +10,10 @@
     <!-- Tree-sitter capture names as token classes. Before the theme rather
          than after: themes are injected into the head at runtime, so anything
          here is the default and a theme overrides it by arriving later. -->
-    <link type="text/css" rel="stylesheet" href="css/treesitter.css"></link>
+    <link type="text/css" rel="stylesheet" href="css/treesitter.css">
+    <!-- The component kit's token sheet. After treesitter.css and before any
+         skin, so a skin can still override a role — see doc/rendering.md. -->
+    <link type="text/css" rel="stylesheet" href="css/kit.css"></link>
     <style>
       html, body { background: #3b3f41; color:#ccc; height:100vh; width:100vw;}
       #loader { position:absolute; top:0; left:0; right:0; bottom:0; width:100vw; height:100vh; display:table; text-align:center; box-sizing:border-box; vertical-align:middle;}
