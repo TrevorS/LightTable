@@ -20,7 +20,7 @@
 
 import { EditorState, EditorSelection, Compartment, StateField, StateEffect, RangeSet } from '@codemirror/state';
 import type { Extension, Range, Text } from '@codemirror/state';
-import { EditorView, lineNumbers, keymap, drawSelection, Decoration, WidgetType } from '@codemirror/view';
+import { EditorView, keymap, Decoration, WidgetType } from '@codemirror/view';
 import type { DecorationSet } from '@codemirror/view';
 import {
     defaultKeymap, history, historyKeymap, historyField, undo, redo,
@@ -28,6 +28,7 @@ import {
 } from '@codemirror/commands';
 import { codeFolding, foldCode, unfoldCode, syntaxTree } from '@codemirror/language';
 import { themeExtensions } from './cm6-theme.js';
+import { Options, UNSUPPORTED } from './cm6-options.js';
 import { modeExtension } from './cm6-modes.js';
 import { runCommand } from './cm6-commands.js';
 import { bandField, setBands } from './cm6.js';
@@ -154,7 +155,7 @@ export class Cm6Editor {
     readonly view: EditorView;
     private readonly listeners = new Map<string, Listener[]>();
     private readonly language = new Compartment();
-    private readonly options: Record<string, unknown> = {};
+    private readonly settings = new Options();
     private declared: Band[] = [];
     private widgets: Band[] = [];
     private widgetId = 0;
@@ -163,13 +164,23 @@ export class Cm6Editor {
     private markerId = 0;
     private extending = false;
 
-    constructor(parent: HTMLElement, doc: string, extensions: Extension[] = []) {
+    constructor(parent: HTMLElement, doc: string, extensions: Extension[] = [],
+                defaults: Record<string, unknown> = {}) {
         this.view = new EditorView({
             state: EditorState.create({
                 doc,
                 extensions: [
-                    lineNumbers(),
-                    drawSelection(),
+                    // Everything a *setting* controls, each in a compartment of
+                    // its own so changing one keeps the document. The defaults
+                    // are CodeMirror 5's, because a behavior that has not run
+                    // yet should leave the editor where it was.
+                    ...this.settings.initial({
+                        lineNumbers: true,
+                        cursorBlinkRate: 530,
+                        tabSize: 4,
+                        indentUnit: 2,
+                        ...defaults
+                    }),
                     history(),
                     keymap.of([...defaultKeymap, ...historyKeymap]),
                     bandField,
@@ -355,7 +366,14 @@ export class Cm6Editor {
      */
     operation<T>(f: () => T): T { return f(); }
 
-    getOption(name: string): unknown { return this.options[name]; }
+    getOption(name: string): unknown { return this.settings.values[name]; }
+
+    /** Options that were set but do nothing here. For asking, and for a test. */
+    inertOptions(): string[] {
+        return Object.keys(this.settings.values)
+            .filter((k) => k in UNSUPPORTED)
+            .sort();
+    }
 
     /**
      * `mode` and `mime` reconfigure the language; everything else is recorded.
@@ -367,7 +385,7 @@ export class Cm6Editor {
      * mutating in place.
      */
     setOption(name: string, value: unknown): void {
-        this.options[name] = value;
+        this.settings.set(this.view, name, value);
         if (name === 'theme') {
             // CodeMirror 5 scopes a theme by putting `cm-s-<name>` on the
             // wrapper, and every theme file is written `.cm-s-monokai .cm-keyword`.
@@ -649,7 +667,7 @@ export class Cm6Editor {
     }
 
     getDoc(): Cm6Editor { return this; }
-    getMode(): { name: string } { return { name: String(this.options['mode'] ?? 'null') }; }
+    getMode(): { name: string } { return { name: String(this.getOption('mode') ?? 'null') }; }
 }
 
 /** What `lt.objs.editor` would call instead of `CodeMirror(node, opts)`. */
