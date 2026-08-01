@@ -27,6 +27,7 @@ rather than merely old, it says so at the top.
 |---|---|
 | [Behaviors, Objects and Tags](BOT.md) | The model the whole editor is built on. Read this one first — nothing else here makes sense without it. *Predates the modernization, and is still accurate.* |
 | [The Electron layer](electron-guide.md) | Processes, the preload, and what the window may reach. *Current.* |
+| [Rendering](rendering.md) | What draws the UI, the one seam another renderer plugs into, and what it must not own. *Current.* |
 
 ## Working on Light Table
 

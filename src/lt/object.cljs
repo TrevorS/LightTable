@@ -226,6 +226,22 @@
     (throw (js/Error. (str "Merge requires a map: " m))))
   (swap! obj merge m))
 
+(defn ->dom
+  "What an object's `:init` returned, as a DOM node.
+
+  Hiccup goes through singultus. Anything else is already a node and is used
+  as it is — and that second branch is the seam another renderer plugs into. An
+  `:init` returning what Replicant, React or plain `document.createElement`
+  produced needs nothing here to change, in either the create path or the
+  redefinition one.
+
+  It is load-bearing rather than defensive. `test-e2e/renderer.spec.ts` is what
+  says so, because nothing else would."
+  [content]
+  (if (vector? content)
+    (crate/html content)
+    content))
+
 (defn- handle-redef [odef]
   (let [id (::type odef)]
     (doseq [o (instances-by-type id)
@@ -234,11 +250,8 @@
                   old (:content o)
                   behs (set (:behaviors o))
                   inst (@instances (->id o))
-                  neue (when (:init odef)
-                         (apply (:init odef) inst args))
-                  neue (if (vector? neue)
-                         (crate/html neue)
-                         neue)]]
+                  neue (->dom (when (:init odef)
+                                (apply (:init odef) inst args)))]]
       (merge! inst {:tags (set/union (:tags o) (:tags odef))
                                       :behaviors (set/union behs (set (:behaviors odef)))
                                       :content neue})
@@ -373,11 +386,8 @@
                      :tags (set (conj (:tags obj) :object))))
         inst (store-inst inst)
         _ (merge! inst (update-listeners inst))
-        content (when (:init obj)
-                  (apply (:init obj) inst args))
-        content (if (vector? content)
-                  (crate/html content)
-                  content)
+        content (->dom (when (:init obj)
+                         (apply (:init obj) inst args)))
         final (merge! inst {:content content})]
 
     (add-watch inst ::change (fn [_ _ _ _]
