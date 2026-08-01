@@ -15,6 +15,7 @@
   namespace is the diff that removes it."
   (:require [lt.object :as object]
             [lt.objs.clients :as clients]
+            [lt.objs.clients.agent :as agent]
             [lt.objs.command :as cmd]
             [lt.objs.editor :as editor]
             [lt.objs.editor.lsp :as lsp]
@@ -57,13 +58,19 @@
   []
   (into {} (for [[id c] @clients/cs
                  :when @c]
-             [id {:name (:name @c)
-                  :kind (cond
-                          (object/has-tag? c :nrepl.client) :nrepl
-                          (object/has-tag? c :client.local) :self
-                          (object/has-tag? c :clients.devtools) :browser
-                          :else :client)
-                  :status (if (clients/available? c) :finished :lost)}])))
+             [id (merge
+                  {:name (:name @c)
+                   :kind (cond
+                           (object/has-tag? c :client.agent) :agent
+                           (object/has-tag? c :nrepl.client) :nrepl
+                           (object/has-tag? c :client.local) :self
+                           (object/has-tag? c :clients.devtools) :browser
+                           :else :client)
+                   :status (if (clients/available? c) :finished :lost)}
+                  ;; An agent is a client like the others and has one thing
+                  ;; they do not: where its work actually runs.
+                  (when (object/has-tag? c :client.agent)
+                    (select-keys (agent/state) [:status :via])))])))
 
 (defn results
   "Diagnostics, as results keyed the way the design keys them.

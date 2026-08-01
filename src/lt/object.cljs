@@ -133,6 +133,15 @@
                              :at (.now js/Date)}
                             es))))))
 
+(defonce behavior-source
+  ;; behavior keyword -> the file that attached it.
+  ;;
+  ;; Filled in by `lt.objs.settings`, which is where behavior files are read,
+  ;; and held here because this is where a behavior fails and the question gets
+  ;; asked. An indirection rather than a require, because `lt.object` is loaded
+  ;; long before anything can read a file.
+  (atom {}))
+
 (defn clear-errors!
   "Forget the errors seen so far, for a caller about to try something."
   []
@@ -169,7 +178,9 @@
        (when-not (= trigger :object.behavior.time)
          (raise obj :object.behavior.time r time trigger)))
        (catch :default e
-         (safe-report-error (str "Invalid behavior: " (-> (->behavior r) :name)))
+         (safe-report-error (str "Invalid behavior: " (-> (->behavior r) :name)
+                                 (when-let [file (@behavior-source (-> (->behavior r) :name))]
+                                   (str ", attached by " file))))
          (safe-report-error e))))))
 
 (defn raise

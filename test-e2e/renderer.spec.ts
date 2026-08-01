@@ -404,3 +404,94 @@ test('a watch ticks on its own clock, not the window\'s', async ({ window }) => 
             :closed)`);
     fs.rmSync(dir, { recursive: true, force: true });
 });
+
+// ---------------------------------------------------------------------------
+// The design's remaining open questions, answered in code.
+// ---------------------------------------------------------------------------
+
+test('an agent is a client in the same list as the REPL', async ({ window }) => {
+    // Question 2, and the design calls it a real commitment: is the agent a
+    // peer or a subsystem? A peer. What it does to this editor is what a REPL
+    // does to it, so a second mechanism would mean two answers to "what is
+    // connected" and a panel honest about one of them.
+    //
+    // The control surface is the agent's door, and calling it is what connects
+    // one — an editor nobody is driving should not claim an agent.
+    const clients = await evalClj(window, `
+        (do (lt.objs.control/request "snapshot" #js {})
+            (->> (:clients (lt.state.objects/snapshot))
+                 vals
+                 (filter #(= :agent (:kind %)))
+                 (map :name)
+                 vec))`);
+    expect(clients).toContain('claude');
+
+    // And the one thing an agent has that the others do not: where its work
+    // actually runs.
+    expect(await evalClj(window, '(some? (:via (lt.objs.clients.agent/state)))')).toBe('true');
+
+    // It reaches the connections panel because it is in the same registry, not
+    // because the panel was taught about agents.
+    await evalClj(window, '(do (lt.state.objects/sync!) :synced)');
+    const row = await evalClj(window, `
+        (->> (:clients @lt.state/app) vals (filter #(= :agent (:kind %))) count)`);
+    expect(row).toBe('1');
+});
+
+test('a behavior that throws says which file asked for it', async ({ window }) => {
+    // Question 3: do behaviors stay EDN on disk, or become a queryable store?
+    // On disk — a file you can read, diff and version is most of what a store
+    // would be for. What the store would genuinely have added is the answer to
+    // "where did this come from", and that is one atom filled while merging.
+    expect(await evalClj(window, `
+        (lt.objs.settings/where-from :editor :lt.ui.window/track-cursor)`))
+        .toContain('default.behaviors');
+
+    // Every contributing file, and how much each contributed.
+    expect(Number(await evalClj(window,
+        '(count (lt.objs.settings/sources))'))).toBeGreaterThan(1);
+
+    // And the payoff: a failing behavior names the file, not just itself.
+    // A behavior that throws on purpose, attached the way any plugin's is.
+    await evalClj(window, `
+        (do (object/clear-errors!)
+            (object/behavior* :lt.probe/throws
+                              :triggers #{:lt-probe-throw}
+                              :reaction (fn [_] (throw (js/Error. "on purpose"))))
+            (swap! object/behavior-source assoc :lt.probe/throws "somebody.behaviors")
+            (object/add-behavior! lt.objs.app/app :lt.probe/throws)
+            (object/raise lt.objs.app/app :lt-probe-throw)
+            :raised)`);
+    const said = await window.evaluate(
+        () => (globalThis as any).lt.objs.control.request('errors', {})
+            .errors.map((e: { message: string }) => e.message).join(' ')) as string;
+    expect(said).toContain('lt.probe/throws');
+    expect(said).toContain('somebody.behaviors');
+    await evalClj(window, '(do (object/clear-errors!) :cleared)');
+});
+
+test('the kit is data, so a component can be replaced while the editor runs', async ({ window }) => {
+    // Question 4: are aliases the right home, or should the seventeen be plain
+    // functions? Aliases — because this is possible, and it is the same claim
+    // as [tag behavior-keyword]: what the editor is made of is a table, and a
+    // table can be edited from inside the thing it describes.
+    expect(Number(await evalClj(window, '(count (lt.ui.kit/aliases))'))).toBeGreaterThanOrEqual(25);
+
+    await evalClj(window, '(do (cmd/exec! :kit.catalogue) :opened)');
+    await expect.poll(async () => await window.locator('.kit .row').count()).toBeGreaterThan(0);
+    expect(await window.locator('.kit .row--swapped').count()).toBe(0);
+
+    // One keyword, replaced at runtime. No view was recompiled and nothing
+    // that draws a row knows this happened.
+    await evalClj(window, `
+        (do (lt.ui.kit/redefine! :lt.ui.row/list-row
+                                 (fn [attrs body] [:div.row.row--swapped body]))
+            :swapped)`);
+    await expect.poll(async () => await window.locator('.kit .row--swapped').count())
+        .toBeGreaterThan(0);
+    expect(await evalClj(window, '(lt.ui.kit/redefined)')).toContain('list-row');
+
+    await evalClj(window, '(do (lt.ui.kit/restore!) :restored)');
+    await expect.poll(async () => await window.locator('.kit .row--swapped').count()).toBe(0);
+    await expect.poll(async () => await window.locator('.kit .row').count()).toBeGreaterThan(0);
+});

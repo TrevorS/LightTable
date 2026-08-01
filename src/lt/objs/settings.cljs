@@ -110,11 +110,67 @@
      (vector? behs) (flat-behaviors->map behs)
      :else (console/error (str "Invalid behaviors file: " file ". Behaviors must be either a vector or a map."))))
 
+(defonce provenance
+  ;; [tag behavior] -> the file that attached it, last writer winning.
+  ;;
+  ;; The design's third open question is whether behaviors stay EDN on disk or
+  ;; become a queryable store, noting that undo, provenance and "which behavior
+  ;; did this" want more structure. They stay on disk: a file you can read,
+  ;; diff, and put under version control is most of what the store would be
+  ;; for, and it is the thing plugins already write.
+  ;;
+  ;; What the store would genuinely have added is this — the answer to *where
+  ;; did this come from*, which a merged map loses. Recording it while merging
+  ;; costs one atom and answers the question the store was wanted for, without
+  ;; committing the format to something only Light Table can read.
+  (atom {}))
+
+(defn- remember-provenance!
+  "Record which file each entry in `behaviors-map` arrived from."
+  [behaviors-map file]
+  (swap! provenance
+         (fn [known]
+           (reduce (fn [acc [tag behs]]
+                     (reduce (fn [acc beh]
+                               (assoc acc [tag (if (coll? beh) (first beh) beh)] file))
+                             acc
+                             behs))
+                   known
+                   (:+ behaviors-map))))
+  ;; And where a failing behavior will look for it: lt.object is what catches
+  ;; the throw, so it is what has to be able to name the file.
+  (swap! object/behavior-source
+         (fn [known]
+           (reduce (fn [acc [tag behs]]
+                     (reduce (fn [acc beh]
+                               (assoc acc (if (coll? beh) (first beh) beh) file))
+                             acc
+                             behs))
+                   known
+                   (:+ behaviors-map)))))
+
+(defn where-from
+  "The file that attached `behavior` to `tag`, or nil.
+
+  Which behavior did this is answerable from an error message; *and who asked
+  for it* is answerable from here."
+  [tag behavior]
+  (get @provenance [tag behavior]))
+
+(defn sources
+  "Every file that has contributed a behavior, and how many each attached."
+  []
+  (->> (vals @provenance)
+       frequencies
+       (sort-by (comp - val))
+       vec))
+
 (defn parse-file [file]
-  (parse-behaviors (-> (files/open-sync file)
-                       :content
-                       (safe-read file))
-                   file))
+  (doto (parse-behaviors (-> (files/open-sync file)
+                             :content
+                             (safe-read file))
+                         file)
+    (remember-provenance! file)))
 
 (defn pprint-flat-behaviors [flat]
   (-> (reduce (fn [result cur]

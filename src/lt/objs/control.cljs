@@ -43,6 +43,7 @@
   make driving the editor legible, not to make it safe."
   (:require [clojure.string :as string]
             [lt.object :as object]
+            [lt.objs.clients.agent :as agent]
             [lt.objs.cljs-compiler :as cljs-compiler]
             [lt.objs.clients :as clients]
             [lt.objs.editor :as editor]
@@ -390,4 +391,13 @@
   `script/lt-repl.mts` and anything wrapping this in MCP come through here:
   JSON in, JSON out, no ClojureScript values crossing the boundary."
   [op arg]
-  (clj->js (handle op (js->clj arg :keywordize-keys true))))
+  ;; Registering here rather than at startup: an editor nobody is driving
+  ;; should not claim an agent is connected. The first call is what connects
+  ;; it, and from then on it is in the same list as the REPL — see
+  ;; [[lt.objs.clients.agent]] for why that is the shape rather than a
+  ;; subsystem of its own.
+  (agent/connect!)
+  (agent/note-activity! true)
+  (let [answer (handle op (js->clj arg :keywordize-keys true))]
+    (agent/note-activity! false)
+    (clj->js answer)))

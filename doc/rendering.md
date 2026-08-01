@@ -223,6 +223,28 @@ that a surface has its own clock:
 The design already draws watches in a distinct colour; here that distinction is
 also a rendering boundary.
 
+## The kit is data
+
+The design's fourth question was whether the seventeen aliases should have been
+plain functions. Aliases, and [`lt.ui.kit`](../src/lt/ui/kit.cljs) is the
+argument: a plain function is reachable only by code that calls it, while an
+alias is a keyword in a registry — so the set of components is a *value*, and
+one can be replaced without touching a view.
+
+```clojure
+(kit/redefine! :lt.ui.row/list-row (fn [attrs body] [:div.row.row--fancy body]))
+```
+
+Every row is that on the next draw, and nothing that draws a row was
+recompiled. It is the same claim as `[tag behavior-keyword]` in
+`default.behaviors`: what the editor is made of is a table, and a table can be
+edited from inside the thing it describes.
+
+One thing to know: replacing an alias produces **identical hiccup** — the
+keyword did not change, only what it expands to — so a diffing renderer
+correctly does nothing. `lt.ui/redraw-all!` unmounts each root and rebuilds it.
+That is why redefining is explicit rather than watched.
+
 ## Two things a new renderer must not do
 
 **Do not let it own the CodeMirror subtree.** An editor's content is a

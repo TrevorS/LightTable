@@ -128,3 +128,45 @@ The thing worth keeping from this exercise is not the conclusion but the
 number: **zero** CodeMirror references in the compiled flagship plugins. The
 editor abstraction is in better shape than anyone assumed, and that is what
 makes the migration a project rather than a rewrite.
+
+## Asked again, after the bands (July 2026)
+
+Two of the three conditions above have since been met. LSP is done. And the
+inline-result work the design calls the product now exists — `lt.ui.bands`
+draws hiccup between two lines of code, which is exactly the thing CodeMirror 6
+treats as a primitive and CodeMirror 5 treats as a line widget.
+
+So it is worth asking again, and the answer is still **not yet** — for a
+different reason than last time.
+
+**What changed in favour.** The new code's coupling to CodeMirror is two
+functions: `ensure-widget!` and `retire!`, both going through
+`lt.objs.editor/line-widget`. The band mechanism, which should have been the
+hardest thing to port, is the easiest. And question 1 of the design asks which
+editor is being hosted, which deserves an answer rather than a default.
+
+**What changed against.** There is a migration in flight. The window renders
+from state beside the real chrome rather than as it, and the piece that closes
+that gap — making the state the source of truth instead of a projection of the
+objects — is the same `lt.objs.editor` surface a CodeMirror 6 port would be
+rewriting. Two half-finished migrations through one seam is how both stall.
+
+**The count, re-measured:**
+
+| | |
+|---|---|
+| `js/CodeMirror` references in `src/` | 61, across 9 namespaces |
+| …of which are the command table in `editor/pool.cljs` | 34 |
+| `->cm-ed` callers outside `lt.objs.editor` | 50 |
+| CodeMirror references in the new Replicant layer | **0** |
+
+That last row is the one that matters, and it is the argument for waiting
+rather than against: the new work is already behind the seam, so it costs
+nothing to keep building it and porting later.
+
+**The trigger, stated so it can be checked.** Do it when the window is the
+chrome — when `lt.state.objects` is deleted rather than merely shrinking. At
+that point the editor is mounted by a view through one `on-mount` hook, the
+command table has one caller, and the port is a rewrite of one namespace behind
+signatures that Paredit has already proved hold. Before that point it is the
+same work plus a moving target.

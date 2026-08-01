@@ -37,6 +37,7 @@
             [lt.actions :as actions]
             [lt.ui.bands :as bands]
             [lt.ui.catalogue]
+            [lt.ui.kit]
             [lt.ui.window]
             [lt.util.style]))
 

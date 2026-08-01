@@ -21,6 +21,35 @@
   (:require [replicant.dom :as r]
             [singultus.core :as crate]))
 
+(defonce ^:private rendered
+  ;; Every object [[node]] is drawing, so that something which changes what a
+  ;; component *is* — rather than what the data is — can ask them all to draw
+  ;; again. See [[lt.ui.kit/redefine!]].
+  ;;
+  ;; Weak in the only sense that matters here: an entry whose object has been
+  ;; destroyed is dropped on the next pass rather than held.
+  (atom #{}))
+
+(defonce ^:private redraws (atom {}))
+
+(defn redraw-all!
+  "Ask every object rendering through [[node]] to draw itself from scratch.
+
+  From scratch, and that is the point. Swapping the object would re-run the
+  view and produce *identical* hiccup — the alias keyword has not changed, only
+  what it expands to — so a diffing renderer correctly does nothing. The stored
+  vdom has to go, which is what `replicant.dom/unmount` is for.
+
+  Nothing here watches the alias registry: it is not state, and a renderer
+  observing something that changes twice a year is watching the wrong thing.
+  Redefining a component is rare and explicit, so it says so explicitly."
+  []
+  (swap! rendered (fn [objs] (into #{} (filter deref) objs)))
+  (doseq [obj @rendered
+          :let [redraw (get @redraws obj)]
+          :when redraw]
+    (redraw)))
+
 (defn node
   "A DOM node for `obj`, whose contents Replicant renders from `view`.
 
@@ -45,6 +74,7 @@
   there is nothing to unsubscribe. Watching another object's atom does need
   unsubscribing — [[watch]] is for that."
   [obj root view]
+  (swap! rendered conj obj)
   (let [el (crate/html root)
         draw! (fn []
                 ;; A destroyed object is nil, and the watch fires on the way
@@ -53,6 +83,10 @@
                   (r/render el (view obj))))]
     (draw!)
     (add-watch obj ::render (fn [_ _ _ _] (draw!)))
+    (swap! redraws assoc obj (fn []
+                               (when @obj
+                                 (r/unmount el)
+                                 (draw!))))
     el))
 
 (defn watch
