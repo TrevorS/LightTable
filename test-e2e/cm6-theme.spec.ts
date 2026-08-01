@@ -87,6 +87,12 @@ test('a theme colours a CodeMirror 6 editor without being edited', async ({ wind
         const ed = w.ltCm6Editor.makeCm6Editor(host, { value: 'const answer = 42;\n' });
         ed.setOption('mode', 'javascript');
         ed.setOption('theme', 'monokai');
+        // Typed into afterwards, and that is the whole point of the line.
+        // CodeMirror 6 recomputes the editor's class attribute on every update
+        // and assigns it whole, so a class put there from outside lasts exactly
+        // until the next keystroke — which is what this used to do, and what an
+        // assertion made the instant after `setOption` could not see.
+        ed.replaceRange('\n', { line: 1, ch: 0 });
 
         const keyword = host.querySelector('.cm-keyword');
         const scoped = host.querySelector('.cm-s-monokai');

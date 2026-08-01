@@ -109,7 +109,7 @@ Metadata of current behavior set during raise and raise-reduce
 
 Add behavior to object and update its listeners
 
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/object.cljs#L417)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/object.cljs#L425)
 
 <a id="var-add-tags"></a>
 
@@ -122,7 +122,7 @@ Add behavior to object and update its listeners
 Add tags to given object and updates effected behaviors and listeners.
 ::tags-added trigger is raised on object after update
 
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/object.cljs#L448)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/object.cljs#L456)
 
 <a id="var-assoc-in"></a>
 
@@ -175,7 +175,7 @@ Map of behavior names to behaviors created by macros/behavior
 
 Find object by its unique numerical id
 
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/object.cljs#L429)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/object.cljs#L437)
 
 <a id="var-by-tag"></a>
 
@@ -187,7 +187,7 @@ Find object by its unique numerical id
 
 Find objects that have given tag
 
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/object.cljs#L435)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/object.cljs#L443)
 
 <a id="var-call-behavior-reaction"></a>
 
@@ -252,7 +252,7 @@ cache and removing associated DOM content
 
 Return truthy if object has tag
 
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/object.cljs#L443)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/object.cljs#L451)
 
 <a id="var-instances"></a>
 
@@ -355,7 +355,7 @@ is initial value for reduce and any args are passed to behavior fn
 
 Re-apply an object's listeners and raise :object.refresh on it.
 
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/object.cljs#L410)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/object.cljs#L418)
 
 <a id="var-rem-behavior"></a>
 
@@ -367,7 +367,7 @@ Re-apply an object's listeners and raise :object.refresh on it.
 
 Remove behavior from object and update its listeners
 
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/object.cljs#L423)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/object.cljs#L431)
 
 <a id="var-remove-tags"></a>
 
@@ -380,7 +380,7 @@ Remove behavior from object and update its listeners
 Remove tags from given object and updates effected behaviors and listeners.
 ::tags-removed trigger is raised on object after update
 
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/object.cljs#L458)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/object.cljs#L466)
 
 <a id="var-safe-report-error"></a>
 
@@ -417,7 +417,7 @@ Remove tags from given object and updates effected behaviors and listeners.
 
 Associate behaviors to given tag and refresh objects with given tag
 
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/object.cljs#L473)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/object.cljs#L481)
 
 <a id="var-tags"></a>
 

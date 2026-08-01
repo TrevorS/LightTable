@@ -72,26 +72,53 @@ export const legacyHighlightStyle = HighlightStyle.define([
 ]);
 
 /**
- * Elements that live as long as the editor, labelled with both names.
+ * The two elements CodeMirror 6 writes the class attribute of, told to carry
+ * CodeMirror 5's name as well.
  *
- * Only four, and they are the four that carry a theme's typography and
- * background — so this alone is the difference between an editor that looks
- * like a text area and one that looks like Light Table.
+ * Through the facets rather than by adding to `classList`, and the difference is
+ * not stylistic. CodeMirror 6 recomputes `class` on the editor and the content
+ * on every update and assigns it whole, so anything added from outside survives
+ * until the next keystroke and no longer. A facet is how you tell it what the
+ * class should be, so it puts the name back itself.
+ *
+ * That was a real bug, and a quiet one: it is how a theme came to apply for as
+ * long as it took to press a key.
+ */
+const legacyNames: Extension = [
+    EditorView.editorAttributes.of({ class: 'CodeMirror' }),
+    EditorView.contentAttributes.of({ class: 'CodeMirror-code CodeMirror-lines' })
+];
+
+/**
+ * The two it does not: the scroller, whose class it sets once, and the gutters,
+ * which belong to an extension rather than to the view.
+ *
+ * Re-checked on update because a configuration change can rebuild the gutters,
+ * and nothing would put the name back.
  */
 const stampLegacyClasses = ViewPlugin.fromClass(class {
     constructor(view: EditorView) { this.stamp(view); }
     update(update: { view: EditorView }): void { this.stamp(update.view); }
 
     private stamp(view: EditorView): void {
-        view.dom.classList.add('CodeMirror');
         view.scrollDOM.classList.add('CodeMirror-scroll');
-        view.contentDOM.classList.add('CodeMirror-code', 'CodeMirror-lines');
-        // The gutters element is built with the view but is not one of the
-        // three it hands out, so it is found rather than known. Re-checked on
-        // update because a configuration change can rebuild it.
         view.dom.querySelector('.cm-gutters')?.classList.add('CodeMirror-gutters');
     }
 });
+
+/**
+ * The class a theme is scoped by, as an extension.
+ *
+ * CodeMirror 5 puts `cm-s-<name>` on the wrapper and every theme file is
+ * written `.cm-s-monokai .cm-keyword`, so the same class on the same element
+ * makes the same rules apply. It goes through the facet for the reason above —
+ * this one is why the reason was found.
+ */
+export function themeClass(theme: string): Extension {
+    const names = String(theme || 'default').split(' ')
+        .filter(Boolean).map((part) => 'cm-s-' + part).join(' ');
+    return names ? EditorView.editorAttributes.of({ class: names }) : [];
+}
 
 /**
  * CodeMirror 5's structural class names, and what CodeMirror 6 calls them.
@@ -240,9 +267,9 @@ export function legacyHighlighting(): Extension {
     return syntaxHighlighting(legacyHighlightStyle, { fallback: true });
 }
 
-/** The structural class names, on the elements that keep them for a lifetime. */
+/** CodeMirror 5's structural class names, on the elements a theme styles. */
 export function themeExtensions(): Extension {
-    return [stampLegacyClasses];
+    return [legacyNames, stampLegacyClasses];
 }
 
 declare global {
@@ -251,5 +278,5 @@ declare global {
 
 window.ltCm6Theme = {
     mirrorSelector, mirrorSheet, mirrorAllSheets, watchForThemes,
-    legacyHighlightStyle, legacyHighlighting
+    legacyHighlightStyle, legacyHighlighting, themeClass
 };

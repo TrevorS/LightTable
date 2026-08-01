@@ -31,7 +31,7 @@ import {
     lineComment, lineUncomment, blockComment, blockUncomment, indentSelection
 } from '@codemirror/commands';
 import { codeFolding, foldCode, unfoldCode, syntaxTree } from '@codemirror/language';
-import { themeExtensions, legacyHighlighting } from './cm6-theme.js';
+import { themeExtensions, legacyHighlighting, themeClass } from './cm6-theme.js';
 import { treeHighlighting, setTreeHighlighter } from './cm6-treesitter.js';
 import type { LineSpans } from './cm6-treesitter.js';
 import { Options, UNSUPPORTED } from './cm6-options.js';
@@ -187,6 +187,7 @@ export class Cm6Editor {
     private readonly listeners = new Map<string, Listener[]>();
     private readonly language = new Compartment();
     private readonly highlighting = new Compartment();
+    private readonly theme = new Compartment();
     private readonly settings = new Options();
     private declared: Band[] = [];
     private widgets: Band[] = [];
@@ -226,6 +227,7 @@ export class Cm6Editor {
                     markerField,
                     codeFolding(),
                     themeExtensions(),
+                    this.theme.of(themeClass('default')),
                     // Without this a language parses and nothing is coloured:
                     // CodeMirror 6 separates having a tree from drawing one,
                     // and the tree alone is invisible. What it supplies is
@@ -296,7 +298,9 @@ export class Cm6Editor {
             }),
             parent
         });
-        this.setOption('theme', 'default');
+        // The compartment above already holds it; this is so `getOption` says
+        // so, which is the half of CodeMirror 5's contract a facet cannot keep.
+        this.settings.values['theme'] = 'default';
     }
 
     // --- positions ---------------------------------------------------------
@@ -480,15 +484,9 @@ export class Cm6Editor {
     setOption(name: string, value: unknown): void {
         this.settings.set(this.view, name, value);
         if (name === 'theme') {
-            // CodeMirror 5 scopes a theme by putting `cm-s-<name>` on the
-            // wrapper, and every theme file is written `.cm-s-monokai .cm-keyword`.
-            // Same element, same class, so the same rules apply.
-            for (const c of Array.from(this.view.dom.classList)) {
-                if (c.startsWith('cm-s-')) this.view.dom.classList.remove(c);
-            }
-            for (const part of String(value ?? 'default').split(' ')) {
-                if (part) this.view.dom.classList.add('cm-s-' + part);
-            }
+            this.view.dispatch({
+                effects: this.theme.reconfigure(themeClass(String(value ?? 'default')))
+            });
         }
         if (name === 'mode' || name === 'mime') {
             this.view.dispatch({

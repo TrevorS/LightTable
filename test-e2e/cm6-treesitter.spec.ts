@@ -134,6 +134,38 @@ test('a keystroke repaints, and only the tree decides the colours', async ({ win
     await close(window, file);
 });
 
+test('the theme that ships is dark, and colours the captures itself', async ({ window }) => {
+    // Catppuccin Mocha, and the two halves that have to meet: the editor wears
+    // the theme's class — which it did not until the class moved onto
+    // CodeMirror 6's own facet, because the view rewrites that attribute on
+    // every update — and the theme's tree-sitter rules beat the defaults in
+    // css/treesitter.css by being scoped to it.
+    const file = await open(window, ':cm6');
+    await expect.poll(async () => (await paintedClasses(window, file)).length)
+        .toBeGreaterThan(0);
+
+    const look = await window.evaluate(([p]) => {
+        const w = globalThis as any;
+        const ed = w.cljs.core.first.call(null, w.lt.objs.editor.pool.by_path(p));
+        const root = w.lt.objs.editor.__GT_elem(ed) as HTMLElement;
+        const type = root.querySelector('.cm-ts-type') as HTMLElement | null;
+        return {
+            background: getComputedStyle(root).backgroundColor,
+            colour: getComputedStyle(root).color,
+            type: type ? getComputedStyle(type).color : null
+        };
+    }, [file]);
+
+    expect(look.background).toBe('rgb(30, 30, 46)');   // base
+    expect(look.colour).toBe('rgb(205, 214, 244)');    // text
+    // Mocha's yellow, which is what the palette assigns to a type. The default
+    // in treesitter.css is a teal; if that were showing, this theme's rules
+    // would be losing to the file they are meant to override.
+    expect(look.type).toBe('rgb(249, 226, 175)');
+
+    await close(window, file);
+});
+
 test('installing a highlighter turns the language\'s own colouring off', async ({ window }) => {
     // Two things can colour the same characters, and only one may. They speak
     // different vocabularies — `cm-keyword` against `cm-ts-keyword` — and a

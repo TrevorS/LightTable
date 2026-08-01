@@ -26,7 +26,7 @@
 
  ;; The editor tag is applied to all editors
  [:editor :lt.objs.editor/no-wrap]
- [:editor :lt.objs.style/set-theme "default"]
+ [:editor :lt.objs.style/set-theme "catppuccin-mocha"]
 
  ;; Here we can add behaviors to just clojure editors
  [:editor.clojure :lt.plugins.clojure/print-length 1000]
