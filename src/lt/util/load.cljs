@@ -6,7 +6,8 @@
   rest of Light Table loads through — nothing else can move until it has."
   (:require [clojure.string :as string]
             [lt.objs.plugins.node-modules :as node-modules]
-            [lt.util.bridge :as bridge]))
+            [lt.util.bridge :as bridge]
+            [lt.util.load.compiled :as compiled]))
 
 (def dir "Directory where Light Table is being executed." (str bridge/app-dir "/.."))
 
@@ -75,6 +76,31 @@
       (abs-source-mapping-url file)
       (str "\n\n//# sourceURL="  (js/encodeURI file))))
 
+(defn- defined-here?
+  "Whether `name` is a global of the running bundle. A hoisted constant is a
+  top-level `var` of an unwrapped `:simple` build, so it is one."
+  [name]
+  (not (undefined? (aget js/globalThis name))))
+
+(defn- check-build!
+  "Throws if `code` was compiled against a different build of Light Table.
+
+  See [[lt.util.load.compiled]] for what that means and why the error it
+  replaces is worth replacing. The check belongs here because this is the one
+  door compiled ClojureScript comes through, and refusing code that cannot run
+  in this window is the same job as running it."
+  [code file]
+  (when-let [missing (seq (compiled/mismatched-constants code defined-here?))]
+    (throw (js/Error. (str (.basename bridge/path file)
+                           " was compiled against a different build of Light Table"
+                           " (it needs " (first missing) ", which this build does not have)."
+                           " Update the plugin, or rebuild it if it is yours.")))))
+
+(defn- eval-js [code file]
+  (let [code (prep code file)]
+    (check-build! code file)
+    (js/window.eval code)))
+
 (defn js
   "Loads `file`, into Light Table and evaluates it.
 
@@ -85,10 +111,9 @@
                 (.join bridge/path dir file)
                 file)]
      (if sync
-       (js/window.eval (-> (.readFileSync bridge/files file)
-                           (prep file)))
+       (eval-js (.readFileSync bridge/files file) file)
        (-> (.readFile bridge/files file)
-           (.then #(js/window.eval (prep % file))))))))
+           (.then #(eval-js % file)))))))
 
 (defn css
   "Loads `file` into Light Table as CSS. Returns the resulting link."

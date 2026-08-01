@@ -91,6 +91,8 @@ offline, and a devtools client that polled a port that was not there.
   against another with `ReferenceError: cljs$cst$2661$eval_BANG_ is not
   defined`. Rebuilding the app without re-running `script/place-plugins.mts`
   produces exactly that, and the startup-console assertion is what says so.
+  Three times, which is why it is now checked rather than caught: see
+  [`lt.util.load.compiled`](../src/lt/util/load/compiled.cljs).
 
 ## The linter is a pinned binary
 

@@ -1037,8 +1037,14 @@
                                 (try
                                   (load/js path true)
                                   (object/update! this [::loaded-files] #(conj (or % #{}) path))
+                                  ;; Reported rather than logged: a plugin that
+                                  ;; did not load is exactly the kind of thing
+                                  ;; something driving the editor from outside
+                                  ;; needs to be able to ask about, and a
+                                  ;; console line is not an answer.
                                   (catch :default e
-                                    (console/error (str "Error loading JS file: " path " : " e) e))))))))))
+                                    (object/safe-report-error (str "Error loading JS file: " path))
+                                    (object/safe-report-error e))))))))))
 
 (behavior ::load-css
           :triggers #{:object.instant}

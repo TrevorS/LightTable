@@ -124,6 +124,14 @@ That is what makes TypeScript a natural third option rather than a new
 mechanism: it compiles to the JavaScript the loader already takes. Nothing in
 Light Table had to change to accept the plugin below.
 
+It is also the one thing a ClojureScript plugin has to live with. It compiles
+as a module of the editor's own bundle and shares that bundle's table of
+hoisted literals, which is renumbered every build — so a compiled plugin
+belongs to the release it was compiled against, and needs rebuilding for the
+next one. The loader checks before evaluating and says so by name rather than
+failing with an undefined variable. A TypeScript or JavaScript plugin has no
+such tie.
+
 ## Writing one in TypeScript
 
 Plugins are evaluated as global-scope scripts, so a plugin compiles to one

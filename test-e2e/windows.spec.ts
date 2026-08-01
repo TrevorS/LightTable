@@ -118,3 +118,40 @@ test('the User plugin is refreshed from the build, not left stale', async () => 
     await second.close().catch(() => { /* already gone */ });
     fs.rmSync(home, { recursive: true, force: true });
 });
+
+test('a plugin built against another release is refused by name', async () => {
+    // The case the User plugin fix does not reach: a plugin a person installed
+    // before upgrading. Its compiled module names constants this build does not
+    // have, and evaluating it throws `cljs$cst$…$… is not defined` — an error
+    // about a variable, for a problem about a version.
+    const home = scratchDir('stale-plugin');
+    const plugin = path.join(home, 'plugins', 'Stale');
+    fs.mkdirSync(plugin, { recursive: true });
+    fs.writeFileSync(path.join(plugin, 'plugin.edn'),
+        '{:name "Stale" :version "0.0.1" :author "a test" :desc "Built against another release."\n' +
+        ' :behaviors "stale.behaviors" :capabilities #{}}\n');
+    fs.writeFileSync(path.join(plugin, 'stale.behaviors'),
+        '{:+ {:app [(:lt.objs.plugins/load-js "stale_compiled.js" true)]}}\n');
+    // Index 110 is a real constant in this build, under another name. Comparing
+    // indices would have let this through; comparing names is what catches it.
+    fs.writeFileSync(path.join(plugin, 'stale_compiled.js'),
+        'lt.plugins.stale = {go: function () { return cljs$cst$110$tags; }};\n');
+
+    const app = await launch({ LT_USER_DIR: home });
+    const window = await editorWindow(app);
+
+    // Asked of the error ring rather than of the console, because that is what
+    // something driving the editor can ask — and a plugin that did not load is
+    // the first thing it would want to know.
+    const errors = await window.evaluate(
+        "lt.objs.control.request('errors', {})") as { errors: { message: string }[] };
+    const said = errors.errors.map((e) => e.message).join(' ');
+    expect(said).toContain('stale_compiled.js');
+    expect(said).toContain('different build');
+    expect(said).toContain('cljs$cst$110$tags');
+    // The editor is still an editor: one refused plugin is not a white screen.
+    expect(await window.evaluate("typeof lt.objs.app")).toBe('object');
+
+    await app.close().catch(() => { /* already gone */ });
+    fs.rmSync(home, { recursive: true, force: true });
+});
