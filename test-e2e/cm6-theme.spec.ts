@@ -62,6 +62,9 @@ test('and the longest name wins, which is the whole reason for the order', async
     expect(await mirror(window, '.CodeMirror-gutters')).not.toContain('cm-editor');
 
     // A name the table does not know is left alone rather than half-rewritten.
+    // This one stays unknown on purpose: the autocomplete list is Light Table's
+    // own element and carries this class on either engine, so a theme's rules
+    // already reach it and a twin would match nothing.
     expect(await mirror(window, '.CodeMirror-hints')).toBe(null);
 
     // And a name that used to be in that position is not any more: search is

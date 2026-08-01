@@ -152,10 +152,11 @@ test('the rest of the surface answers rather than throwing', async ({ window }) 
 });
 
 test('every method lt.objs.editor calls exists on the adapter', async ({ window }) => {
-    // The list is 54 — every method any ClojureScript in this repository or in
+    // The list is 55 — every method any ClojureScript in this repository or in
     // deploy/plugins calls on a CodeMirror instance, extracted rather than
-    // remembered. A method that is missing is a TypeError in whichever feature
-    // happens to reach it first, which is the worst way to find out.
+    // remembered, plus the ones Light Table's own CodeMirror addons call. A
+    // method that is missing is a TypeError in whichever feature happens to
+    // reach it first, which is the worst way to find out.
     const missing = await window.evaluate(() => {
         const w = globalThis as any;
         const host = document.createElement('div');
@@ -172,7 +173,10 @@ test('every method lt.objs.editor calls exists on the adapter', async ({ window 
             'setExtending', 'setHistory', 'setOption', 'setSelection', 'somethingSelected',
             'swapDoc', 'uncomment', 'undo',
             // Found by flipping the default and watching what threw.
-            'getScrollInfo', 'getValue', 'setValue'];
+            'getScrollInfo', 'getValue', 'setValue',
+            // Called by cm-hint.ts rather than by any ClojureScript: the hint
+            // list positions itself against the cursor.
+            'cursorCoords'];
         const gaps = wanted.filter((m) => typeof ed[m] !== 'function');
         host.remove();
         return gaps;

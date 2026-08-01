@@ -15,10 +15,13 @@
   (:require ["./fuzzy.js" :as fuzzy-js]
             ["./dragdrop.js" :as dragdrop-js]
             ["./treesitter.js" :as treesitter-js]
-            ;; Required for their side effects: each registers itself with the
+            ;; Required for its side effect: it registers itself with the
             ;; global CodeMirror as it loads.
             ["./cm-search.js"]
-            ["./cm-hint.js"]
+            ;; Registers itself the same way, and is also bound below — the
+            ;; hint list has to position against either engine's editor, and
+            ;; the global only knows about one of them.
+            ["./cm-hint.js" :as cm-hint-js]
             ;; CodeMirror 6. `lt.objs.editor` builds one of these when the
             ;; engine is set to it; the rest register themselves on the window
             ;; so a test and a REPL can reach them. See src-window/cm6.ts.
@@ -41,6 +44,12 @@
   "Tree-sitter highlighting: initRuntime, highlighterFor, makeMode,
   captureClasses, spansFromCaptures, styleAt. See src-window/treesitter.ts."
   treesitter-js)
+
+(def ^js cm-hint
+  "Where the autocomplete list goes: positionHint, ensureHintVisible. Takes any
+  editor that can say where its cursor is, which both engines can. See
+  src-window/cm-hint.ts."
+  cm-hint-js)
 
 (def ^js cm6
   "CodeMirror 6's band mechanism: makeEditor, showBands, drawnBands. The bands

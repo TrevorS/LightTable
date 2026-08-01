@@ -1,9 +1,9 @@
 // A CodeMirror 6 editor that answers to CodeMirror 5's method names.
 //
-// `lt.objs.editor` wraps a CodeMirror instance and calls 54 methods on it —
+// `lt.objs.editor` wraps a CodeMirror instance and calls 55 methods on it —
 // every method any ClojureScript in this repository or in deploy/plugins calls,
-// extracted rather than remembered, and asserted as a list in
-// test-e2e/cm6-editor.spec.ts. Rewriting all of that against CodeMirror 6's API
+// extracted rather than remembered, plus what Light Table's own CodeMirror
+// addons call, and asserted as a list in test-e2e/cm6-editor.spec.ts. Rewriting all of that against CodeMirror 6's API
 // in one change is a rewrite nobody can review and no test can bisect. So
 // instead the engine is swapped underneath: this presents the surface
 // `lt.objs.editor` already speaks, and every one of its callers — including the
@@ -20,7 +20,9 @@
 // cm6-modes.ts. A gap you can ask about beats one you discover. This codebase
 // has paid for that lesson more than twice.
 
-import { EditorState, EditorSelection, Compartment, StateField, StateEffect, RangeSet } from '@codemirror/state';
+import {
+    EditorState, EditorSelection, Compartment, StateField, StateEffect, RangeSet, Transaction
+} from '@codemirror/state';
 import type { Extension, Range, Text } from '@codemirror/state';
 import { EditorView, keymap, Decoration, WidgetType } from '@codemirror/view';
 import type { DecorationSet } from '@codemirror/view';
@@ -153,6 +155,27 @@ const posIn = (doc: Text, offset: number): Pos => {
     return { line: line.number - 1, ch: offset - line.from };
 };
 
+/**
+ * What CodeMirror 5 would have called this edit.
+ *
+ * Both engines label an edit with where it came from, in different words:
+ * CodeMirror 5 puts a string on the change object, CodeMirror 6 puts an
+ * annotation on the transaction. Readers care — autocomplete stays open through
+ * typing and closes on a paste, and it decides which by reading this string.
+ *
+ * Anything unlabelled is reported as typed, which is what this used to say
+ * about every change unconditionally.
+ */
+const originOf = (tr: Transaction): string => {
+    const event = tr.annotation(Transaction.userEvent) ?? '';
+    if (event.startsWith('input.paste')) return 'paste';
+    if (event.startsWith('input.drop') || event.startsWith('move.drop')) return 'drag';
+    if (event.startsWith('delete.cut')) return 'cut';
+    if (event.startsWith('delete')) return '+delete';
+    if (event === 'undo' || event === 'redo') return event;
+    return '+input';
+};
+
 interface LineHandle { line: number }
 
 type Listener = (...args: unknown[]) => void;
@@ -218,23 +241,33 @@ export class Cm6Editor {
                             // so the server stayed confident about a file it
                             // had the wrong text for.
                             //
-                            // Positions are in the document as it was, which is
-                            // what CodeMirror 5 reports. For a transaction
-                            // carrying several changes the later ones are
-                            // measured against that same starting document
-                            // rather than against each other, so a multi-cursor
-                            // edit is approximate here; every edit Light Table
-                            // makes today is one change.
-                            const before = update.startState.doc;
-                            update.changes.iterChanges((fromA, toA, _fromB, _toB, inserted) => {
-                                this.emit('change', this, {
-                                    from: posIn(before, fromA),
-                                    to: posIn(before, toA),
-                                    text: inserted.toJSON(),
-                                    removed: before.slice(fromA, toA).toJSON(),
-                                    origin: '+input'
+                            // Per transaction rather than per update, because
+                            // `origin` is a property of the transaction and
+                            // positions are relative to the document that
+                            // transaction started from. Composing them first
+                            // would make both wrong in the same subtle way.
+                            for (const tr of update.transactions) {
+                                if (!tr.docChanged) continue;
+                                const before = tr.startState.doc;
+                                const origin = originOf(tr);
+                                // CodeMirror 5's `inputRead` is "the user typed
+                                // this", as distinct from "the document
+                                // changed": autocomplete pops up on the first
+                                // and must not on the second, or every
+                                // programmatic edit opens a hint list.
+                                const typed = tr.isUserEvent('input');
+                                tr.changes.iterChanges((fromA, toA, _fromB, _toB, inserted) => {
+                                    const change = {
+                                        from: posIn(before, fromA),
+                                        to: posIn(before, toA),
+                                        text: inserted.toJSON(),
+                                        removed: before.slice(fromA, toA).toJSON(),
+                                        origin
+                                    };
+                                    this.emit('change', this, change);
+                                    if (typed) this.emit('inputRead', this, change);
                                 });
-                            });
+                            }
                         }
                         if (update.selectionSet) this.emit('cursorActivity', this);
                         // Focus is not a nicety. `lt.ui.window/::sync-from-objects`
@@ -704,6 +737,25 @@ export class Cm6Editor {
             };
         }
         return { left: coords.left, right: coords.right, top: coords.top, bottom: coords.bottom };
+    }
+
+    /**
+     * Where a cursor would be drawn, in viewport coordinates.
+     *
+     * The argument is CodeMirror 5's, which is three things at once: a position
+     * to measure, `null` for the cursor, or a boolean for one end of the
+     * selection. Kept as-is because the caller that matters passes a number —
+     * `positionHint` hands it a character offset, CodeMirror 5 reads that as
+     * "truthy, so the start of the selection", and the hint list has been
+     * appearing at the cursor for a decade on the strength of it.
+     */
+    cursorCoords(which?: Pos | boolean | number | null, mode?: string):
+        { left: number, right: number, top: number, bottom: number } {
+        const range = this.view.state.selection.main;
+        const pos = which == null ? this.position(range.head)
+            : typeof which === 'object' ? which
+            : this.position(which ? range.from : range.to);
+        return this.charCoords(pos, mode);
     }
 
     scrollTo(left?: number | null, top?: number | null): void {

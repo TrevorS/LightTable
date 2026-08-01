@@ -9,80 +9,90 @@
             [lt.objs.editor.pool :as pool]
             [lt.objs.editor :as editor]
             [lt.objs.context :as ctx]
+            [lt.window.modules :as modules]
             [clojure.string :as string]
             [lt.util.js :refer [wait]]
-            [lt.util.dom :as dom]
-            ;; Registers itself on the CodeMirror module; nothing to bind.
-            ["codemirror/addon/runmode/runmode"])
+            [lt.util.dom :as dom])
   (:require-macros [lt.macros :refer [behavior]]))
-
-(defn stream [str]
-  (js/CodeMirror.StringStream. str))
-
-(defn advance [^js s]
-  (set! (.-start s) (.-pos s)))
-
-(defn next* [s]
-  (.next s))
-
-(defn current [s]
-  (.current s))
-
-(defn peek* [^js s]
-  (.peek s))
-
-(defn skip-space [^js s]
-  (when (and (peek* s) (re-seq #"\s" (peek* s)))
-    (.eatSpace s)
-    (advance s)))
-
-(defn eat-while [^js s r]
-  (.eatWhile s r))
-
-(defn string->tokens [str pattern]
-  (let [s (stream str)
-        res (js-obj)]
-    (skip-space s)
-    (while (peek* s)
-      (eat-while s pattern)
-      (if-not (empty? (current s))
-        (do
-          (aset res (current s) true)
-          (advance s))
-        (do
-          (next* s)
-          (advance s)))
-      (skip-space s))
-    (into-array (map #(do #js {:completion %}) (js/Object.keys res)))))
 
 (def default-pattern #"[\w_$]")
 
+(defn tokens
+  "The maximal runs of `pattern` characters in `line`, as `[start end string]`.
+
+  What the CodeMirror 5 `StringStream` loop this replaces was doing: eat while
+  the pattern matches and whatever came out is a token. A hint pattern is always
+  a character class — every one Light Table ships and every one a behavior
+  sets — so a single regular expression finds them all, and a scanner borrowed
+  from an editor goes away with the editor."
+  [line pattern]
+  (let [re (js/RegExp. (str "(?:" (.-source pattern) ")+") "g")]
+    (loop [found []]
+      (if-let [m (.exec re line)]
+        (let [s (aget m 0)]
+          ;; A pattern that can match nothing would never move `lastIndex` and
+          ;; this would not return. None of ours can; the guard is cheaper than
+          ;; the hang.
+          (if (empty? s)
+            (do (set! (.-lastIndex re) (inc (.-lastIndex re))) (recur found))
+            (recur (conj found [(.-index m) (+ (.-index m) (count s)) s]))))
+        found))))
+
+(def ^:private patterns
+  "What counts as a word, per mode.
+
+  CodeMirror 5 kept this on the mode object and it was put there with
+  `extendMode` — an editor of one engine holding a setting that has nothing to
+  do with drawing text. It is a map now, so both engines read the same answer
+  and a plugin registers one with [[hint-pattern!]]."
+  (atom {}))
+
+(defn mode-key
+  "A mode name or MIME type, reduced to the one word both name.
+
+  `text/x-clojurescript` and `clojurescript` are the same language; so are
+  `text/css` and `css`. The same reduction cm6-modes.ts does, for the same
+  reason — what arrives here depends on who named the language."
+  [mode]
+  (-> (str mode)
+      (string/replace #"^text/x-|^application/x-|^text/" "")
+      (string/lower-case)))
+
+(defn ed-mode
+  "What language an editor is showing.
+
+  The file type first, because the mode option is not always a language: a
+  tree-sitter editor's mode is the tree-sitter mode object, named `lt-treesitter`
+  for every language it handles. `:info` comes from Light Table's own file-type
+  table, which knows Clojure from CSS no matter who is drawing them."
+  [ed]
+  (or (-> @ed :info :mime) (editor/option ed :mode)))
+
+(defn hint-pattern!
+  "Register the hint pattern for a mode name or MIME type."
+  [mode pattern]
+  (swap! patterns assoc (mode-key mode) pattern))
+
 (defn get-pattern [ed]
-  (let [mode (editor/inner-mode ed)]
-    (or (:hint-pattern @ed) (aget mode "hint-pattern") default-pattern)))
+  (or (:hint-pattern @ed)
+      (@patterns (mode-key (ed-mode ed)))
+      ;; A CodeMirror 5 mode extended by a plugin that has not been told about
+      ;; the map yet. There is no such thing on CodeMirror 6 — no mode object
+      ;; to hang it on — which is why the map exists.
+      (when-not (editor/cm6? ed)
+        (aget (editor/inner-mode ed) "hint-pattern"))
+      default-pattern))
 
 (defn get-token [ed pos]
-  (let [line (editor/line ed (:line pos))
-        pattern (get-pattern ed)
-        s (stream line)
+  (let [line (or (editor/line ed (:line pos)) "")
         ch (:ch pos)]
-    (skip-space s)
-    (loop []
-      (eat-while s pattern)
-      (if (and (not (empty? (current s)))
-               (<= (.-start s) ch)
-               (>= (.-pos s) ch))
-        {:start (.-start s)
-         :end (.-pos s)
-         :line (:line pos)
-         :string (current s)}
-        (if-not (peek* s)
-          {:line (:line pos) :start (:ch pos) :end (:ch pos)}
-          (do
-            (next* s)
-            (advance s)
-            (skip-space s)
-            (recur)))))))
+    (or (first (for [[start end s] (tokens line (get-pattern ed))
+                     :when (<= start ch end)]
+                 {:start start
+                  :end end
+                  :line (:line pos)
+                  :string s}))
+        {:line (:line pos) :start ch :end ch})))
 
 (defn non-token-change? [ed ch]
   (let [pattern (get-pattern ed)
@@ -130,8 +140,16 @@
                                    :key text|completion})
                 (object/add-tags [:hinter])))
 
-(defn on-line-change [line ch]
-  (object/raise hinter :line-change line ch))
+(defn on-editor-change
+  "Keep the open hint list in step with the text being typed under it.
+
+  CodeMirror 5 could hand out a handle to one line and tell you when that line
+  changed. CodeMirror 6 has no such thing — a line is not an object there, it is
+  a range of a document that has just been replaced — so this listens to the
+  editor and the reaction below decides whether the change was on the line it
+  cared about, which is the question it was really asking."
+  [_ed change]
+  (object/raise hinter :line-change nil change))
 
 (behavior ::set-hint-limit
           :triggers #{:object.instant}
@@ -151,12 +169,13 @@
           :triggers #{:escape!}
           :reaction (fn [this force?]
                       (let [elem (object/->content this)]
-                        (when (:line @this)
-                          (js/CodeMirror.off (:line @this) "change" on-line-change))
+                        (when-let [watching (:watching @this)]
+                          (editor/off watching :change on-editor-change))
                         (ctx/out! [:editor.keys.hinting.active])
                         (object/merge! this {:active false
                                              :selected 0
                                              :ed nil
+                                             :watching nil
                                              :starting-token nil
                                              :token nil
                                              :search ""})
@@ -221,14 +240,12 @@
   ([this opts]
    (let [pos (editor/->cursor this)
          token (get-token this pos)
-         line (editor/line-handle this (:line pos))
          elem (object/->content hinter)]
      (ctx/in! [:editor.keys.hinting.active] this)
      (object/merge! hinter {:token token
                             :starting-token token
                             :ed this
-                            :active true
-                            :line line})
+                            :active true})
      (object/raise hinter :change! (:string token))
      (object/raise hinter :active)
      (let [count (count (:cur @hinter))]
@@ -237,9 +254,10 @@
         (and (= 1 count)
              (:select-single opts)) (object/raise hinter :select! 0)
         :else (do
-                (js/CodeMirror.on line "change" on-line-change)
+                (editor/on this :change on-editor-change)
+                (object/merge! hinter {:watching this})
                 (dom/append (dom/$ :body) elem)
-                (js/CodeMirror.positionHint (editor/->cm-ed this) elem (:start token))))))))
+                (.positionHint modules/cm-hint (editor/->cm-ed this) elem (:start token))))))))
 
 (behavior ::show-hint
           :triggers #{:hint}
@@ -312,15 +330,25 @@
                         (object/raise ed :hint {:force? true})))})
 
 ;;*********************************************************
-;; Mode extensions
+;; What counts as a word
 ;;*********************************************************
+
+(def lisp-pattern
+  "Clojure's, which is most of the punctuation on the keyboard.
+
+  `foo` at the end is not a typo of anything — it has been in the character
+  class since 2013, and since `f`, `o` and `o` are already `\\w` it has never
+  meant a thing. Kept because removing it is a change to what completes and this
+  is not the change that should make it."
+  #"[\w\-\>\:\*\$\?\<\!\+\.\/foo]")
 
 (behavior ::init
           :triggers #{:init}
           :reaction (fn [this]
-                      ;; positionHint arrives with the bundle — see
-                      ;; lt.window.modules, which lt.core requires.
-                      (js/CodeMirror.extendMode "clojure" (clj->js {:hint-pattern #"[\w\-\>\:\*\$\?\<\!\+\.\/foo]"}))
-                      (js/CodeMirror.extendMode "text/x-clojurescript" (clj->js {:hint-pattern #"[\w\-\>\:\*\$\?\<\!\+\.\/foo]"}))
-                      (js/CodeMirror.extendMode "css" (clj->js {:hint-pattern #"[\w\.\-\#]"}))
-                      ))
+                      ;; A map rather than `CodeMirror.extendMode`, which put
+                      ;; these on a CodeMirror 5 mode object — a thing that does
+                      ;; not exist on the other engine and never had much to do
+                      ;; with drawing text in the first place.
+                      (hint-pattern! "clojure" lisp-pattern)
+                      (hint-pattern! "text/x-clojurescript" lisp-pattern)
+                      (hint-pattern! "css" #"[\w\.\-\#]")))

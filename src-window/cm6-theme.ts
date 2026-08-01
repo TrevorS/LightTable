@@ -101,11 +101,13 @@ const stampLegacyClasses = ViewPlugin.fromClass(class {
  * into `.cm-editor-cursor` — a selector that matches nothing and would have
  * been very hard to see.
  *
- * `.CodeMirror-hints` is missing on purpose: it belongs to the CodeMirror 5
- * completion addon, which has no counterpart running here yet, so there is
- * nothing for a rule to decorate and mirroring it would only suggest otherwise.
- * The search classes were in that position until search was ported, which is
- * what the list is for — a gap you can see is a gap somebody closes.
+ * `.CodeMirror-hints` is missing on purpose, and permanently: the autocomplete
+ * list is Light Table's own element wearing a CodeMirror-shaped class name, not
+ * anything CodeMirror draws. It keeps that name on both engines, so a theme's
+ * rules already apply and a twin would have nothing to match. The search
+ * classes were in this list's other category — absent because unported — until
+ * search landed, which is what the list is for: a gap you can see is a gap
+ * somebody closes.
  */
 const CLASS_MAP: [string, string][] = [
     ['.CodeMirror-activeline-background', '.cm-activeLine'],
