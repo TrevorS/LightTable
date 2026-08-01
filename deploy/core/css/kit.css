@@ -481,3 +481,92 @@
 }
 
 .kit__demo-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+
+/* ---- the window -------------------------------------------------------- */
+
+/* Everything from one value. The chrome is a function call, so its layout is
+ * here rather than spread through the markup that draws it. */
+.window-host { height: 100%; }
+
+.window {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--lt-crust);
+  font-family: var(--lt-sans);
+  color: var(--lt-text);
+}
+
+.titlebar {
+  display: flex;
+  align-items: stretch;
+  flex-shrink: 0;
+  background: var(--lt-crust);
+  overflow-x: auto;
+}
+
+.window__body { display: flex; flex: 1; min-height: 0; }
+
+.sidebar {
+  width: 268px;
+  flex-shrink: 0;
+  padding: 10px 8px;
+  background: var(--lt-mantle);
+  overflow-y: auto;
+  box-sizing: border-box;
+}
+
+.panel { margin-bottom: 18px; }
+.row__actions { color: var(--lt-overlay2); font-size: 11.5px; margin-left: auto; }
+
+.multibuffer {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  background: var(--lt-base);
+}
+
+.excerpt-group { border-bottom: 1px solid var(--lt-surface0); padding-bottom: 8px; }
+
+.statusbar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-shrink: 0;
+  height: 28px;
+  padding: 0 12px;
+  background: var(--lt-mantle);
+  font-family: var(--lt-mono);
+  font-size: 11.5px;
+  color: var(--lt-overlay2);
+}
+
+.statusbar__pos { color: var(--lt-subtext1); }
+.statusbar__message { color: var(--lt-overlay2); }
+.statusbar__waiting { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; }
+
+.commandbar {
+  position: absolute;
+  top: 12%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 520px;
+  max-width: 90%;
+  padding: 8px;
+  border-radius: 14px;
+  background: var(--lt-mantle);
+  box-shadow: inset 0 0 0 1px var(--lt-surface0), 0 18px 48px rgba(0, 0, 0, 0.45);
+}
+
+.commandbar__input {
+  width: 100%;
+  padding: 8px 10px;
+  margin-bottom: 6px;
+  border: 0;
+  border-radius: var(--lt-radius-sm);
+  background: var(--lt-base);
+  font-family: var(--lt-mono);
+  font-size: 13px;
+  color: var(--lt-text);
+  box-sizing: border-box;
+}

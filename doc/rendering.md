@@ -16,7 +16,7 @@ bundle whatever else happens. The question is only what *new* UI is written in.
 | | |
 |---|---|
 | singultus | everything, minus the list below. Stays: `defui` is plugin API |
-| Replicant | the three statusbar items, the welcome screen, and the component kit |
+| Replicant | the three statusbar items, the welcome screen, the component kit, and the window as a view |
 
 The swap is one object at a time and the two render side by side in the same
 document, which is what makes it safe to do gradually rather than as one
@@ -130,6 +130,40 @@ No component names a colour. It names a role, and
 property — which is the design's fifth open question answered the way it
 suggested, so a flavour swap is a variable list rather than a sweep through
 the markup. The palette is Catppuccin Mocha.
+
+## The views
+
+[`lt.ui.view`](../src/lt/ui/view.cljs) is the eight the design names — titlebar,
+review queue, connections, sidebar, statusbar, command bar, multibuffer,
+settings — and `window` composes them. Each is `(defn view [state] hiccup)`
+over the *whole* state, so the slicing happens in the open rather than in a
+subscription nobody can see.
+
+The reason to do it this way is not tidiness, and it shows up as a test file.
+A view has nowhere to keep a secret, so `test/lt/ui/view_test.cljs` asks a map
+and reads hiccup back: which tab is active, whether a conflicted edit is toned
+`:warning`, that the statusbar counts unapplied edits and not applied ones,
+that an empty queue says what would fill it. Milliseconds, no editor, no DOM.
+
+**Light Table: Window as a view** opens it, rendering from the live state
+beside the real chrome. It is not the chrome you use yet — moving it there is
+moving the root, which is the point of having exactly one.
+
+## Where the state comes from
+
+[`lt.state.objects`](../src/lt/state/objects.cljs) projects the running editor
+into the atom: open tabs, editors and their dirty flags, clients, the cursor,
+LSP diagnostics as results keyed `[path line]`. It reads and never writes, so
+a wrong view is either the view's fault or the projection's and never a third
+copy that drifted.
+
+It is scaffolding and says so. Each surface that becomes a view deletes part of
+it, and when the last one goes the namespace is the diff that removes it.
+
+The projection is why `titlebar` appends runs to the tab list. In the design's
+state a run is simply one of `:tabs`, because that list is authoritative; here
+it comes from objects that know nothing about runs. One line, and it goes when
+tabs are state.
 
 ## Handlers are data
 

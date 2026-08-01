@@ -36,6 +36,7 @@
             ;; The component kit and the dispatch table it renders against.
             [lt.actions :as actions]
             [lt.ui.catalogue]
+            [lt.ui.window]
             [lt.util.style]))
 
 ;; Teach Replicant that an event handler may be data rather than a closure.

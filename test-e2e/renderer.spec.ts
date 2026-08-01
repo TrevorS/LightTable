@@ -9,7 +9,9 @@
 // Written through the control surface, so the test is the ClojureScript a
 // person would type rather than hand-munged names.
 
-import { test, expect } from './fixtures';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import { test, expect, scratchDir } from './fixtures';
 import type { Page } from '@playwright/test';
 
 async function evalClj(window: Page, source: string): Promise<any> {
@@ -210,4 +212,58 @@ test('a handler in the kit is data, and dispatching it changes state', async ({ 
     // table will be asked for actions that have gone away.
     expect(await evalClj(window, `
         (do (lt.actions/dispatch! [[:nope/at-all]]) :survived)`)).toBe(':survived');
+});
+
+test('the window renders from the state atom, and follows it', async ({ window }) => {
+    // The design's one structural claim, in the assembled application: the
+    // chrome is `(view/window @state/app)` and everything on it changed
+    // because the state changed. There is no other way for it to change.
+    await evalClj(window, '(do (cmd/exec! :ui.window) :opened)');
+    await expect(window.locator('.window')).toHaveCount(1);
+
+    // The projection is real: this editor is in the state because it is open,
+    // not because a fixture put it there.
+    const dir = scratchDir('window-view');
+    const file = path.join(dir, 'projected.txt');
+    fs.writeFileSync(file, 'one\ntwo\nthree\n');
+    await evalClj(window, `(do (cmd/exec! :open-path "${file}") :opened)`);
+
+    await expect.poll(async () => await evalClj(window,
+        `(contains? (:editors @lt.state/app) "${file}")`)).toBe('true');
+    await expect.poll(async () => await window.locator('.window .titlebar .tab').count())
+        .toBeGreaterThan(0);
+
+    // Change the state and the window follows, with nothing else touched.
+    await evalClj(window, `
+        (do (swap! lt.state/app assoc
+                   :runs {"port-fuzzy" {:label "port fuzzy to ranges"
+                                        :status :executing
+                                        :edits [{:at ["a.ts" 14] :summary "readdir → fsp.readdir"
+                                                 :applied? false
+                                                 :evidence {:as-written "fs" :if-applied "fsp"}}]}}
+                   :review {:run "port-fuzzy" :at 0})
+            :set)`);
+
+    await expect.poll(async () => await window.locator('.window .panel .row').count()).toBe(1);
+    expect(await window.textContent('.window .panel .row')).toContain('readdir');
+    // The run became a tab, because a run is a tab like any other.
+    await expect.poll(async () =>
+        await window.locator('.window .titlebar .tab .dot--agent').count()).toBe(1);
+    // And the statusbar counted what is waiting on you.
+    expect(await window.textContent('.window .statusbar')).toContain('waiting on you');
+
+    // A click dispatches the vector the view put in the hiccup. The file
+    // opened above took the active tab, and an inactive tab is hidden.
+    await evalClj(window, `
+        (do (doseq [w (object/by-tag :ui.window)] (tabs/active! w))
+            (swap! lt.state/app assoc-in [:review :at] 99)
+            :moved)`);
+    await window.locator('.window .panel .row').first().click();
+    expect(await evalClj(window, '(get-in @lt.state/app [:review :at])')).toBe('0');
+
+    await evalClj(window, `
+        (do (doseq [w (object/by-tag :ui.window)] (object/destroy! w))
+            (swap! lt.state/app dissoc :runs :review)
+            :closed)`);
+    fs.rmSync(dir, { recursive: true, force: true });
 });

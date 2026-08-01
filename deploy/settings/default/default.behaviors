@@ -167,6 +167,7 @@
 
  [:document.linked :lt.objs.document/close-linked-document]
 
+ [:editor :lt.ui.window/sync-from-objects]
  [:editor :lt.objs.document/close-document-on-editor-close]
  [:editor :lt.objs.editor/active-on-focus]
  ;; The language-server client object, which is one per window and receives
