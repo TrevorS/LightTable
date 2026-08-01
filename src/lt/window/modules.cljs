@@ -23,7 +23,8 @@
             ;; it puts `window.ltCm6` there so the mechanism a port would be
             ;; built on can be run and asserted about. See src-window/cm6.ts.
             ["./cm6.js"]
-            ["./cm6-editor.js"]))
+            ["./cm6-editor.js"]
+            ["./cm6-commands.js"]))
 
 (def ^js fuzzy
   "Fuzzy matching for the command bar and the file navigator: stringScore,
