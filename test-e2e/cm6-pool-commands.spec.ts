@@ -35,38 +35,36 @@ const COMMANDS = [
     'editor.sublime.selectNextOccurrence', 'editor.sublime.sortLines'
 ];
 
-for (const engine of [':cm5', ':cm6']) {
-    test(`every registered editor command runs without throwing, on ${engine}`,
-        async ({ window, ltErrors }) => {
-        const dir = scratchDir('pool');
-        const file = path.join(dir, `probe${engine.slice(1)}.js`);
-        fs.writeFileSync(file, 'const alpha = 1;\nconst beta = alpha + alpha;\nconst gamma = 3;\n');
+/** One engine now. The constant stays so the file reads as it did. */
+const engine = ':cm6';
+test(`every registered editor command runs without throwing, on ${engine}`,
+    async ({ window, ltErrors }) => {
+    const dir = scratchDir('pool');
+    const file = path.join(dir, `probe${engine.slice(1)}.js`);
+    fs.writeFileSync(file, 'const alpha = 1;\nconst beta = alpha + alpha;\nconst gamma = 3;\n');
 
-        await evalClj(window, `
-            (do (lt.objs.editor/set-engine! ${engine})
-                (cmd/exec! :open-path "${file}")
-                :opened)`);
-        await expect.poll(async () => await evalClj(window,
-            `(count (pool/by-path "${file}"))`)).toBe('1');
+    await evalClj(window, `
+        (do (cmd/exec! :open-path "${file}") :opened)`);
+    await expect.poll(async () => await evalClj(window,
+        `(count (pool/by-path "${file}"))`)).toBe('1');
 
-        // Each one from a known cursor, so a command that moves does not leave
-        // the next one somewhere that makes it a no-op.
-        const failures = await evalClj(window, `
-            (let [ed (first (pool/by-path "${file}"))]
-              (object/raise ed :active)
-              (vec (remove nil?
-                (for [c ${JSON.stringify(COMMANDS).replace(/"/g, '"')}]
-                  (try
-                    (lt.objs.editor/move-cursor ed {:line 1 :ch 3})
-                    (cmd/exec! (keyword c))
-                    nil
-                    (catch :default e (str c ": " e)))))))`);
+    // Each one from a known cursor, so a command that moves does not leave
+    // the next one somewhere that makes it a no-op.
+    const failures = await evalClj(window, `
+        (let [ed (first (pool/by-path "${file}"))]
+          (object/raise ed :active)
+          (vec (remove nil?
+            (for [c ${JSON.stringify(COMMANDS).replace(/"/g, '"')}]
+              (try
+                (lt.objs.editor/move-cursor ed {:line 1 :ch 3})
+                (cmd/exec! (keyword c))
+                nil
+                (catch :default e (str c ": " e)))))))`);
 
-        expect(failures).toBe('[]');
-        expect(await ltErrors()).toEqual([]);
+    expect(failures).toBe('[]');
+    expect(await ltErrors()).toEqual([]);
 
-        await evalClj(window, `
-            (do (doseq [ed (pool/by-path "${file}")] (object/raise ed :close)) :closed)`);
-        fs.rmSync(dir, { recursive: true, force: true });
-    });
-}
+    await evalClj(window, `
+        (do (doseq [ed (pool/by-path "${file}")] (object/raise ed :close)) :closed)`);
+    fs.rmSync(dir, { recursive: true, force: true });
+});

@@ -27,80 +27,76 @@ async function evalClj(window: Page, source: string): Promise<any> {
 
 const DOC = 'alpha one\nbeta two\nalpha three\ngamma four\n';
 
-for (const engine of [':cm5', ':cm6']) {
-    test(`find moves the cursor from match to match, on ${engine}`, async ({ window }) => {
-        const dir = scratchDir('find');
-        const file = path.join(dir, `probe${engine.slice(1)}.txt`);
-        fs.writeFileSync(file, DOC);
+/** One engine now. The constant stays so the file reads as it did. */
+const engine = ':cm6';
+test(`find moves the cursor from match to match, on ${engine}`, async ({ window }) => {
+    const dir = scratchDir('find');
+    const file = path.join(dir, `probe${engine.slice(1)}.txt`);
+    fs.writeFileSync(file, DOC);
 
-        await evalClj(window, `
-            (do (lt.objs.editor/set-engine! ${engine})
-                (cmd/exec! :open-path "${file}")
-                :opened)`);
-        await expect.poll(async () => await evalClj(window,
-            `(count (pool/by-path "${file}"))`)).toBe('1');
+    await evalClj(window, `
+        (do (cmd/exec! :open-path "${file}") :opened)`);
+    await expect.poll(async () => await evalClj(window,
+        `(count (pool/by-path "${file}"))`)).toBe('1');
 
-        // The cursor starts at the top, so the first match is on line 0 and the
-        // next one is on line 2 — searching wraps rather than stopping.
-        expect(await evalClj(window, `
-            (let [ed (first (pool/by-path "${file}"))]
-              (lt.objs.editor/move-cursor ed {:line 0 :ch 0})
-              (lt.objs.editor/find! ed "alpha")
-              [(:line (lt.objs.editor/->cursor ed))
-               (do (lt.objs.editor/find-next! ed) (:line (lt.objs.editor/->cursor ed)))
-               (do (lt.objs.editor/find-next! ed) (:line (lt.objs.editor/->cursor ed)))])`))
-            .toBe('[0 2 0]');
+    // The cursor starts at the top, so the first match is on line 0 and the
+    // next one is on line 2 — searching wraps rather than stopping.
+    expect(await evalClj(window, `
+        (let [ed (first (pool/by-path "${file}"))]
+          (lt.objs.editor/move-cursor ed {:line 0 :ch 0})
+          (lt.objs.editor/find! ed "alpha")
+          [(:line (lt.objs.editor/->cursor ed))
+           (do (lt.objs.editor/find-next! ed) (:line (lt.objs.editor/->cursor ed)))
+           (do (lt.objs.editor/find-next! ed) (:line (lt.objs.editor/->cursor ed)))])`))
+        .toBe('[0 2 0]');
 
-        // Backwards from there is the other one.
-        expect(await evalClj(window, `
-            (let [ed (first (pool/by-path "${file}"))]
-              (lt.objs.editor/find-next! ed true)
-              (:line (lt.objs.editor/->cursor ed)))`)).toBe('2');
+    // Backwards from there is the other one.
+    expect(await evalClj(window, `
+        (let [ed (first (pool/by-path "${file}"))]
+          (lt.objs.editor/find-next! ed true)
+          (:line (lt.objs.editor/->cursor ed)))`)).toBe('2');
 
-        // And clearing is not an error when there was nothing to clear.
-        await evalClj(window, `
-            (let [ed (first (pool/by-path "${file}"))]
-              (lt.objs.editor/clear-search! ed)
-              (lt.objs.editor/clear-search! ed)
-              :cleared)`);
+    // And clearing is not an error when there was nothing to clear.
+    await evalClj(window, `
+        (let [ed (first (pool/by-path "${file}"))]
+          (lt.objs.editor/clear-search! ed)
+          (lt.objs.editor/clear-search! ed)
+          :cleared)`);
 
-        await evalClj(window, `
-            (do (doseq [ed (pool/by-path "${file}")] (object/raise ed :close)) :closed)`);
-        fs.rmSync(dir, { recursive: true, force: true });
-    });
+    await evalClj(window, `
+        (do (doseq [ed (pool/by-path "${file}")] (object/raise ed :close)) :closed)`);
+    fs.rmSync(dir, { recursive: true, force: true });
+});
 
-    test(`replace rewrites one match and then all of them, on ${engine}`, async ({ window }) => {
-        const dir = scratchDir('replace');
-        const file = path.join(dir, `probe${engine.slice(1)}.txt`);
-        fs.writeFileSync(file, DOC);
+test(`replace rewrites one match and then all of them, on ${engine}`, async ({ window }) => {
+    const dir = scratchDir('replace');
+    const file = path.join(dir, `probe${engine.slice(1)}.txt`);
+    fs.writeFileSync(file, DOC);
 
-        await evalClj(window, `
-            (do (lt.objs.editor/set-engine! ${engine})
-                (cmd/exec! :open-path "${file}")
-                :opened)`);
-        await expect.poll(async () => await evalClj(window,
-            `(count (pool/by-path "${file}"))`)).toBe('1');
+    await evalClj(window, `
+        (do (cmd/exec! :open-path "${file}") :opened)`);
+    await expect.poll(async () => await evalClj(window,
+        `(count (pool/by-path "${file}"))`)).toBe('1');
 
-        expect(await evalClj(window, `
-            (let [ed (first (pool/by-path "${file}"))]
-              (lt.objs.editor/move-cursor ed {:line 0 :ch 0})
-              (lt.objs.editor/find! ed "alpha")
-              (lt.objs.editor/replace! ed "ALPHA")
-              (lt.objs.editor/->val ed))`))
-            .toBe('"ALPHA one\\nbeta two\\nalpha three\\ngamma four\\n"');
+    expect(await evalClj(window, `
+        (let [ed (first (pool/by-path "${file}"))]
+          (lt.objs.editor/move-cursor ed {:line 0 :ch 0})
+          (lt.objs.editor/find! ed "alpha")
+          (lt.objs.editor/replace! ed "ALPHA")
+          (lt.objs.editor/->val ed))`))
+        .toBe('"ALPHA one\\nbeta two\\nalpha three\\ngamma four\\n"');
 
-        expect(await evalClj(window, `
-            (let [ed (first (pool/by-path "${file}"))]
-              (lt.objs.editor/find! ed "alpha")
-              (lt.objs.editor/replace! ed "ALPHA" false true)
-              (lt.objs.editor/->val ed))`))
-            .toBe('"ALPHA one\\nbeta two\\nALPHA three\\ngamma four\\n"');
+    expect(await evalClj(window, `
+        (let [ed (first (pool/by-path "${file}"))]
+          (lt.objs.editor/find! ed "alpha")
+          (lt.objs.editor/replace! ed "ALPHA" false true)
+          (lt.objs.editor/->val ed))`))
+        .toBe('"ALPHA one\\nbeta two\\nALPHA three\\ngamma four\\n"');
 
-        await evalClj(window, `
-            (do (doseq [ed (pool/by-path "${file}")] (object/raise ed :close)) :closed)`);
-        fs.rmSync(dir, { recursive: true, force: true });
-    });
-}
+    await evalClj(window, `
+        (do (doseq [ed (pool/by-path "${file}")] (object/raise ed :close)) :closed)`);
+    fs.rmSync(dir, { recursive: true, force: true });
+});
 
 test('a lower-case query ignores case and a capital makes it matter', async ({ window }) => {
     // CodeMirror 5's rule, kept because nobody is told it and everybody relies

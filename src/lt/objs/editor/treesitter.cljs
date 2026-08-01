@@ -1,13 +1,12 @@
 (ns lt.objs.editor.treesitter
   "Tree-sitter syntax highlighting, wired into editors by tag.
 
-  The parsing is `src-window/treesitter.ts` and the drawing is per engine — a
-  mode at the bottom of that file for CodeMirror 5, decorations in
-  `cm6-treesitter.ts` for CodeMirror 6, both reading the same spans. This is the
-  part that knows about Light Table: which grammar goes with which editor, where
-  the `.wasm` files are, and when to reparse.
+  The parsing is `src-window/treesitter.ts` and the drawing is
+  `cm6-treesitter.ts`, which turns its per-line spans into decorations. This is
+  the part that knows about Light Table: which grammar goes with which editor,
+  where the `.wasm` files are, and when to reparse.
 
-  **Why bother, when 130 CodeMirror modes already work.** A mode is a per-line
+  **Why bother, when 130 stream modes already work.** A mode is a per-line
   state machine. It can tell you `foo` is an identifier and cannot tell you
   whether it is a parameter, a call, a type or a local, so a theme cannot
   colour them differently however much it would like to. Measured on a
@@ -26,11 +25,9 @@
   first use, not at startup — opening a Python file should not pay for Rust.
 
   Turn it off with the `::use-treesitter` behavior and the language's own
-  colouring takes over again. Only the colouring is replaced: the mime still
-  decides indentation, comment syntax, bracket matching and folding. On
-  CodeMirror 6 that is now literally true — the language stays configured and
-  only its highlighting is switched off — where CodeMirror 5 has to swap the
-  whole mode out, because a mode is one object doing all of it."
+  colouring takes over again. Only the colouring is replaced: the language stays
+  configured, and it is what decides indentation, comment syntax, bracket
+  matching and folding."
   (:require [clojure.string :as string]
             [lt.object :as object]
             [lt.objs.editor :as editor]
@@ -176,29 +173,14 @@
   (.then @runtime (fn [_] (.highlighterFor ts read-bytes (spec grammar)))))
 
 (defn- install-highlighter!
-  "Draw `ed` from `hl`, or from its own mode again when `hl` is nil.
+  "Draw `ed` from `hl`, or from its own language again when `hl` is nil.
 
-  The one place the two engines differ, and they differ in what they are handed
-  rather than in what they are told. CodeMirror 5 draws from a mode, so the
-  highlighter is delivered as one; CodeMirror 6 draws from decorations, so it is
-  delivered as itself and the decorations are derived. The spans in between are
-  the same spans — see src-window/cm6-treesitter.ts.
-
-  Called again after every reparse. On CodeMirror 5 a fresh spec object is what
-  makes CodeMirror re-tokenize, because it compares specs and the identical one
-  is a no-op; on CodeMirror 6 the effect says so outright. Either way the point
-  is the same: the spans changed underneath something that thinks it is
-  unchanged."
+  Called again after every reparse, and the repetition is the point: the
+  highlighter is the same object each time and the spans behind it are not, so
+  the effect says outright that what it is drawing from has changed. See
+  src-window/cm6-treesitter.ts, which turns those spans into decorations."
   [ed ^js hl]
-  (if (editor/cm6? ed)
-    (.setHighlighter ^js (editor/->cm-ed ed) hl)
-    (do
-      (.registerMode ts js/CodeMirror)
-      (let [^js cm (editor/->cm-ed ed)]
-        (if hl
-          (.setOption cm "mode" #js {:name (.-MODE_NAME ts) :highlighter hl})
-          ;; Back to the language's own mode, which the mime named.
-          (.setOption cm "mode" (or (-> @ed :info :mime) "null")))))))
+  (.setHighlighter ^js (editor/->cm-ed ed) hl))
 
 ;;*********************************************************
 ;; Behaviors

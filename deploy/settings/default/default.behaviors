@@ -98,7 +98,6 @@
  [:app :lt.objs.style/provide-theme "xq-dark" "core/css/themes/xq-dark.css"]
  [:app :lt.objs.style/provide-theme "xq-light" "core/css/themes/xq-light.css"]
  [:app :lt.objs.style/set-skin "dark"]
- [:app :lt.objs.editor/init-codemirror]
 
  [:bottombar :lt.objs.bottombar/item-toggled]
  [:bottombar :lt.objs.bottombar/height!]
@@ -162,11 +161,8 @@
  [:docable :lt.plugins.doc/editor.doc.show!]
  [:docable :lt.plugins.doc/doc-menu+]
 
- [:document :lt.objs.document/try-close-root-document]
  [:document :lt.objs.document/close-root-document]
- [:document :lt.objs.document/set-linked-doc-options {}]
 
- [:document.linked :lt.objs.document/close-linked-document]
 
  [:editor :lt.ui.window/sync-from-objects]
  [:editor :lt.ui.window/track-cursor]

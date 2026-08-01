@@ -11,9 +11,7 @@
             [lt.objs.editor :as editor]
             [lt.util.dom :as dom]
             [singultus.binding]
-            [lt.util.style]
-            ;; Registers itself on the CodeMirror module; nothing to bind.
-            ["codemirror/addon/search/searchcursor"])
+            [lt.util.style])
   (:require-macros [lt.macros :refer [behavior defui]]))
 
 (def find-height 30)

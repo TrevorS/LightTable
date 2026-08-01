@@ -22,57 +22,54 @@ async function openFile(window: Page, file: string): Promise<void> {
         }, [file], { timeout: 30_000 });
 }
 
-for (const engine of [':cm5', ':cm6']) {
+/** One engine now. The constant stays so the file reads as it did. */
+const engine = ':cm6';
 test(`multiple cursors select, edit and clear, on ${engine}`, async ({ window, ltErrors }) => {
-    // Both engines, which was not true until the sublime commands were ported.
-    // They were a CodeMirror 5 addon registering on the CodeMirror 5 global;
-    // CodeMirror 6 keeps multiple selections in the state, so most of them turn
-    // out to be a few lines about `EditorSelection` — but they had to be
-    // written, because nothing carries them over.
-    await window.evaluate(
-        `lt.objs.editor.set_engine_BANG_(cljs.core.keyword.call(null, '${engine.slice(1)}'))`);
+// The sublime commands were a CodeMirror 5 addon registering on the
+// CodeMirror 5 global. CodeMirror 6 keeps multiple selections in the state, so
+// most of them turn out to be a few lines about `EditorSelection` — but they
+// had to be written, because nothing carried them over.
 
-    const dir = scratchDir('cursors');
-    const file = path.join(dir, 'probe.js');
-    fs.writeFileSync(file, 'const total = 1;\nconst other = total + total;\n');
+const dir = scratchDir('cursors');
+const file = path.join(dir, 'probe.js');
+fs.writeFileSync(file, 'const total = 1;\nconst other = total + total;\n');
 
-    await openFile(window, file);
+await openFile(window, file);
 
-    const result = await window.evaluate(([f]) => {
-        const lt = (globalThis as any).lt, cljs = (globalThis as any).cljs;
-        const kw = (n: string) => cljs.core.keyword.call(null, n);
-        const run = (c: string) => lt.objs.command.exec_BANG_(kw(c));
-        const ed = cljs.core.first.call(null, lt.objs.editor.pool.by_path(f));
-        const cm = lt.objs.editor.__GT_cm_ed(ed);
+const result = await window.evaluate(([f]) => {
+    const lt = (globalThis as any).lt, cljs = (globalThis as any).cljs;
+    const kw = (n: string) => cljs.core.keyword.call(null, n);
+    const run = (c: string) => lt.objs.command.exec_BANG_(kw(c));
+    const ed = cljs.core.first.call(null, lt.objs.editor.pool.by_path(f));
+    const cm = lt.objs.editor.__GT_cm_ed(ed);
 
-        cm.setCursor({ line: 0, ch: 6 });
-        run('editor.sublime.selectNextOccurrence');
-        run('editor.sublime.selectNextOccurrence');
-        run('editor.sublime.selectNextOccurrence');
-        const selected = cm.listSelections().length;
+    cm.setCursor({ line: 0, ch: 6 });
+    run('editor.sublime.selectNextOccurrence');
+    run('editor.sublime.selectNextOccurrence');
+    run('editor.sublime.selectNextOccurrence');
+    const selected = cm.listSelections().length;
 
-        run('editor.sublime.undoSelection');
-        const afterUndo = cm.listSelections().length;
-        run('editor.sublime.redoSelection');
+    run('editor.sublime.undoSelection');
+    const afterUndo = cm.listSelections().length;
+    run('editor.sublime.redoSelection');
 
-        cm.replaceSelections(cm.listSelections().map(() => 'sum'));
-        const text = cm.getValue().split('\n')[1];
+    cm.replaceSelections(cm.listSelections().map(() => 'sum'));
+    const text = cm.getValue().split('\n')[1];
 
-        run('editor.sublime.singleSelectionTop');
-        const afterClear = cm.listSelections().length;
-        return { selected, afterUndo, text, afterClear };
-    }, [file]) as { selected: number; afterUndo: number; text: string; afterClear: number };
+    run('editor.sublime.singleSelectionTop');
+    const afterClear = cm.listSelections().length;
+    return { selected, afterUndo, text, afterClear };
+}, [file]) as { selected: number; afterUndo: number; text: string; afterClear: number };
 
-    // Three occurrences of `total`, all selected, all replaced at once.
-    expect(result.selected).toBe(3);
-    expect(result.afterUndo).toBe(2);
-    expect(result.text).toBe('const other = sum + sum;');
-    expect(result.afterClear).toBe(1);
-    expect(await ltErrors()).toEqual([]);
+// Three occurrences of `total`, all selected, all replaced at once.
+expect(result.selected).toBe(3);
+expect(result.afterUndo).toBe(2);
+expect(result.text).toBe('const other = sum + sum;');
+expect(result.afterClear).toBe(1);
+expect(await ltErrors()).toEqual([]);
 
-    fs.rmSync(dir, { recursive: true, force: true });
+fs.rmSync(dir, { recursive: true, force: true });
 });
-}
 
 test('and every one of them is reachable from a key', async ({ window }) => {
     // The gap this whole file is about: a command nothing can invoke is a

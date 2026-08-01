@@ -9,7 +9,6 @@
   (:require [lt.objs.app :as app]
             [lt.compat]
    ;; Generated: every CodeMirror mode and fold addon, so they are bundled.
-   [lt.editor.codemirror-modes]
    ;; Light Table's own JavaScript, bundled.
    [lt.window.modules :as modules]
             [lt.objs.browser]

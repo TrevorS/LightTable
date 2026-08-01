@@ -576,22 +576,13 @@
 (cmd/command {:command :editor.codemirror.command
               :desc "Editor: Execute a CodeMirror command"
               :hidden true
-              :exec (fn [cmd & args]
+              :exec (fn [cmd & _args]
                       (when-let [ed (last-active)]
-                        (if (editor/cm6? ed)
-                          ;; The global command table belongs to CodeMirror 5,
-                          ;; and its functions reach into a CodeMirror 5 editor —
-                          ;; handing one a CodeMirror 6 editor is a TypeError in
-                          ;; whichever key you happened to press. `execCommand`
-                          ;; is the table that means the same things; a name it
-                          ;; does not know passes the key through, which is what
-                          ;; `CodeMirror.Pass` did.
-                          (when-not (.execCommand (editor/->cm-ed ed) cmd)
-                            (kb/passthrough))
-                          (when-let [command (aget js/CodeMirror.commands cmd)]
-                            (when (= js/CodeMirror.Pass
-                                     (apply command (editor/->cm-ed ed) args))
-                              (kb/passthrough))))))})
+                        ;; A name the command table does not know passes the key
+                        ;; through to whatever is behind it, which is what
+                        ;; CodeMirror 5 said with `CodeMirror.Pass`.
+                        (when-not (.execCommand (editor/->cm-ed ed) cmd)
+                          (kb/passthrough))))})
 
 (cmd/command {:command :editor.fold-code
               :desc "Editor: Fold code at cursor"
@@ -710,23 +701,3 @@
               :desc "Editor: Split selection into cursors per line"
               :exec (fn []
                       (cmd/exec! :editor.codemirror.command "splitSelectionByLine"))})
-
-;; Which engine new editors are built on. Both are runnable in one session, on
-;; purpose: the way to find out whether CodeMirror 6 handles a file the same is
-;; to open it twice.
-;;
-;; Editors already open keep the engine they were made with — there is no
-;; migrating one, because the document, the history and the marks all belong to
-;; the engine that holds them.
-
-(cmd/command {:command :editor.engine.codemirror6
-              :desc "Editor: Build new editors on CodeMirror 6"
-              :exec (fn []
-                      (editor/set-engine! :cm6)
-                      (notifos/set-msg! "New editors will use CodeMirror 6"))})
-
-(cmd/command {:command :editor.engine.codemirror5
-              :desc "Editor: Build new editors on CodeMirror 5"
-              :exec (fn []
-                      (editor/set-engine! :cm5)
-                      (notifos/set-msg! "New editors will use CodeMirror 5"))})

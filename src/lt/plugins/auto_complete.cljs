@@ -41,10 +41,9 @@
 (def ^:private patterns
   "What counts as a word, per mode.
 
-  CodeMirror 5 kept this on the mode object and it was put there with
-  `extendMode` — an editor of one engine holding a setting that has nothing to
-  do with drawing text. It is a map now, so both engines read the same answer
-  and a plugin registers one with [[hint-pattern!]]."
+  This used to be a field on a CodeMirror 5 mode object, put there with
+  `extendMode` — an editor holding a setting that has nothing to do with drawing
+  text. It is a map, and a plugin registers one with [[hint-pattern!]]."
   (atom {}))
 
 (defn mode-key
@@ -76,11 +75,6 @@
 (defn get-pattern [ed]
   (or (:hint-pattern @ed)
       (@patterns (mode-key (ed-mode ed)))
-      ;; A CodeMirror 5 mode extended by a plugin that has not been told about
-      ;; the map yet. There is no such thing on CodeMirror 6 — no mode object
-      ;; to hang it on — which is why the map exists.
-      (when-not (editor/cm6? ed)
-        (aget (editor/inner-mode ed) "hint-pattern"))
       default-pattern))
 
 (defn get-token [ed pos]

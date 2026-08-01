@@ -221,8 +221,8 @@
           :triggers #{:clear!}
           :reaction (fn [this]
                       (when (deref (:ed @this))
-                        (js/CodeMirror.off (:line @this) "change" (:listener @this))
-                        (js/CodeMirror.off (:line @this) "delete" (:delete @this))
+                        (when-let [listener (:listener @this)]
+                          (ed/off (:ed @this) :change listener))
                         (.clear (:mark @this))
                         (object/raise this :clear)
                         (object/raise this :cleared))))
@@ -250,28 +250,26 @@
                         (dom/html full res)
                         (dom/scroll-top full scroll))))
 
-(def new-line-change ["" ""])
 (behavior ::move-mark
           :triggers #{:move!}
-          :reaction (fn [this ^js ch]
-                      (when ch
-                        (let [orig (:mark @this)
-                              loc (.find orig)
-                              cur-line (ed/lh->line (:ed @this) (:line @this))]
-                          (if (or (not loc)
-                                  (empty? (.-text (:line @this))))
-                            (object/raise this :clear!)
-                            (when (or (and (> (.-line loc) (.-to.line ch))
-                                           (empty? (string/trim (ed/line (:ed @this) (.-line loc)))))
-                                      (and (>= (.-to.ch ch) (.-ch loc))
-                                           (= (.-to.line ch) (.-line loc)))
-                                      (> (.-to.line ch) (.-from.line ch)))
-                              (object/merge! this {:mark (ed/bookmark (ed/->cm-ed (:ed @this))
-                                                                      {:line cur-line}
-                                                                      {:widget (object/->content this)
-                                                                       :insertLeft true})})
-                              (when orig
-                                (.clear orig))))))))
+          :desc "Editor: Take an inline result away when its line goes"
+          :doc "A result follows its text on its own — it is a mark in the
+                document, and a mark is mapped through every edit. What it
+                cannot decide for itself is when it has outlived the thing it
+                was about, which is what this is: the mark is gone, or the line
+                it sits on has been emptied.
+
+                CodeMirror 5 needed rather more. A bookmark there did not move
+                the way this one does, so the reaction this replaces re-made it
+                after any change that might have shifted it, and read the line's
+                text off a handle to decide."
+          :reaction (fn [this _change]
+                      (let [editor (:ed @this)
+                            ^js mark (:mark @this)
+                            ^js loc (when mark (.find mark))]
+                        (when (or (nil? loc)
+                                  (string/blank? (ed/line editor (.-line (.-from loc)))))
+                          (object/raise this :clear!)))))
 
 
 (object/object* ::inline-result
@@ -280,15 +278,16 @@
                 :init (fn [this info]
                         (when-let [ed (ed/->cm-ed (:ed info))]
                           (let [content (->inline-res this info)
-                                delete (fn [_]
-                                         (object/raise this :clear!))
-                                listener (fn [line change]
+                                ;; The editor, not a handle to one line.
+                                ;; CodeMirror 5 could tell you when a particular
+                                ;; line changed or went away; a line is not an
+                                ;; object here, so the question is asked of the
+                                ;; document and answered in ::move-mark.
+                                listener (fn [_ change]
                                            (object/raise this :move! change))]
-                            (js/CodeMirror.on (:line info) "change" listener)
-                            (js/CodeMirror.on (:line info) "delete" delete)
+                            (ed/on (:ed info) :change listener)
                             (object/merge! this (assoc info
                                                   :listener listener
-                                                  :delete delete
                                                   :mark (ed/bookmark ed
                                                                      {:line (-> info :loc :line)}
                                                                      {:widget content
@@ -349,13 +348,16 @@
                 :tags #{:inline :inline.underline-result}
                 :init (fn [this info]
                         (let [content (->underline-result this info)
-                              delete (fn [_]
-                                       (object/raise this :clear!))
-                              listener (fn [line change]
-                                         (object/raise this :move! change))]
-                          (js/CodeMirror.on (:line info) "change" listener)
-                          (js/CodeMirror.on (:line info) "delete" delete)
+                              ;; What the line handle's "delete" event was for:
+                              ;; a doc under a line that no longer exists is a
+                              ;; doc about nothing.
+                              listener (fn [_ _]
+                                         (when (>= (-> @this :loc :line)
+                                                   (ed/line-count (:ed @this)))
+                                           (object/raise this :clear!)))]
+                          (ed/on (:ed info) :change listener)
                           (object/merge! this (assoc info
+                                                :listener listener
                                                 :widget (ed/line-widget (ed/->cm-ed (:ed info))
                                                                         (-> info :loc :line)
                                                                         content
@@ -420,6 +422,8 @@
           :triggers #{:clear!}
           :reaction (fn [this]
                       (when (ed/->cm-ed (:ed @this))
+                        (when-let [listener (:listener @this)]
+                          (ed/off (:ed @this) :change listener))
                         (ed/remove-line-widget (ed/->cm-ed (:ed @this)) (:widget @this)))
                       (object/raise this :clear)
                       (object/raise this :cleared)))

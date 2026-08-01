@@ -1,10 +1,9 @@
 // Tree-sitter powered syntax highlighting.
 //
-// The parse and the per-line span table it produces belong to neither engine.
-// Only the last step does: CodeMirror 5 wants a mode, which is at the bottom of
-// this file, and CodeMirror 6 wants decorations, which are in cm6-treesitter.ts.
-// Both read the same spans through the same `runsForLine`, so the colours are
-// the same colours and not merely similar ones.
+// The parse and the per-line span table it produces belong to no editor. The
+// drawing does: `runsForLine` turns the table into styled runs, and
+// cm6-treesitter.ts turns those into decorations. That separation is what let
+// one engine be swapped for another underneath it without the parsing noticing.
 //
 // Why this exists rather than more CodeMirror modes: a mode is a per-line state
 // machine that knows `foo` is an identifier and cannot know whether it is a
@@ -28,14 +27,8 @@
 //   one-character edit. That is a per-keystroke budget, which is what makes
 //   this viable at all.
 //
-//   Telling a CodeMirror mode which line it is on. A counter in mode state does
-//   not survive CodeMirror restarting a mode from a cached checkpoint. But
-//   `stream.lineOracle` is CodeMirror's own Context object and carries `.line`,
-//   the real number, maintained by CodeMirror rather than by us. Everything
-//   here rests on that.
-//
-// The mode never parses. It reads a precomputed per-line span table, so
-// tokenizing a line is a lookup. Parsing happens on document change, once.
+// Nothing here parses per line. A document is parsed once per change, into a
+// table of spans; drawing a line is a lookup in it.
 
 import type { Language, Parser as ParserType, Tree, QueryCapture } from 'web-tree-sitter';
 
@@ -352,37 +345,6 @@ export class Highlighter {
     }
 }
 
-/**
- * The CodeMirror mode. It parses nothing: `token` looks up the line it is on
- * and consumes one run.
- *
- * `stream.lineOracle.line` is CodeMirror's own record of which line is being
- * tokenized. Verified against a document where tokenizing jumps straight to
- * line 350 — the case where a counter kept in mode state reports the wrong
- * number.
- */
-export function makeMode(highlighter: () => Highlighter | null): CMMode<unknown> {
-    return {
-        startState: () => ({}),
-        copyState: () => ({}),
-        token(stream: CMStream): string | null {
-            const hl = highlighter();
-            // No highlighter yet — the grammar is still loading. Consume the
-            // line rather than spinning, and let the reparse repaint it.
-            if (!hl) { stream.skipToEnd(); return null; }
-
-            const line = stream.lineOracle ? stream.lineOracle.line : 0;
-            const spans = hl.spansForLine(line);
-            const { style, end } = styleAt(spans, stream.pos);
-
-            if (end === Infinity || end > stream.string.length) stream.skipToEnd();
-            else stream.pos = Math.max(end, stream.pos + 1);
-
-            return style;
-        }
-    };
-}
-
 //*********************************************************
 // Loading
 //*********************************************************
@@ -439,31 +401,4 @@ export async function highlighterFor(readBytes: ByteReader, spec: GrammarSpec): 
     const parser = new ts.Parser();
     parser.setLanguage(language);
     return new Highlighter(parser, new ts.Query(language, spec.query));
-}
-
-/** The name the mode registers under. */
-export const MODE_NAME = 'lt-treesitter';
-
-/**
- * Register the mode with CodeMirror, once.
- *
- * CodeMirror's `setOption("mode", …)` takes a *spec* — a name, or an object
- * with one — and resolves it through `getMode`. Handing it a mode instance
- * directly does nothing, silently: the editor keeps the mode it had, which is
- * exactly the shape of bug that looks like "the highlighter never ran".
- *
- * So the spec carries the highlighter: `{name: 'lt-treesitter', highlighter}`.
- * CodeMirror passes the spec to the factory, and the factory closes over it.
- * No registry keyed by editor, and no way for one editor to be handed
- * another's tree.
- */
-export function registerMode(CM: {
-    defineMode(name: string, factory: (config: unknown, spec: unknown) => CMMode<unknown>): void;
-    modes?: Record<string, unknown>;
-}): void {
-    if (CM.modes && CM.modes[MODE_NAME]) return;
-    CM.defineMode(MODE_NAME, (_config, spec) => {
-        const hl = (spec as { highlighter?: Highlighter } | undefined)?.highlighter ?? null;
-        return makeMode(() => hl);
-    });
 }

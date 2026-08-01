@@ -11,39 +11,34 @@
 // pressed for ten years still does what it did.
 
 import { test, expect } from './fixtures';
+import { cm5 } from './cm5-answers';
 import type { Page } from '@playwright/test';
 
-/** Run `command` on both engines from the same document, and return both. */
-async function bothEngines(window: Page, doc: string, command: string,
-                           setup = ''): Promise<[unknown, unknown]> {
+/** Run `command` from `doc`, and report the text and every cursor. */
+async function run(window: Page, doc: string, command: string, setup = ''): Promise<unknown> {
     return await window.evaluate(([text, name, prepare]) => {
         const w = globalThis as any;
         const host = document.createElement('div');
         document.body.appendChild(host);
-
-        const five = w.CodeMirror(host, { value: text });
-        const six = w.ltCm6Editor.makeCm6Editor(host, { value: text });
-        const prep = new Function('ed', prepare as string);
-
-        const run = (ed: any, go: () => void) => {
-            prep(ed);
-            go();
+        const ed = w.ltCm6Editor.makeCm6Editor(host, { value: text });
+        try {
+            new Function('ed', prepare as string)(ed);
+            ed.execCommand(name as string);
             return {
                 value: ed.getValue(),
                 cursors: ed.listSelections().map(
                     (s: any) => `${s.head.line}:${s.head.ch}`).sort()
             };
-        };
-
-        try {
-            return [
-                run(five, () => w.CodeMirror.commands[name as string](five)),
-                run(six, () => six.execCommand(name as string))
-            ];
         } finally {
             host.remove();
         }
-    }, [doc, command, setup] as [string, string, string]) as [unknown, unknown];
+    }, [doc, command, setup] as [string, string, string]);
+}
+
+/** Against what CodeMirror 5 did, which is recorded — see cm5-answers.ts. */
+async function check(window: Page, doc: string, command: string, setup = ''): Promise<void> {
+    expect(await run(window, doc, command, setup),
+           `${command} should match CodeMirror 5`).toEqual(cm5('sublime::' + command));
 }
 
 const DOC = 'gamma\nalpha\nbeta\n';
@@ -57,8 +52,7 @@ test('a line command does the same thing on both engines', async ({ window }) =>
         ['sortLines', 'ed.setSelection({line: 0, ch: 0}, {line: 2, ch: 4});'],
         ['sortLinesInsensitive', 'ed.setSelection({line: 0, ch: 0}, {line: 2, ch: 4});']
     ] as [string, string][]) {
-        const [five, six] = await bothEngines(window, DOC, command, setup);
-        expect(six, `${command} should match CodeMirror 5`).toEqual(five);
+        await check(window, DOC, command, setup);
     }
 });
 
@@ -69,8 +63,7 @@ test('and a selection command puts the cursors in the same places', async ({ win
         ['addCursorToPrevLine', 'ed.setCursor({line: 2, ch: 0});'],
         ['splitSelectionByLine', 'ed.setSelection({line: 0, ch: 0}, {line: 2, ch: 4});']
     ] as [string, string][]) {
-        const [five, six] = await bothEngines(window, DOC, command, setup);
-        expect(six, `${command} should match CodeMirror 5`).toEqual(five);
+        await check(window, DOC, command, setup);
     }
 });
 
@@ -100,9 +93,7 @@ test('goToBracket goes to the bracket you are inside, not the one you are on', a
     // "what closes the bracket under the cursor", and the cursor is usually not
     // on a bracket when you press this — so the matching extension had nothing
     // to say and it had to be scanned for.
-    const [five, six] = await bothEngines(window, 'foo(bar, baz)\n',
-        'goToBracket', 'ed.setCursor({line: 0, ch: 6});');
-    expect(six).toEqual(five);
+    await check(window, 'foo(bar, baz)\n', 'goToBracket', 'ed.setCursor({line: 0, ch: 6});');
 });
 
 test('a command with no CodeMirror 6 answer is named rather than silently absent',

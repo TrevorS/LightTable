@@ -1,18 +1,21 @@
-// Tree-sitter highlighting, on both engines, asserted on the painted DOM.
+// Tree-sitter highlighting, asserted on the painted DOM.
 //
-// The parse and the span table were never either engine's. Only the last step
-// was: CodeMirror 5 pulls colours out of a mode line by line, CodeMirror 6 is
-// handed decorations. So what has to be proved is not that a tree exists — the
-// smoke test covers that — but that the same tree comes out the same colour on
-// both, down to the class names, because css/treesitter.css is written against
-// those and there is exactly one copy of it.
+// The parse and the span table were never an engine's. Only the last step was:
+// CodeMirror 5 pulled colours out of a mode line by line, CodeMirror 6 is handed
+// decorations. What has to be proved is not that a tree exists — the smoke test
+// covers that — but that it comes out as the class names css/treesitter.css is
+// written against, of which there is exactly one copy.
 //
-// The DOM, and not the span table, for the same reason: the span table agreeing
-// with itself proves nothing.
+// The DOM, and not the span table, because the span table agreeing with itself
+// proves nothing. The set of classes is recorded in cm5-answers.ts, where it
+// sits beside CodeMirror 5's other answers — it was captured after that engine
+// went, but the test it replaces asserted these two sets were equal while both
+// were here, and passed.
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { test, expect, scratchDir } from './fixtures';
+import { cm5 } from './cm5-answers';
 import type { Page } from '@playwright/test';
 
 async function evalClj(window: Page, source: string): Promise<any> {
@@ -36,14 +39,11 @@ function pick(pair: Pair, which: boolean): number | string {
 }
 `;
 
-/** Open the probe on `engine` and wait for tree-sitter to have parsed it. */
-async function open(window: Page, engine: string): Promise<string> {
-    const file = path.join(scratchDir('ts'), `probe${engine.slice(1)}.ts`);
+/** Open the probe and wait for tree-sitter to have parsed it. */
+async function open(window: Page): Promise<string> {
+    const file = path.join(scratchDir('ts'), 'probe.ts');
     fs.writeFileSync(file, PROBE);
-    await evalClj(window, `
-        (do (lt.objs.editor/set-engine! ${engine})
-            (cmd/exec! :open-path "${file}")
-            :opened)`);
+    await evalClj(window, `(do (cmd/exec! :open-path "${file}") :opened)`);
     // The grammar is ~400KB of WebAssembly loaded on first use, so this is a
     // wait for a download-sized thing rather than for a render.
     await expect.poll(async () => await evalClj(window, `
@@ -77,8 +77,8 @@ async function paintedClasses(window: Page, file: string): Promise<string[]> {
     }, [file]);
 }
 
-const classesFor = async (window: Page, engine: string): Promise<string[]> => {
-    const file = await open(window, engine);
+const classesFor = async (window: Page): Promise<string[]> => {
+    const file = await open(window);
     // Poll: the parse finishing and the paint happening are two events, and on
     // CodeMirror 6 the second is a microtask behind the first by design.
     let classes: string[] = [];
@@ -90,9 +90,8 @@ const classesFor = async (window: Page, engine: string): Promise<string[]> => {
     return classes;
 };
 
-test('the same tree comes out the same colour on both engines', async ({ window }) => {
-    const five = await classesFor(window, ':cm5');
-    const six = await classesFor(window, ':cm6');
+test('the tree comes out the colours the stylesheet is written for', async ({ window }) => {
+    const painted = await classesFor(window);
 
     // The vocabulary is the point, so it is named rather than counted. A
     // per-line tokenizer cannot produce any of these: it does not know a type
@@ -100,18 +99,17 @@ test('the same tree comes out the same colour on both engines', async ({ window 
     // another's.
     for (const wanted of ['cm-ts-type', 'cm-ts-variable-parameter',
                           'cm-ts-punctuation', 'cm-ts-punctuation-bracket']) {
-        expect(six, `CodeMirror 6 should paint ${wanted}`).toContain(wanted);
+        expect(painted, `should paint ${wanted}`).toContain(wanted);
     }
 
-    // And the whole set matches, which is the claim that matters: one
-    // stylesheet, written once, correct on either engine. Sized as well as
-    // compared, so two empty sets cannot agree with each other.
-    expect(six.length).toBeGreaterThanOrEqual(8);
-    expect(six).toEqual(five);
+    // And the whole set, which is what one stylesheet written once has to
+    // cover. Sized as well as compared, so an empty set cannot pass.
+    expect(painted.length).toBeGreaterThanOrEqual(8);
+    expect(painted).toEqual(cm5('treesitter::painted-classes'));
 });
 
 test('a keystroke repaints, and only the tree decides the colours', async ({ window }) => {
-    const file = await open(window, ':cm6');
+    const file = await open(window);
 
     // `pick` is a function name in the probe. Renaming it to a type name is the
     // narrowest thing that can prove the parse is driving this: the characters
@@ -140,7 +138,7 @@ test('the theme that ships is dark, and colours the captures itself', async ({ w
     // CodeMirror 6's own facet, because the view rewrites that attribute on
     // every update — and the theme's tree-sitter rules beat the defaults in
     // css/treesitter.css by being scoped to it.
-    const file = await open(window, ':cm6');
+    const file = await open(window);
     await expect.poll(async () => (await paintedClasses(window, file)).length)
         .toBeGreaterThan(0);
 

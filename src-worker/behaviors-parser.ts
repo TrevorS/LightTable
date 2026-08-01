@@ -9,10 +9,13 @@
 // ended in the source. That is why this exists rather than a reader.
 
 /**
- * CodeMirror's StringStream, from `codemirror/addon/runmode/runmode.node.js`.
+ * A scanner over one string.
  *
- * Only the members this parser uses, and `start`/`pos` are read *and written*:
- * a mode drives a stream forward, and this drives it the same way.
+ * This was CodeMirror 5's `StringStream`, read out of the installed package,
+ * and it is forty lines — so when that package went, the parser kept the shape
+ * and grew its own rather than acquiring a dependency to walk a string. Only
+ * the members this parser uses, and `start`/`pos` are read *and written*: a
+ * caller drives the stream forward and marks out tokens as it goes.
  */
 export interface StringStream {
     /** Where the current token began. Assigned to as tokens are marked out. */
@@ -27,6 +30,40 @@ export interface StringStream {
     skipTo(ch: string): boolean | undefined;
     /** The text between `start` and `pos`. */
     current(): string;
+}
+
+/** A scanner over `text`, positioned at the beginning. */
+export function stringStream(text: string): StringStream {
+    return {
+        start: 0,
+        pos: 0,
+        peek(): string | undefined {
+            return this.pos < text.length ? text.charAt(this.pos) : undefined;
+        },
+        next(): string | undefined {
+            return this.pos < text.length ? text.charAt(this.pos++) : undefined;
+        },
+        eatSpace(): boolean {
+            const from = this.pos;
+            while (/[\s\u00a0]/.test(text.charAt(this.pos))) this.pos++;
+            return this.pos > from;
+        },
+        eatWhile(match: RegExp | string | ((ch: string) => boolean)): boolean {
+            const test = typeof match === 'string' ? (ch: string) => ch === match
+                : match instanceof RegExp ? (ch: string) => match.test(ch)
+                : match;
+            const from = this.pos;
+            while (this.pos < text.length && test(text.charAt(this.pos))) this.pos++;
+            return this.pos > from;
+        },
+        skipTo(ch: string): boolean | undefined {
+            const found = text.indexOf(ch, this.pos);
+            if (found <= -1) return undefined;
+            this.pos = found;
+            return true;
+        },
+        current(): string { return text.slice(this.start, this.pos); }
+    };
 }
 
 /** A token with a value: a keyword, a string, or an atom. */

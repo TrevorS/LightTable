@@ -1,14 +1,10 @@
 // Where the autocomplete list goes.
 //
-// Light Table has never used CodeMirror's completion addon — it has a hint list
-// of its own, built from the same filter-list the command bar uses, and the
-// only thing it wants from the editor is a rectangle to sit under. That is the
-// whole of the coupling, and it is why autocomplete crossed to CodeMirror 6 by
-// growing one method rather than being rewritten.
-//
-// So this asks for a cursor rectangle and nothing else. Either engine answers.
-
-import CodeMirror = require('codemirror');
+// Light Table has never used a completion addon — it has a hint list of its
+// own, built from the same filter-list the command bar uses, and the only thing
+// it wants from the editor is a rectangle to sit under. That is the whole of
+// the coupling, and it is why autocomplete crossed to CodeMirror 6 by growing
+// one method rather than being rewritten.
 
 /** All an editor has to be for the hint list to find it. */
 interface Positionable {
@@ -18,10 +14,10 @@ interface Positionable {
 /**
  * Put `hints` under the cursor, or above it when there is no room below.
  *
- * `from` is handed to the editor untouched. Both engines read a number as "one
- * end of the selection" rather than as a character offset, so the list appears
- * at the cursor and not at the start of the token being completed. That is what
- * it has always done; it is written down here because the parameter's name says
+ * `from` is handed to the editor untouched. A number is read as "one end of the
+ * selection" rather than as a character offset, so the list appears at the
+ * cursor and not at the start of the token being completed. That is what it has
+ * always done; it is written down here because the parameter's name says
  * otherwise.
  */
 export function positionHint(cm: Positionable, hints: HTMLElement, from: unknown): void {
@@ -66,10 +62,3 @@ export function ensureHintVisible(_cm: unknown, hints: HTMLElement, node: HTMLEl
   else if (node.offsetTop + node.offsetHeight > hints.scrollTop + hints.clientHeight)
     hints.scrollTop = node.offsetTop + node.offsetHeight - hints.clientHeight + 3;
 }
-
-// Still on the CodeMirror 5 global, because that is where a plugin looks and a
-// plugin is not ours to edit. Light Table itself goes through
-// `lt.window.modules` now, which is what lets the hint list position against an
-// editor the global has never heard of.
-CodeMirror.positionHint = positionHint as unknown as NonNullable<typeof CodeMirror.positionHint>;
-CodeMirror.ensureHintVisible = ensureHintVisible;

@@ -20,7 +20,7 @@
     res-obj))
 
 (defn watched-range [ed start end src->watch]
-  (let [doc (.Doc js/CodeMirror (ed/->val ed))
+  (let [doc (ed/scratch (ed/->val ed))
         range (when start
                 (ed/mark doc start (update-in end [:ch] inc) {:inclusiveLeft true :inclusiveRight true}))
         ;;add watch ranges

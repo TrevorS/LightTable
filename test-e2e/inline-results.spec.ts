@@ -27,9 +27,7 @@ async function open(window: Page, engine: string, name: string,
     const file = path.join(scratchDir('inline'), name);
     fs.writeFileSync(file, contents);
     await evalClj(window, `
-        (do (lt.objs.editor/set-engine! ${engine})
-            (cmd/exec! :open-path "${file}")
-            :opened)`);
+        (do (cmd/exec! :open-path "${file}") :opened)`);
     await expect.poll(async () => await evalClj(window,
         `(count (pool/by-path "${file}"))`)).toBe('1');
     return file;
@@ -52,67 +50,67 @@ const inside = (window: Page, file: string, selector: string) =>
         return { count: found.length, text: (found[0] as HTMLElement)?.innerText ?? '' };
     }, [file, selector] as [string, string]);
 
-for (const engine of [':cm5', ':cm6']) {
-    test(`a doc appears under the line it is about, on ${engine}`, async ({ window }) => {
-        // The path "Toggle docs" takes: a language answers `:editor.doc.show!`,
-        // and what draws it is an underline result — a block widget under the
-        // line, which on CodeMirror 6 is a band.
-        const file = await open(window, engine, `doc${engine.slice(1)}.txt`,
-            'alpha\nbeta\ngamma\n');
+/** One engine now. The constant stays so the file reads as it did. */
+const engine = ':cm6';
+test(`a doc appears under the line it is about, on ${engine}`, async ({ window }) => {
+    // The path "Toggle docs" takes: a language answers `:editor.doc.show!`,
+    // and what draws it is an underline result — a block widget under the
+    // line, which on CodeMirror 6 is a band.
+    const file = await open(window, engine, `doc${engine.slice(1)}.txt`,
+        'alpha\nbeta\ngamma\n');
 
-        await evalClj(window, `
-            (let [ed (first (pool/by-path "${file}"))]
-              (object/raise ed :editor.result.underline "a docstring" {:line 1 :ch 0} {})
-              :shown)`);
+    await evalClj(window, `
+        (let [ed (first (pool/by-path "${file}"))]
+          (object/raise ed :editor.result.underline "a docstring" {:line 1 :ch 0} {})
+          :shown)`);
 
-        await expect.poll(async () => (await inside(window, file, '.underline-result'))?.count)
-            .toBe(1);
-        expect((await inside(window, file, '.underline-result'))?.text)
-            .toContain('a docstring');
+    await expect.poll(async () => (await inside(window, file, '.underline-result'))?.count)
+        .toBe(1);
+    expect((await inside(window, file, '.underline-result'))?.text)
+        .toContain('a docstring');
 
-        await close(window, file);
-    });
+    await close(window, file);
+});
 
-    test(`Toggle docs shows what a language answered, on ${engine}`, async ({ window }) => {
-        // One step further out than the test above: this is the behavior a
-        // language server's hover reply lands in, so it covers `inline-doc` and
-        // the doc's own markup rather than only the widget underneath.
-        const file = await open(window, engine, `show${engine.slice(1)}.txt`,
-            'alpha\nbeta\ngamma\n');
+test(`Toggle docs shows what a language answered, on ${engine}`, async ({ window }) => {
+    // One step further out than the test above: this is the behavior a
+    // language server's hover reply lands in, so it covers `inline-doc` and
+    // the doc's own markup rather than only the widget underneath.
+    const file = await open(window, engine, `show${engine.slice(1)}.txt`,
+        'alpha\nbeta\ngamma\n');
 
-        // Tagged by hand, the way a language server tags an editor whose server
-        // says it answers hover. The behavior hangs off `:docable`, not
-        // `:editor` — a plain text file has nothing to document.
-        await evalClj(window, `
-            (let [ed (first (pool/by-path "${file}"))]
-              (object/add-tags ed [:docable])
-              (object/raise ed :editor.doc.show!
-                            {:name "beta" :ns "probe" :doc "what beta does"
-                             :loc {:line 1 :ch 0}})
-              :shown)`);
+    // Tagged by hand, the way a language server tags an editor whose server
+    // says it answers hover. The behavior hangs off `:docable`, not
+    // `:editor` — a plain text file has nothing to document.
+    await evalClj(window, `
+        (let [ed (first (pool/by-path "${file}"))]
+          (object/add-tags ed [:docable])
+          (object/raise ed :editor.doc.show!
+                        {:name "beta" :ns "probe" :doc "what beta does"
+                         :loc {:line 1 :ch 0}})
+          :shown)`);
 
-        await expect.poll(async () => (await inside(window, file, '.inline-doc'))?.count)
-            .toBe(1);
-        expect((await inside(window, file, '.inline-doc'))?.text).toContain('what beta does');
+    await expect.poll(async () => (await inside(window, file, '.inline-doc'))?.count)
+        .toBe(1);
+    expect((await inside(window, file, '.inline-doc'))?.text).toContain('what beta does');
 
-        await close(window, file);
-    });
+    await close(window, file);
+});
 
-    test(`an inline result appears beside the line, on ${engine}`, async ({ window }) => {
-        // The other shape: a bookmark carrying a widget, which sits at a
-        // position in the text rather than under it.
-        const file = await open(window, engine, `res${engine.slice(1)}.txt`,
-            'alpha\nbeta\ngamma\n');
+test(`an inline result appears beside the line, on ${engine}`, async ({ window }) => {
+    // The other shape: a bookmark carrying a widget, which sits at a
+    // position in the text rather than under it.
+    const file = await open(window, engine, `res${engine.slice(1)}.txt`,
+        'alpha\nbeta\ngamma\n');
 
-        await evalClj(window, `
-            (let [ed (first (pool/by-path "${file}"))]
-              (object/raise ed :editor.result "42" {:line 1 :ch 4})
-              :shown)`);
+    await evalClj(window, `
+        (let [ed (first (pool/by-path "${file}"))]
+          (object/raise ed :editor.result "42" {:line 1 :ch 4})
+          :shown)`);
 
-        await expect.poll(async () => (await inside(window, file, '.inline-result'))?.count)
-            .toBe(1);
-        expect((await inside(window, file, '.inline-result'))?.text).toContain('42');
+    await expect.poll(async () => (await inside(window, file, '.inline-result'))?.count)
+        .toBe(1);
+    expect((await inside(window, file, '.inline-result'))?.text).toContain('42');
 
-        await close(window, file);
-    });
-}
+    await close(window, file);
+});

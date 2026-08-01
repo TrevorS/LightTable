@@ -1,33 +1,40 @@
 // The adapter: a CodeMirror 6 editor answering to CodeMirror 5's method names.
 //
-// `lt.objs.editor` calls 51 methods on its editor. Rewriting all of it against
+// `lt.objs.editor` calls 55 methods on its editor. Rewriting all of it against
 // CodeMirror 6's API in one change is a rewrite nobody can review. Swapping the
 // engine underneath is a change that can be checked a method at a time, which
 // is what this does.
 //
 // So these assert the *contract*, not the implementation: given the same calls
-// `lt.objs.editor` already makes, does the answer match what CodeMirror 5 says?
+// `lt.objs.editor` already makes, is the answer the one CodeMirror 5 gave? It
+// used to be asked by building one of each and comparing. There is only one
+// now, so the answers are the ones that were captured from the other before it
+// went — see cm5-answers.ts.
 
 import { test, expect } from './fixtures';
+import { cm5 } from './cm5-answers';
 import type { Page } from '@playwright/test';
 
-/** Build one of each and run `body` against both, comparing the answers. */
-async function bothEngines(window: Page, doc: string, body: string): Promise<[unknown, unknown]> {
+/** Run `body` against an editor holding `doc`. */
+async function onCm6(window: Page, doc: string, body: string): Promise<unknown> {
     return await window.evaluate(([text, source]) => {
         const w = globalThis as any;
         const host = document.createElement('div');
         document.body.appendChild(host);
-
-        const five = w.CodeMirror(host, { value: text });
-        const six = w.ltCm6Editor.makeCm6Editor(host, { value: text });
-        const run = new Function('ed', `return (${source});`);
-
+        const ed = w.ltCm6Editor.makeCm6Editor(host, { value: text });
         try {
-            return [run(five), run(six)];
+            return new Function('ed', `return (${source});`)(ed);
         } finally {
             host.remove();
         }
-    }, [doc, body] as [string, string]) as [unknown, unknown];
+    }, [doc, body] as [string, string]);
+}
+
+/** What CodeMirror 6 answers, against what CodeMirror 5 did. */
+async function check(window: Page, doc: string, call: string): Promise<void> {
+    const was = cm5('editor::' + call);
+    expect(await onCm6(window, doc, call),
+           `${call} — CodeMirror 5 said ${JSON.stringify(was)}`).toEqual(was);
 }
 
 const DOC = 'zero line\none line\ntwo line\nthree\n';
@@ -47,8 +54,7 @@ test('the document surface answers the same as CodeMirror 5', async ({ window })
         '(function(p){return p.line+":"+p.ch;})(ed.posFromIndex(14))',
         'ed.getLineNumber(ed.getLineHandle(2))'
     ]) {
-        const [five, six] = await bothEngines(window, DOC, call);
-        expect(six, `${call} — CodeMirror 5 said ${JSON.stringify(five)}`).toEqual(five);
+        await check(window, DOC, call);
     }
 });
 
@@ -62,8 +68,7 @@ test('and so do the cursor and the selection', async ({ window }) => {
         '(ed.setSelection({line:0,ch:0},{line:0,ch:4}), (function(p){return p.line+":"+p.ch;})(ed.getCursor("end")))',
         '(ed.setSelection({line:0,ch:0},{line:0,ch:4}), ed.replaceSelection("ZERO"), ed.getLine(0))'
     ]) {
-        const [five, six] = await bothEngines(window, DOC, call);
-        expect(six, `${call} — CodeMirror 5 said ${JSON.stringify(five)}`).toEqual(five);
+        await check(window, DOC, call);
     }
 });
 
@@ -77,8 +82,7 @@ test('and editing the document', async ({ window }) => {
         '(ed.replaceRange("Q", {line:0,ch:0}), ed.undo(), ed.redo(), ed.getLine(0))',
         'ed.operation(function () { return 42; })'
     ]) {
-        const [five, six] = await bothEngines(window, DOC, call);
-        expect(six, `${call} — CodeMirror 5 said ${JSON.stringify(five)}`).toEqual(five);
+        await check(window, DOC, call);
     }
 });
 
@@ -92,8 +96,7 @@ test('a position past the end of a line is clamped, not thrown', async ({ window
         'ed.getLine(99)',
         'ed.getRange({line:0,ch:0},{line:99,ch:99})'
     ]) {
-        const [five, six] = await bothEngines(window, DOC, call);
-        expect(six, `${call} — CodeMirror 5 said ${JSON.stringify(five)}`).toEqual(five);
+        await check(window, DOC, call);
     }
 });
 
@@ -107,8 +110,7 @@ test('marks and line classes follow their text through an edit', async ({ window
         '(function(){var m=ed.markText({line:0,ch:0},{line:0,ch:4},{className:"m"}); m.clear(); return ed.findMarksAt({line:0,ch:2}).length;})()',
         '(function(){var m=ed.markText({line:1,ch:0},{line:1,ch:3},{className:"m"}); ed.replaceRange("two\\nlines\\n",{line:0,ch:0}); var f=m.find(); return f.from.line+":"+f.from.ch;})()'
     ]) {
-        const [five, six] = await bothEngines(window, DOC, call);
-        expect(six, `${call} — CodeMirror 5 said ${JSON.stringify(five)}`).toEqual(five);
+        await check(window, DOC, call);
     }
 
     // And a line class reaches the DOM, which is what the caller wanted.
@@ -145,8 +147,7 @@ test('the rest of the surface answers rather than throwing', async ({ window }) 
         'typeof ed.charCoords({line:0,ch:0}).left',
         '(ed.scrollTo(0, 0), ed.getValue().length)'
     ]) {
-        const [five, six] = await bothEngines(window, DOC, call);
-        expect(six, `${call} — CodeMirror 5 said ${JSON.stringify(five)}`).toEqual(five);
+        await check(window, DOC, call);
     }
 
     // `getTokenAt` in a document with no language is where they part, and it
@@ -157,10 +158,8 @@ test('the rest of the surface answers rather than throwing', async ({ window }) 
     // negative offset — which read as "the thing under your cursor is called
     // nothing", and stopped Toggle documentation from drawing anything at all.
     // Null is the honest answer, and the callers that check were already right.
-    const [fiveToken, sixToken] = await bothEngines(
-        window, DOC, 'ed.getTokenAt({line:0,ch:1}) === null');
-    expect(fiveToken).toBe(false);
-    expect(sixToken).toBe(true);
+    expect(cm5('editor::ed.getTokenAt({line:0,ch:1}) === null')).toBe(false);
+    expect(await onCm6(window, DOC, 'ed.getTokenAt({line:0,ch:1}) === null')).toBe(true);
 });
 
 test('every method lt.objs.editor calls exists on the adapter', async ({ window }) => {
