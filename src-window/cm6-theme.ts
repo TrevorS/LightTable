@@ -101,10 +101,11 @@ const stampLegacyClasses = ViewPlugin.fromClass(class {
  * into `.cm-editor-cursor` — a selector that matches nothing and would have
  * been very hard to see.
  *
- * Some names are missing on purpose. `.CodeMirror-hints`, `.CodeMirror-searching`
- * and `.CodeMirror-matchhighlight` belong to CodeMirror 5 addons that have no
- * CodeMirror 6 counterpart running here yet, so there is nothing for a rule to
- * decorate; mirroring them would only suggest otherwise.
+ * `.CodeMirror-hints` is missing on purpose: it belongs to the CodeMirror 5
+ * completion addon, which has no counterpart running here yet, so there is
+ * nothing for a rule to decorate and mirroring it would only suggest otherwise.
+ * The search classes were in that position until search was ported, which is
+ * what the list is for — a gap you can see is a gap somebody closes.
  */
 const CLASS_MAP: [string, string][] = [
     ['.CodeMirror-activeline-background', '.cm-activeLine'],
@@ -114,6 +115,9 @@ const CLASS_MAP: [string, string][] = [
     ['.CodeMirror-activeline', '.cm-activeLine'],
     ['.CodeMirror-linenumbers', '.cm-lineNumbers'],
     ['.CodeMirror-linenumber', '.cm-lineNumbers .cm-gutterElement'],
+    ['.CodeMirror-searching-active', '.cm-searchMatch-selected'],
+    ['.CodeMirror-matchhighlight', '.cm-selectionMatch'],
+    ['.CodeMirror-searching', '.cm-searchMatch'],
     ['.CodeMirror-selected', '.cm-selectionBackground'],
     ['.CodeMirror-cursors', '.cm-cursorLayer'],
     ['.CodeMirror-gutters', '.cm-gutters'],

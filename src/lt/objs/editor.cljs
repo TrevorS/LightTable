@@ -550,6 +550,45 @@
   [name func]
   (.defineExtension js/CodeMirror name func))
 
+(defn find!
+  "Search editor `e` for `query` and move to the first match.
+
+  One function rather than a command name, because the two engines put search
+  in different places: CodeMirror 5 registers global commands from an addon,
+  and CodeMirror 6 makes the query part of the editor's state. Callers should
+  not have to know which — see [[lt.objs.find]], where none of them do."
+  [e query & [reverse?]]
+  (let [cm (->cm-ed e)]
+    (if (cm6? e)
+      (.search cm query (boolean reverse?))
+      (js/CodeMirror.commands.find cm query (boolean reverse?)))))
+
+(defn find-next!
+  "Move to the next match, or the previous one when `reverse?`."
+  [e & [reverse?]]
+  (let [cm (->cm-ed e)]
+    (if (cm6? e)
+      (.findNext cm (boolean reverse?))
+      (if reverse?
+        (js/CodeMirror.commands.findPrev cm true)
+        (js/CodeMirror.commands.findNext cm false)))))
+
+(defn clear-search!
+  "Forget the query, which takes the match highlighting with it."
+  [e]
+  (let [cm (->cm-ed e)]
+    (if (cm6? e)
+      (.clearSearch cm)
+      (js/CodeMirror.commands.clearSearch cm))))
+
+(defn replace!
+  "Replace the current match with `text`, or every match when `all?`."
+  [e text & [reverse? all?]]
+  (let [cm (->cm-ed e)]
+    (if (cm6? e)
+      (.replace cm text (boolean reverse?) (boolean all?))
+      (js/CodeMirror.commands.replace cm text (boolean reverse?) (boolean all?)))))
+
 (defn line-widget
   "Add line widget `elem` (an element), along with any options, at `line` to editor `e`.
 

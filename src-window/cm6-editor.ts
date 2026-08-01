@@ -29,6 +29,10 @@ import {
 import { codeFolding, foldCode, unfoldCode, syntaxTree } from '@codemirror/language';
 import { themeExtensions } from './cm6-theme.js';
 import { Options, UNSUPPORTED } from './cm6-options.js';
+import {
+    search, SearchQuery, setSearchQuery, findNext, findPrevious,
+    replaceNext, replaceAll, highlightSelectionMatches
+} from '@codemirror/search';
 import { modeExtension } from './cm6-modes.js';
 import { runCommand } from './cm6-commands.js';
 import { bandField, setBands } from './cm6.js';
@@ -163,6 +167,7 @@ export class Cm6Editor {
     private generation = 0;
     private markerId = 0;
     private extending = false;
+    private query = '';
 
     constructor(parent: HTMLElement, doc: string, extensions: Extension[] = [],
                 defaults: Record<string, unknown> = {}) {
@@ -182,6 +187,11 @@ export class Cm6Editor {
                         ...defaults
                     }),
                     history(),
+                    // The query state and the match highlighting, without
+                    // CodeMirror 6's own search panel: Light Table has a find
+                    // bar of its own and two would be one too many.
+                    search(),
+                    highlightSelectionMatches(),
                     keymap.of([...defaultKeymap, ...historyKeymap]),
                     bandField,
                     markerField,
@@ -455,6 +465,54 @@ export class Cm6Editor {
     private pushBands(): void {
         this.view.dispatch({ effects: setBands.of([...this.declared, ...this.widgets]) });
     }
+
+    // --- search -------------------------------------------------------------
+
+    /**
+     * Set the query and move to the first match, which is what CodeMirror 5's
+     * `find` command does in one call.
+     *
+     * The case rule is CodeMirror 5's and worth keeping: a query typed in lower
+     * case is case-insensitive, and typing a capital makes it matter. It is the
+     * behaviour people expect without being told, which is why nobody notices
+     * it until it is gone.
+     */
+    search(query: string, reverse = false): boolean {
+        this.query = query;
+        this.setQuery();
+        return query ? this.findNext(reverse) : false;
+    }
+
+    /** The query as CodeMirror 6 wants it, with an optional replacement. */
+    private setQuery(replacement = ''): void {
+        this.view.dispatch({
+            effects: setSearchQuery.of(new SearchQuery({
+                search: this.query,
+                caseSensitive: this.query !== this.query.toLowerCase(),
+                replace: replacement
+            }))
+        });
+    }
+
+    findNext(reverse = false): boolean {
+        return reverse ? findPrevious(this.view) : findNext(this.view);
+    }
+
+    findPrev(): boolean { return this.findNext(true); }
+
+    /** Forget the query, which takes the highlighting with it. */
+    clearSearch(): void {
+        this.query = '';
+        this.setQuery();
+    }
+
+    replace(text: string, _reverse = false, all = false): boolean {
+        this.setQuery(text);
+        return all ? replaceAll(this.view) : replaceNext(this.view);
+    }
+
+    /** What is being searched for, or the empty string. */
+    searchQuery(): string { return this.query; }
 
     /**
      * Run a CodeMirror 5 command by name, if there is one that means the same.

@@ -63,7 +63,10 @@ test('and the longest name wins, which is the whole reason for the order', async
 
     // A name the table does not know is left alone rather than half-rewritten.
     expect(await mirror(window, '.CodeMirror-hints')).toBe(null);
-    expect(await mirror(window, '.CodeMirror-searching')).toBe(null);
+
+    // And a name that used to be in that position is not any more: search is
+    // ported, so a theme's highlight reaches the matches CodeMirror 6 draws.
+    expect(await mirror(window, '.CodeMirror-searching')).toBe('.cm-searchMatch');
 
     // And a selector with nothing to say about CodeMirror is not a twin at all.
     expect(await mirror(window, '.sidebar .row')).toBe(null);

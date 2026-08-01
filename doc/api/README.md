@@ -13,7 +13,7 @@ will keep its shape.
 | [`lt.macros`](lt.macros.md) | Macros used across LT | 3 vars |
 | [`lt.object`](lt.object.md) | Define core of BOT architecture and provide fns for manipulating objects… | 34 vars |
 | [`lt.objs.command`](lt.objs.command.md) | Provide command manager and command related fns | 5 vars |
-| [`lt.objs.editor`](lt.objs.editor.md) | Provide fns and behaviors for interfacing with a CodeMirror editor… | 85 vars |
+| [`lt.objs.editor`](lt.objs.editor.md) | Provide fns and behaviors for interfacing with a CodeMirror editor… | 89 vars |
 | [`lt.objs.editor.pool`](lt.objs.editor.pool.md) | Provide manager for managing a pool of editors and several misc editor commands | 6 vars |
 | [`lt.objs.files`](lt.objs.files.md) | Provide fns for doing file related operations. | 42 vars |
 | [`lt.objs.notifos`](lt.objs.notifos.md) | Provide fns for displaying messages and spinner in bottom statusbar | 3 vars |

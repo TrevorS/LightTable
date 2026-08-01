@@ -51,9 +51,6 @@
   :click (fn []
            (cmd/exec! :find.replace-all)))
 
-(defn current-ed []
-  (editor/->cm-ed (pool/last-active)))
-
 (defn ->shown-width [shown?]
   (if shown?
     ""
@@ -88,7 +85,7 @@
                       (when-let [cur (pool/last-active)]
                         (if (and (:searching? @this)
                                  (= (:searching.for @cur) (->val this)))
-                          (js/CodeMirror.commands.findNext (current-ed) (:reverse? @this))
+                          (editor/find-next! cur (:reverse? @this))
                           (object/raise this :search! (->val this))))))
 
 (behavior ::prev!
@@ -97,7 +94,7 @@
                       (when-let [cur (pool/last-active)]
                         (if (and (:searching? @this)
                                  (= (:searching.for @cur) (->val this)))
-                          (js/CodeMirror.commands.findPrev (current-ed) (:reverse? @this))
+                          (editor/find-next! (pool/last-active) (not (:reverse? @this)))
                           (object/raise this :search! (->val this))))))
 
 (behavior ::focus!
@@ -112,7 +109,7 @@
           :reaction (fn [this]
                       (object/merge! this {:searching? false})
                       (when-let [ed (pool/last-active)]
-                        (js/CodeMirror.commands.clearSearch (editor/->cm-ed ed)))
+                        (editor/clear-search! ed))
                       (let [input (dom/$ :input (object/->content this))]
                         (when (= "" (dom/val input))
                           (dom/val input "")))))
@@ -123,7 +120,7 @@
           :reaction (fn [this all?]
                       (when-not (:searching? @this)
                         (object/raise this :search! (->val this)))
-                      (js/CodeMirror.commands.replace (editor/->cm-ed (pool/last-active)) (->replacement this) (:reverse? @this) (boolean all?))
+                      (editor/replace! (pool/last-active) (->replacement this) (:reverse? @this) (boolean all?))
                       (object/raise this :next!)))
 
 (behavior ::search!
@@ -137,8 +134,7 @@
                             (editor/move-cursor e pos))
                           (object/merge! this {:searching? true})
                           (object/merge! e {:searching.for v})
-                          (let [ed (editor/->cm-ed e)]
-                            (js/CodeMirror.commands.find ed v (:reverse? @this)))))))
+                          (editor/find! e v (:reverse? @this))))))
 
 (object/object* ::find-bar
                 :tags #{:find-bar}
