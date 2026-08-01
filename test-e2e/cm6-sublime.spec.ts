@@ -44,7 +44,7 @@ async function check(window: Page, doc: string, command: string, setup = ''): Pr
 const DOC = 'gamma\nalpha\nbeta\n';
 const AT_TOP = 'ed.setCursor({line: 0, ch: 0});';
 
-test('a line command does the same thing on both engines', async ({ window }) => {
+test('a line command does what it did before', async ({ window }) => {
     for (const [command, setup] of [
         ['duplicateLine', AT_TOP],
         ['swapLineDown', AT_TOP],

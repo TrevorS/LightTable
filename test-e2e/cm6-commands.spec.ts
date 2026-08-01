@@ -13,7 +13,7 @@ import type { Page } from '@playwright/test';
  * Run `name` from `at`, and report what it did.
  *
  * A command is judged by where the cursor ended up and what the text became —
- * which is what a person notices, and what the two engines owed each other.
+ * which is what a person notices, and what the new engine owed the old one.
  * CodeMirror 5's answers are recorded; see cm5-answers.ts.
  */
 async function run(window: Page, name: string, at: { line: number, ch: number }) {

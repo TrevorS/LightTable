@@ -1,4 +1,4 @@
-// The editor commands Light Table registers, run on both engines.
+// The editor commands Light Table registers, run the way a keybinding runs them.
 //
 // `lt.objs.editor.pool` registers a command per CodeMirror command name, and
 // every one of them used to call `js/CodeMirror.commands.<name>` directly. That

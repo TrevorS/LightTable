@@ -247,9 +247,9 @@ export function tokenClasses(style: string): string {
  *
  * The loop the CodeMirror 5 mode runs, with the stream taken out of it: ask
  * what covers this column and where that run ends, emit it, continue from
- * there. Written once because both engines need the same answer — one turns a
- * run into a token, the other into a decoration — and two implementations of
- * this would drift into two different sets of colours.
+ * there. Written apart from the drawing because the drawing changed once
+ * already and this did not: what a span table means is not the renderer's
+ * business.
  */
 export function runsForLine(spans: Span[] | undefined, length: number): Span[] {
     const out: Span[] = [];

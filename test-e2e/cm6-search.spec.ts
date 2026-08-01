@@ -1,9 +1,9 @@
-// Find and replace, on both engines, through the find bar's own path.
+// Find and replace, through the find bar's own path.
 //
 // `lt.objs.find` used to call four CodeMirror 5 global commands directly. Those
 // come from a vendored addon and operate on a CodeMirror 5 editor, so on
 // CodeMirror 6 they were a TypeError in the search box. They are four functions
-// on `lt.objs.editor` now, and neither engine is named in the find bar.
+// on `lt.objs.editor` now, and the find bar names no editor at all.
 //
 // So this drives the commands a person's keys are bound to, and runs the whole
 // thing twice.

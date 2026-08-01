@@ -76,7 +76,7 @@ test('read-only refuses the keyboard, and only the keyboard', async ({ window })
     // Which is what CodeMirror 5 means by it too: a read-only editor still
     // accepts replaceRange, because that is how Light Table itself writes into
     // one. Asserting on the document after a programmatic edit would have been
-    // asserting the wrong thing and would have passed on neither engine.
+    // asserting the wrong thing, and would have passed for neither editor.
     await window.evaluate(() => {
         const w = globalThis as any;
         const host = document.createElement('div');

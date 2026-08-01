@@ -130,7 +130,7 @@ export function themeClass(theme: string): Extension {
  *
  * `.CodeMirror-hints` is missing on purpose, and permanently: the autocomplete
  * list is Light Table's own element wearing a CodeMirror-shaped class name, not
- * anything CodeMirror draws. It keeps that name on both engines, so a theme's
+ * anything the editor draws. It carries that name itself, so a theme's
  * rules already apply and a twin would have nothing to match. The search
  * classes were in this list's other category — absent because unported — until
  * search landed, which is what the list is for: a gap you can see is a gap

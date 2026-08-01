@@ -1,18 +1,24 @@
-// The CodeMirror 6 spike: what a port would actually buy.
+// The band field, which is the reason the port happened.
 //
-// One claim, checked rather than argued. On CodeMirror 5 a band is a line
-// widget you add and must remember to remove, which is why `lt.ui.bands` grew
-// a table of what is drawn and an orphan sweep. On CodeMirror 6 the set of
-// widgets is derived from state — so the bookkeeping is not simpler, it is
-// absent.
+// One claim, checked rather than argued. A band used to be a line widget you
+// added and had to remember to remove, which is why `lt.ui.bands` grew a table
+// of what was drawn and an orphan sweep. The set of widgets is derived from
+// state now — so the bookkeeping is not simpler, it is absent.
 //
-// `lt.ui.bands` is written against this now. These assert the field itself;
-// that it is reached the same way on both engines is `bands.spec.ts`.
+// These assert the field's own behaviour: what happens to a widget when the
+// same key is declared with new content, when a line is past the end, when a
+// key moves. That it is reached correctly from `lt.state` is `bands.spec.ts`.
 
 import { test, expect } from './fixtures';
 import type { Page } from '@playwright/test';
 
-/** Build a CM6 editor in a detached root and hand back a handle. */
+/**
+ * Build an editor in a detached root and hand back a handle.
+ *
+ * The same factory the application uses, and not a second one written for the
+ * test: a band field configured differently from the real editor's would let
+ * this pass while the editor did something else.
+ */
 async function makeEditor(window: Page, doc: string): Promise<void> {
     await window.evaluate(([text]) => {
         const w = globalThis as any;
@@ -20,14 +26,14 @@ async function makeEditor(window: Page, doc: string): Promise<void> {
         host.className = 'cm6-host';
         document.body.appendChild(host);
         w.__cm6host = host;
-        w.__cm6 = w.ltCm6.makeEditor({ doc: text, parent: host });
+        w.__cm6 = w.ltCm6Editor.makeCm6Editor(host, { value: text });
     }, [doc]);
 }
 
 async function bands(window: Page, specs: { line: number, key: string, text: string }[]): Promise<void> {
     await window.evaluate(([given]) => {
         const w = globalThis as any;
-        w.ltCm6.showBands(w.__cm6, (given as any[]).map((b) => ({
+        w.__cm6.setBands((given as any[]).map((b) => ({
             line: b.line,
             key: b.key,
             // What the band is showing. Equal content is a band that needs no
@@ -42,12 +48,12 @@ async function bands(window: Page, specs: { line: number, key: string, text: str
 }
 
 const drawn = (window: Page) =>
-    window.evaluate(() => (globalThis as any).ltCm6.drawnBands((globalThis as any).__cm6) as string[]);
+    window.evaluate(() => (globalThis as any).__cm6.bandKeys() as string[]);
 
 test.afterEach(async ({ window }) => {
     await window.evaluate(() => {
         const w = globalThis as any;
-        w.__cm6?.destroy();
+        w.__cm6?.view.destroy();
         w.__cm6host?.remove();
     });
 });
@@ -127,7 +133,7 @@ test('and it follows its line when the document changes under it', async ({ wind
 
     // Two lines inserted at the top. Nothing was told about the band.
     await window.evaluate(() => {
-        (globalThis as any).__cm6.dispatch({ changes: { from: 0, insert: 'new\nlines\n' } });
+        (globalThis as any).__cm6.replaceRange('new\nlines\n', { line: 0, ch: 0 });
     });
 
     expect(await lineOf()).toBe(4);

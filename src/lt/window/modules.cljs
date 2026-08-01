@@ -47,8 +47,8 @@
   cm-hint-js)
 
 (def ^js cm6
-  "CodeMirror 6's band mechanism: makeEditor, showBands, drawnBands. The bands
-  themselves go through the editor — see [[cm6-editor]]."
+  "The band field: bandField, setBands, Band. Bands go through the editor
+  rather than through here — see [[cm6-editor]]."
   cm6-js)
 
 (def ^js cm6-editor

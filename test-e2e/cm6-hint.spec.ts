@@ -1,15 +1,12 @@
-// Autocomplete, on both engines.
+// Autocomplete.
 //
 // Light Table's completion is its own — its own list, its own providers, its
 // own key handling — and it reached into CodeMirror 5 in four places to get
 // there: a `StringStream` to find the token under the cursor, a mode object to
 // hold what counts as a word, a line handle to hear about typing, and
-// `cursorCoords` to know where to draw. Three of those do not exist on
-// CodeMirror 6 in any form.
-//
-// So each was answered somewhere other than the editor, and what this asserts
-// is that the answers agree: the same token, the same word characters, the same
-// list, from the same file, on either engine.
+// `cursorCoords` to know where to draw. Three of those had no CodeMirror 6
+// equivalent in any form, which is why three of them are answered somewhere
+// other than the editor now.
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -64,7 +61,7 @@ test(`the token under the cursor is the same one, on ${engine}`, async ({ window
     // pattern — which is a word character, an underscore or a dollar — it
     // would be three. CodeMirror 5 kept that setting on the mode object,
     // put there with `extendMode`; CodeMirror 6 has no mode object, so it
-    // is a map keyed by what both engines agree the mode is called.
+    // is a map keyed by what the file-type table calls the language.
     const file = await open(window, engine, `tokens${engine.slice(1)}.clj`,
         '(foo-bar->baz qux)\n');
 

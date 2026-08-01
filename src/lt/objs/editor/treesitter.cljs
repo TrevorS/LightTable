@@ -300,7 +300,7 @@
 (defn line-classes
   "Every token class tree-sitter gives `ed`, sorted and without repeats.
 
-  Read from the span table rather than from what either engine drew, because
+  Read from the span table rather than from what was drawn, because
   neither can be read without a window that paints: CodeMirror 5 answers
   `getLineTokens` from a mode it only runs when asked, and CodeMirror 6
   decorates the lines it can see. This is the thing they are both drawing

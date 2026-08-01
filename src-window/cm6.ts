@@ -1,25 +1,19 @@
-// CodeMirror 6, and the one thing it changes about this editor.
+// The one thing CodeMirror 6 changes about this editor.
 //
 // Light Table's product is what sits *between* two lines of code: a result, a
-// watch, a proposed edit, a diagnostic. On CodeMirror 5 that is a line widget —
+// watch, a proposed edit, a diagnostic. That used to be a line widget —
 // something you imperatively add and must remember to remove, which is why
-// `lt.ui.bands` had to grow `ensure-widget!`, a table of what is drawn, and an
-// orphan sweep to take away what the state no longer asks for.
+// `lt.ui.bands` had grown `ensure-widget!`, a table of what was drawn, and an
+// orphan sweep to take away what the state no longer asked for.
 //
-// CodeMirror 6 derives decorations from state. You declare "given this, these
-// widgets exist" and the view reconciles. That is the same shape as everything
-// else built here — hiccup from state, bands from state — and it means the
-// bookkeeping stops being code.
-//
-// This is the field that does it, and `lt.ui.bands` is now written against it:
-// that namespace answers "which bands exist" and hands the answer over whole.
-// The CodeMirror 5 half of the bookkeeping still exists, but it lives in
-// `lt.objs.editor.bands` where the engine that needs it is, and it goes when
-// that engine does.
+// Decorations are derived from state. You declare "given this, these widgets
+// exist" and the view reconciles. That is the same shape as everything else
+// built here — hiccup from state, bands from state — and it means the
+// bookkeeping stops being code: all three of those are gone, and what answers
+// "which bands exist" is `lt.ui.bands`, which hands the answer over whole.
 
 import { EditorState, StateField, StateEffect, RangeSet } from '@codemirror/state';
-import type { Extension } from '@codemirror/state';
-import { EditorView, Decoration, WidgetType, lineNumbers } from '@codemirror/view';
+import { EditorView, Decoration, WidgetType } from '@codemirror/view';
 import type { DecorationSet } from '@codemirror/view';
 
 /** One band: a DOM node to show under a line. */
@@ -154,43 +148,3 @@ export const bandField = StateField.define<{ bands: Band[], decorations: Decorat
     },
     provide: (f) => EditorView.decorations.from(f, (v) => v.decorations)
 });
-
-export interface Cm6Options {
-    doc?: string;
-    parent: HTMLElement;
-    extensions?: Extension[];
-}
-
-/** A CodeMirror 6 editor with the band field installed. */
-export function makeEditor(options: Cm6Options): EditorView {
-    return new EditorView({
-        state: EditorState.create({
-            doc: options.doc ?? '',
-            extensions: [lineNumbers(), bandField, ...(options.extensions ?? [])]
-        }),
-        parent: options.parent
-    });
-}
-
-/** Ask the view to show exactly `bands`, and nothing else. */
-export function showBands(view: EditorView, bands: Band[]): void {
-    view.dispatch({ effects: setBands.of(bands) });
-}
-
-/** What is currently drawn, as keys. For asserting about. */
-export function drawnBands(view: EditorView): string[] {
-    const out: string[] = [];
-    view.state.field(bandField).decorations.between(0, view.state.doc.length, (_from, _to, deco) => {
-        const widget = deco.spec.widget;
-        if (widget instanceof BandWidget) out.push(widget.key);
-    });
-    return out;
-}
-
-declare global {
-    interface Window { ltCm6?: unknown }
-}
-
-// Reachable from the window, so a test and a REPL can both use it. The rest of
-// the editor does not know this exists yet, which is the point of a spike.
-window.ltCm6 = { makeEditor, showBands, drawnBands, EditorView, EditorState };

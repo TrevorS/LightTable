@@ -1,9 +1,9 @@
-// The things Light Table draws inside a document, on both engines.
+// The things Light Table draws inside a document.
 //
 // An inline result and a doc are the same idea in two shapes: a block under the
 // line, and a widget at the end of it. Neither is a nicety — showing a value
 // beside the expression that produced it is the reason this editor exists — and
-// both reach CodeMirror through an API written for the other engine.
+// both reach the editor through an API written for the one before it.
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
