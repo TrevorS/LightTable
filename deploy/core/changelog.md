@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+## 0.10.0
+
+Light Table works on your language rather than on Clojure. Sixteen languages
+arrive with a language server declared for them, and the surfaces that server
+offers — completion, documentation, jump-to-definition, references, symbols,
+rename, formatting, code actions and diagnostics — are generic, so a language
+gets all of them by saying it can answer.
+
+The other half is Clojure, which had not worked in this fork at all: the REPL
+starts through your own Leiningen against `cider-nrepl`, ClojureScript
+evaluates through the same path, and **the editor changes itself while running
+again** — the feature Light Table is named for, verified in a packaged release.
+
 Every plugin Light Table ships with now lives in this repository and is built
 from source against the editor it extends. Nothing is cloned at build time and
 there is no binary left in the tree. Compiling five plugins that had shipped as
@@ -11,7 +24,7 @@ working at all.
 
 * CHANGED: The Clojure, CSS, HTML, Javascript and Python plugins are vendored under `plugins/`, beside TypeScript and Paredit, and built as modules of the editor's own ClojureScript build. `script/build.sh` no longer clones anything, and CI no longer fetches anything. Each plugin's `VENDORED.md` records where it came from, what was left behind, and every change to its source
 * CHANGED: Every one of them declares `:capabilities` now, so the capability report has something to check. Widening the smoke test's probe from two plugins to all seven immediately found four manifests that disagreed with what inference reads out of the plugin's own JavaScript; declared and used agree exactly for all seven
-* CHANGED: Language servers are declared as data — `:lt.objs.editor.lsp/language-servers`, a non-exclusive `:user` behavior shaped like `:lt.objs.files/file-types`. A `user.behaviors` entry beats a plugin's and a plugin's beats Light Table's own, so pointing at a particular binary, adding arguments or turning a server off is configuration rather than a source edit. `typescript-language-server` is declared by `plugins/TypeScript` and `clojure-lsp` by `plugins/Clojure`, because the plugin that spawns a process is the one accountable for it
+* CHANGED: Language servers are declared as data — `:lt.objs.editor.lsp/language-servers`, a non-exclusive `:user` behavior shaped like `:lt.objs.files/file-types`. A `user.behaviors` entry beats a plugin's and a plugin's beats Light Table's own, so pointing at a particular binary, adding arguments or turning a server off is configuration rather than a source edit. The TypeScript plugin declares its own server and `clojure-lsp` is declared by `plugins/Clojure`, because the plugin that spawns a process is the one accountable for it
 * CHANGED: Five smoke checks were gated on whether the published plugins had been cloned, which meant the plugin require shim, the CommonJS module loader and the capability report were exercised on a developer's machine and skipped in CI. They run unconditionally. 76 checks, up from 72
 * ADDED: Every bracket carries its nesting depth as a further class — `cm-ts-punctuation-bracket-1` through `-6`, cycling — so a theme can colour by depth. Off by default: the rule above it still applies and brackets stay one quiet grey, for the reason `deploy/core/css/treesitter.css` gives. A six-hue palette is in that file, commented out
 * REMOVED: The Rainbow plugin is not vendored. It re-tokenized the whole document through `CodeMirror.overlayMode` to work out what the parse tree already knows, on exactly the languages tree-sitter highlighting already owns. The depth classes above replace it
@@ -42,15 +55,6 @@ working at all.
 * CHANGED: Watches survived losing the middleware that carried them. A watch wraps its expression to print one tagged line, and the client takes the tag off the output it is already receiving — no server-side code, so watches work against any nREPL. Verified inline: a watch on `(range 5)` reports `(0 1 2 3 4)` beside it
 * FIXED: The Clojure plugin called `.write` on `lt.objs.console/core-log`, which is a path in this fork rather than a write stream. Two of the three calls are in the behaviors that read the REPL process's output, so the notifier threw on the first line the server printed and nothing could ever have connected
 * FIXED: `script/lt-repl.sh start` could not start Light Table on macOS. It asked for `xvfb` whenever `DISPLAY` was unset, which on a Mac is always
-
-## 0.10.0
-
-Syntax highlighting is now driven by a parser rather than a per-line
-tokenizer, and Light Table talks to language servers. Both are foundations
-rather than finished features: the highlighting is complete for the languages
-listed below, and the language server client renders diagnostics and nothing
-else yet.
-
 * ADDED: tree-sitter highlighting for 19 languages — C, C++, C#, CSS, Clojure, Go, HTML, Java, JavaScript, JSON, Lua, PHP, Python, Ruby, Rust, Scala, TOML, TypeScript/TSX and YAML. A parser knows a type from a value and a parameter from a local, which a per-line mode cannot, so declarations, parameters, types and documentation are distinguishable for the first time
 * ADDED: The capture names are the ones Helix, Neovim and Zed use, so a theme written for any of them is a stylesheet away. `deploy/core/css/treesitter.css` is the default one
 * ADDED: A Clojure grammar and highlight query, built and bundled here — `defn` names, docstrings, parameters, namespaced keywords and interop are each their own thing
@@ -61,6 +65,24 @@ else yet.
 * FIXED: Project-wide search returned nothing at all and reported that it had searched `undefined` files — the package it called had no `result` callback. It has its own implementation now, and a smoke check
 * FIXED: Numbers were `#ccc` on `#ccc` in the default theme, and Rust threw while highlighting. Every mime in the table is now checked against the mode that claims it
 * FIXED: A namespace docstring is documentation rather than a string
+
+* ADDED: **A control surface**, so something that is not a person can drive the editor: `lt.objs.control` takes an operation and a map and answers with data. A snapshot of what is open, evaluation and file opening as jobs that are polled, the prompts on screen and a way to answer them, and the errors behaviors have raised. Shaped for MCP — handles rather than "the current editor", MCP's five task statuses exactly, and a question returned as a result the way `InputRequiredResult` works — so wrapping it is an adapter rather than a translation. See [doc/control-surface.md](https://github.com/TrevorS/LightTable/blob/develop/doc/control-surface.md)
+* ADDED: **The files that were open come back**, with the cursor where it was, the tab that was active, and the folders that were expanded. Guarded on the workspace being the same one, and a file that has since been deleted is skipped rather than fatal
+* ADDED: **Formatting and code actions from any language server.** Formatting goes straight into the buffer as one undoable change, because the file is in front of you and usually dirty; a code action's edits go through `lt.objs.workspace-edit`, because it routinely rewrites files you are not looking at. One action is applied rather than offered — a popup with one button in it is a dialog that exists to be dismissed
+* ADDED: **More than one language server per language.** A type checker and a linter answer different questions, so both run, and each surface goes to the server whose `initialize` result says it can answer it. biome takes formatting from vtsls; hover stays with vtsls, which is the only one of them that offers it. Diagnostics are kept per connection, because `publishDiagnostics` replaces rather than adds — one list would have meant the linter erasing the type checker's errors
+* ADDED: **First-class support for fifteen more languages**, each as its own plugin with nothing in it but a declaration and a README saying how to install the server: Rust (rust-analyzer, with clippy and rustfmt), Go (gopls), Zig, Ruby, Elixir, C and C++ (clangd), Python (pyright and ruff), TypeScript and JavaScript (vtsls and biome), HTML, CSS, JSON, YAML, TOML and shell. `node script/new-language-plugin.mts <Name>` stamps out another one, and refuses if no editor carries the tag
+* ADDED: `lt.objs.providers` decides which connected client answers a surface, so a language server stands down where a REPL is already answering rather than both replying. A plugin says what it provides; one that says nothing is read the old way, by the commands it registers, so nothing had to be rewritten to keep working
+* ADDED: **A real test suite**, in four layers: pure ClojureScript units, main-process units with no Electron, Playwright integration tests against the assembled application, and the smoke test. 143 ClojureScript tests, 18 main-process, 27 integration, 95 smoke checks. Each layer runs against its own home directory — without that a run inherits whatever the last one left behind, which is how a twelve-second suite once took fifteen minutes
+* ADDED: **Keymaps can be written per platform** — `mac:`, `win:` and `linux:` prefixes on a binding, so one keymap file covers all three
+* CHANGED: **User data is no longer written inside the application.** Light Table used its own directory for both what it reads and what it writes, so in a packaged build the first run wrote `User/`, `logs/` and `ltcache/` into the `.app` — and `codesign --verify` then reported a sealed resource missing. It writes to the platform's user-data directory now
+* CHANGED: The build is warning-free — 0 errors and 0 warnings from clj-kondo, ESLint, `tsc` and shadow-cljs — and every script is TypeScript rather than JavaScript. The linter is a pinned, checksummed binary fetched from its own release, replacing an npm package that brought eight advisories with it and had stopped working besides
+* FIXED: **The second window a person opened was blank.** `createWindow` mutated the options object `require` had cached, so everything after the first window was created from a hollowed-out copy. Every smoke check passed throughout, because all of them ran in a first window
+* FIXED: **A plugin compiled against another release is refused by name** rather than dying with `cljs$cst$110$tags is not defined`. A ClojureScript plugin shares the editor bundle's table of hoisted literals, and shadow renumbers it every build — so a plugin installed before an upgrade cannot run, and the error said nothing about why. Three debugging sessions went to this before it was checked instead of caught
+* FIXED: **A failure to start says so on the page.** Nothing is visible until the editor finishes building itself, so anything that threw before that left a dark screen and put the reason in a developer console the released app never opens. A bundle that will not load reported nothing at all
+* FIXED: The User plugin was copied into the user directory once and never refreshed, so it went stale against the next build. It was invisible until the user directory stopped being the application directory — before that, the copy was of the file onto itself
+* FIXED: Project-wide search read every dependency directory it could reach, and replacing across files wrote behind an open tab. The file tree noticed a new file only by luck, and forgot which folders were expanded
+* FIXED: Multiple cursors were implemented and unreachable — no key was bound to them
+* FIXED: A code-action popup dismissed rather than answered left its object behind, tagged and reachable, holding a closure over the editor. The client selector had the same defect and the same fix
 
 ## 0.9.0
 
