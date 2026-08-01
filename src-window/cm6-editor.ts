@@ -1,18 +1,16 @@
-// A CodeMirror 6 editor that answers to CodeMirror 5's method names.
+// The editor: CodeMirror 6, answering to CodeMirror 5's method names.
 //
-// `lt.objs.editor` wraps a CodeMirror instance and calls 55 methods on it —
-// every method any ClojureScript in this repository or in deploy/plugins calls,
-// extracted rather than remembered, plus what Light Table's own CodeMirror
-// addons call, and asserted as a list in test-e2e/cm6-editor.spec.ts. Rewriting all of that against CodeMirror 6's API
-// in one change is a rewrite nobody can review and no test can bisect. So
-// instead the engine is swapped underneath: this presents the surface
-// `lt.objs.editor` already speaks, and every one of its callers — including the
-// ones that reach past it through `->cm-ed`, and Paredit, which reaches it
-// through nothing at all — keeps working unchanged.
+// It began as a shim, so that the engine could be swapped underneath a codebase
+// that called fifty-odd methods on the old one. The old one is gone; the names
+// are not, and that is deliberate. `lt.objs.editor` speaks them, plugins reach
+// past it through `->cm-ed` to speak them directly, and Paredit speaks them
+// through nothing at all — so they are Light Table's editor API now, whatever
+// they were before. The list is asserted in test-e2e/cm6-editor.spec.ts.
 //
-// That is not a permanent shape. It is what makes the port incremental: the
-// suite runs against either engine, the difference is one factory call, and
-// the shim thins as callers move to the CodeMirror 6 idiom.
+// What is left of the shim proper is the shape of the arguments: a position is
+// `{line, ch}` rather than an offset, and a mark is a handle you hold rather
+// than a range in a set. Those are what plugins were written against, so they
+// stay until there is a reason worth their breakage.
 //
 // Where CodeMirror 6 cannot express something, it is *named* rather than
 // silently dropped — `inertOptions()` here, `UNSUPPORTED` in cm6-options.ts,
@@ -221,7 +219,6 @@ export class Cm6Editor {
     private cleanAt = 0;
     private generation = 0;
     private markerId = 0;
-    private extending = false;
     private query = '';
 
     constructor(parent: HTMLElement, doc: string, extensions: Extension[] = [],
@@ -868,12 +865,6 @@ export class Cm6Editor {
 
     // --- documents and history ---------------------------------------------
 
-    swapDoc(text: string): string {
-        const was = this.getValue();
-        this.setValue(text);
-        return was;
-    }
-
     getHistory(): unknown { return this.view.state.field(historyField, false) ?? null; }
 
     setHistory(_history: unknown): void {
@@ -884,20 +875,6 @@ export class Cm6Editor {
         this.view.dispatch({ effects: StateEffect.reconfigure.of([]) });
     }
 
-    /**
-     * Sticky selection extension: after this, moving the cursor extends the
-     * selection instead of collapsing it.
-     *
-     * Recorded and no more. CodeMirror 6 has no such mode — extending is a
-     * property of the command you run, not of the editor — so making this real
-     * means every motion command consulting it, which is a change to the
-     * command table rather than a line here. Reported by [[extending]] so the
-     * gap is answerable rather than invisible.
-     */
-    setExtending(value: boolean): void { this.extending = value; }
-
-    /** Whether [[setExtending]] was asked for. It does nothing yet; see there. */
-    extendingSelection(): boolean { return this.extending; }
 
     // --- tokens -------------------------------------------------------------
 
@@ -949,7 +926,6 @@ export class Cm6Editor {
         return this.nodeAt(pos)?.name ?? null;
     }
 
-    getDoc(): Cm6Editor { return this; }
     getMode(): { name: string } { return { name: String(this.getOption('mode') ?? 'null') }; }
 }
 

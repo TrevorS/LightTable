@@ -1,6 +1,9 @@
 (ns lt.objs.editor
-  "Provide fns and behaviors for interfacing with a CodeMirror editor
-  object. Also manage defining and loading [CodeMirror](http://codemirror.net/doc/manual.html).
+  "Provide fns and behaviors for interfacing with an editor object.
+
+  The editor is CodeMirror 6 wearing CodeMirror 5's method names — see
+  src-window/cm6-editor.ts for why, and note that the documentation links below
+  point at CodeMirror 5's manual because that is what the names mean.
 
   Editor objects are frequently used as arguments for functions, but often only the internal
   CodeMirror object is actually used. Where the following documentation referers to the editor,
@@ -34,8 +37,8 @@
 (defn ^js ->cm-ed
   "Return editor `e`'s CodeMirror object.
 
-  Hinted ^js so that the compiler can resolve the CodeMirror methods called on
-  the result, rather than warning at every one of them."
+  Hinted ^js so that the compiler can resolve the methods called on the result,
+  rather than warning at every one of them."
   [e]
   (if (satisfies? IDeref e)
     (:ed @e)
@@ -417,13 +420,6 @@
   [e start end]
   (.setSelection (->cm-ed e) (clj->js start) (clj->js end)))
 
-(defn set-extending
-  "Sets editor's 'extending' flag to `ext?`.
-
-  See [setExtending](http://codemirror.net/doc/manual.html#setExtending)."
-  [e ext?]
-  (.setExtending (->cm-ed e) ext?))
-
 (defn replace-selection
   "Replace selection with `neue` for editor `e`.
 
@@ -690,20 +686,14 @@
   [e gen]
   (not (.isClean (->cm-ed e) gen)))
 
-(defn get-doc
-  "Returns currently active document for the editor.
-
-  See [getDoc](http://codemirror.net/doc/manual.html#getDoc)."
-  [e]
-  (.getDoc (->cm-ed e)))
-
 (defn set-doc!
-  "Adds document `doc` to editor `e`. If there is already a document associated with the editor then it is replaced. Returns old document.
+  "Show `doc`'s text in editor `e`, and remember which document it is.
 
-  See [swapDoc](http://codemirror.net/doc/manual.html#swapDoc)."
+  The text, because a document is a file's identity here rather than a buffer
+  two editors can share — see [[lt.objs.document]]."
   [e doc]
   (object/merge! e {:doc doc})
-  (.swapDoc (->cm-ed e) (:doc @doc)))
+  (set-val e (:text @doc)))
 
 (defn fold-code
   "Attempts to fold code starting at position `loc`. If position is not provided then folding will be attempted at the cursor position.

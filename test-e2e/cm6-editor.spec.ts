@@ -131,16 +131,9 @@ test('marks and line classes follow their text through an edit', async ({ window
 
 test('the rest of the surface answers rather than throwing', async ({ window }) => {
     // Nineteen methods used to throw by name. These are the ones whose answer
-    // can be compared against CodeMirror 5 directly; the others are checked
-    // above or are about geometry, which two engines are not obliged to agree
-    // about to the pixel.
-    //
-    // `swapDoc` is not here, and is the one place the shim stops being one.
-    // CodeMirror 5 swaps in a *Doc object* — a document that can be shared
-    // between editors, which is how lt.objs.document backs two tabs on one
-    // file. CodeMirror 6 has no such object; the equivalent is a second view
-    // over the same state, which is a better answer and a different one. This
-    // takes a string, and the callers have to move rather than be shimmed.
+    // can be compared directly; the others are checked above or are about
+    // geometry, which two engines were never obliged to agree about to the
+    // pixel.
     for (const call of [
         '(ed.indentLine(1), ed.getLine(1).length > "one line".length)',
         '(ed.setSelection({line:0,ch:0},{line:1,ch:0}), ed.indentSelection(), ed.getValue().length > 30)',
@@ -163,11 +156,15 @@ test('the rest of the surface answers rather than throwing', async ({ window }) 
 });
 
 test('every method lt.objs.editor calls exists on the adapter', async ({ window }) => {
-    // The list is 55 — every method any ClojureScript in this repository or in
-    // deploy/plugins calls on a CodeMirror instance, extracted rather than
-    // remembered, plus the ones Light Table's own CodeMirror addons call. A
-    // method that is missing is a TypeError in whichever feature happens to
-    // reach it first, which is the worst way to find out.
+    // Every method any ClojureScript in this repository or in deploy/plugins
+    // calls on the editor, extracted rather than remembered, plus the one
+    // cm-hint.ts calls. A method that is missing is a TypeError in whichever
+    // feature happens to reach it first, which is the worst way to find out.
+    //
+    // Three left with CodeMirror 5: `getDoc` and `swapDoc`, which were about a
+    // shared buffer object that no longer exists, and `setExtending`, which set
+    // a mode the new engine does not have and had been recording the flag and
+    // doing nothing with it.
     const missing = await window.evaluate(() => {
         const w = globalThis as any;
         const host = document.createElement('div');
@@ -175,14 +172,14 @@ test('every method lt.objs.editor calls exists on the adapter', async ({ window 
         const ed = w.ltCm6Editor.makeCm6Editor(host, { value: 'x\n' });
         const wanted = ['addLineClass', 'addLineWidget', 'blockComment', 'changeGeneration',
             'charCoords', 'clearHistory', 'findMarksAt', 'firstLine', 'focus', 'foldCode',
-            'getCursor', 'getDoc', 'getHistory', 'getLine', 'getLineHandle', 'getLineNumber',
+            'getCursor', 'getHistory', 'getLine', 'getLineHandle', 'getLineNumber',
             'getMode', 'getOption', 'getRange', 'getScrollerElement', 'getSelection',
             'getTokenAt', 'getTokenTypeAt', 'indentLine', 'indentSelection', 'indexFromPos',
             'isClean', 'lastLine', 'lineComment', 'lineCount', 'markText', 'off', 'on',
             'operation', 'redo', 'refresh', 'removeLineClass', 'removeLineWidget',
             'replaceRange', 'replaceSelection', 'scrollTo', 'setBookmark', 'setCursor',
-            'setExtending', 'setHistory', 'setOption', 'setSelection', 'somethingSelected',
-            'swapDoc', 'uncomment', 'undo',
+            'setHistory', 'setOption', 'setSelection', 'somethingSelected',
+            'uncomment', 'undo',
             // Found by flipping the default and watching what threw.
             'getScrollInfo', 'getValue', 'setValue',
             // Called by cm-hint.ts rather than by any ClojureScript: the hint
