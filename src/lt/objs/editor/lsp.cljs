@@ -25,8 +25,9 @@
   **Diagnostics, completion, documentation and jump-to-definition** are wired.
   Which of them answers when a language also has a REPL is decided under
   *Surfaces other than diagnostics* below, and the short version is: completion
-  merges, the other two defer to a connected REPL, and diagnostics are the
-  server's alone because no REPL has any.
+  merges, the other two defer to a connected REPL *and take the question back
+  when it has nothing*, and diagnostics are the server's alone because no REPL
+  has any.
 
   See doc/lsp-architecture.md for the layering and what is deliberately still
   not here — references, document symbols and rename."
@@ -570,6 +571,21 @@
                               tag (capability-tags (:capabilities result))]
                         (object/add-tags ed [tag]))))
 
+(defn- ask-for-doc!
+  "Ask the language server what is under the cursor, and draw what it says."
+  [ed]
+  (-> (request-at-cursor!
+       ed "textDocument/hover"
+       (fn [{:keys [result]}]
+         (let [text (hover->text (:contents result))]
+           (if (string/blank? text)
+             (notifos/set-msg! "No documentation found.")
+             (object/raise ed :editor.doc.show!
+                           {:name (:string (editor/->token ed (editor/->cursor ed)))
+                            :doc text
+                            :loc (editor/->cursor ed)})))))
+      (report-decline! "documentation")))
+
 (behavior ::doc-at-cursor
           :triggers #{:editor.doc}
           :type :user
@@ -577,20 +593,30 @@
           :doc "Answers **Editor: Toggle documentation at cursor** from the
                 language server. Stands down when a REPL is connected that can
                 answer instead: a REPL knows what is actually loaded, and
-                there is only one doc bar."
+                there is only one doc bar. If that REPL turns out to have
+                nothing, it says so by raising `:editor.doc.fallback!` and this
+                answers after all — see `::doc-when-nobody-else-did`."
           :reaction (fn [ed]
                       (when-not (answered-elsewhere? ed :doc)
-                        (-> (request-at-cursor!
-                             ed "textDocument/hover"
-                             (fn [{:keys [result]}]
-                               (let [text (hover->text (:contents result))]
-                                 (if (string/blank? text)
-                                   (notifos/set-msg! "No documentation found.")
-                                   (object/raise ed :editor.doc.show!
-                                                 {:name (:string (editor/->token ed (editor/->cursor ed)))
-                                                  :doc text
-                                                  :loc (editor/->cursor ed)})))))
-                            (report-decline! "documentation")))))
+                        (ask-for-doc! ed))))
+
+(behavior ::doc-when-nobody-else-did
+          :triggers #{:editor.doc.fallback!}
+          :type :user
+          :desc "Editor: Show the language server's documentation when nothing else could"
+          :doc "The other half of standing down. Whoever took the surface raises
+                this when it has no answer, and the language server answers
+                instead.
+
+                It matters more than it sounds. Connecting a REPL to evaluate
+                took documentation away from clojure-lsp entirely, so a symbol
+                the REPL had not loaded — anything in a namespace you have not
+                required, every local, every keyword — went from a doc bar to
+                nothing. The REPL is still asked first, because it knows what is
+                actually loaded; it just no longer gets to keep a question it
+                cannot answer."
+          :reaction (fn [ed]
+                      (ask-for-doc! ed)))
 
 ;;*********************************************************
 ;; Jump to definition
@@ -1239,27 +1265,38 @@
      :connections (count connected)}))
 
 (defn status-line
-  "One sentence saying which of the ways this can be quiet is the one in play."
+  "One sentence saying which of the ways this can be quiet is the one in play.
+
+  What is connected is asked about before what is declared, and that order is
+  the fix for a sentence that used to describe the wrong server. The singular
+  keys — `:root`, `:found`, `:command` — are the *last-declared* server, which
+  is the one a single-server language has; with two declared and one connected,
+  diagnosing the other one reads as a broken language server when nothing is
+  wrong. \"No project root above … — looked for biome.json\" is a true sentence
+  about biome and a useless one when vtsls is answering."
   [{:keys [path language-id command markers root found connected? ready?
            diagnostics servers connections]}]
   (cond
     (nil? path) "This editor is not backed by a file."
     (nil? language-id) "No language server is configured for this file type."
+    (and connected? (not ready?)) (str "Starting " (or found command) " …")
+
+    ;; Answering, which is asked before anything about what is declared. Two
+    ;; servers for one language is the case where "connected" on its own
+    ;; answers the wrong question, so both are named.
+    ready?
+    (let [drawn (str " — " diagnostics
+                     (if (= 1 diagnostics) " diagnostic" " diagnostics") " on screen")]
+      (if (> (count servers) 1)
+        (str "Connected to " connections " of " (count servers) " servers ("
+             (string/join ", " (map :command servers)) ")" drawn)
+        (str "Connected to " (or found command) drawn)))
+
     (nil? root) (str "No project root above " path " — looked for "
                      (string/join ", " markers))
     (nil? found) (str "No " command " in " root "/node_modules/.bin, or on PATH. "
                       "Install it in the project, or globally.")
-    (not connected?) (str "Found " found ", but this editor is not connected to it.")
-    (not ready?) (str "Starting " found " …")
-    ;; Which of them, by name. Two servers for one language is the case where
-    ;; "connected" on its own answers the wrong question — the one that is
-    ;; missing is the one you are asking about.
-    (> (count servers) 1)
-    (str "Connected to " connections " of " (count servers) " servers ("
-         (string/join ", " (map :command servers)) ") — " diagnostics
-         (if (= 1 diagnostics) " diagnostic" " diagnostics") " on screen")
-    :else (str "Connected to " found " — " diagnostics
-               (if (= 1 diagnostics) " diagnostic" " diagnostics") " on screen")))
+    :else (str "Found " found ", but this editor is not connected to it.")))
 
 (cmd/command {:command :lsp.status
               :desc "Language server: Status for this editor"

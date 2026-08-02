@@ -11,7 +11,7 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { test, expect, evalClj as evalWith, insideEditor, scratchDir } from './fixtures';
+import { test, expect, evalClj as evalWith, evalData, insideEditor, scratchDir } from './fixtures';
 import type { Page } from '@playwright/test';
 
 /** Longer than the default, because a real language server has to start. */
@@ -224,16 +224,22 @@ test('and a REPL that takes the surface has to answer for it', async ({ window }
     expect(await insideEditor<number>(window, file,
         '(.-length (.querySelectorAll root ".inline-doc"))')).toBe(0);
 
-    // The two ways the Clojure path goes quiet, driven directly — the plugin's
-    // behaviors hang off `:editor.clj.*`, so a TypeScript file never carries
-    // them and the reactions are called by name.
-    expect(await evalClj(window, `
+    // And what happens when the REPL comes back with nothing, which for
+    // cider-nrepl is most of what you point at: it hands the question back
+    // rather than reporting, and the language server answers after all. That is
+    // the difference between connecting a REPL and losing clojure-lsp.
+    //
+    // Driven by name, because the plugin's behaviors hang off `:editor.clj.*`
+    // and a TypeScript file never carries them.
+    await evalClj(window, `
         (do (lt.objs.notifos/set-msg! "")
             (lt.object/call-behavior-reaction :lt.plugins.clojure/print-clj-doc
                                               (first (pool/by-path "${file}"))
                                               {:result-type :doc :name "greet" :doc nil :args nil})
-            (:text (:message @lt.state/app)))`))
-        .toContain('No documentation for greet');
+            :handed-back)`);
+    await expect.poll(async () => await insideEditor<number>(window, file,
+        '(.-length (.querySelectorAll root ".inline-doc"))'), { timeout: 20000 }).toBe(1);
+    await evalClj(window, '(do (cmd/exec! :editor.doc.toggle) :away)');
 
     expect(await evalClj(window, `
         (do (lt.objs.notifos/set-msg! "")
@@ -249,5 +255,71 @@ test('and a REPL that takes the surface has to answer for it', async ({ window }
             (object/merge! (first (pool/by-path "${file}")) {:client {}})
             (doseq [ed (pool/by-path "${file}")] (object/raise ed :close))
             :closed)`);
+    fs.rmSync(path.dirname(path.dirname(file)), { recursive: true, force: true });
+});
+
+test('and the bar says what the language server is doing', async ({ window }) => {
+    // "I cannot tell if the language server is doing anything" is a real
+    // report, and it was fair: the four ways this can be quiet — no server
+    // configured, one configured and not installed, one starting, one
+    // answering — looked identical from the outside, and telling them apart
+    // meant knowing that `:lsp.status` exists.
+    //
+    // The shapes are asserted from a map in `test/lt/ui/view_test.cljs`. This
+    // says the projection reaches the bar in a real window, which that cannot.
+    const file = project('lspstatusbar');
+    await evalClj(window, `
+        (do (lt.object/call-behavior-reaction
+              :lt.objs.editor.lsp/language-servers
+              lt.objs.editor.lsp/lsp-client
+              [{:tags [:editor.typescript]
+                :language-id "typescript"
+                :root ["tsconfig.json"]
+                :id "vtsls"
+                :command "node"
+                :args ["${FAKE_SERVER}"]}])
+            (cmd/exec! :open-path "${file}")
+            :opened)`);
+    await expect.poll(async () => await evalClj(window, `
+        (boolean (object/has-tag? (first (pool/by-path "${file}")) :docable))`),
+    { timeout: 30000 }).toBe('true');
+    await evalClj(window, `
+        (do (lt.objs.editor/focus (first (pool/by-path "${file}")))
+            (lt.state.objects/sync!)
+            :synced)`);
+
+    // Connected and answering, named, and the dot is the kit's.
+    const lsp = window.locator('#statusbar .statusbar__lsp');
+    await expect.poll(async () => await lsp.count()).toBe(1);
+    // Named after whichever server the status reports rather than a name
+    // written here: earlier tests in this run declare servers of their own, and
+    // `status` describes the last one declared.
+    expect(await lsp.innerText())
+        .toContain(await evalData<string>(window, '(:command (:lsp @lt.state/app))'));
+    await expect(lsp.locator('.dot--finished')).toHaveCount(1);
+
+    // What clicking it asks for. The handler itself is a vector and is asserted
+    // as one in `test/lt/ui/view_test.cljs`; that a data handler on this bar
+    // reaches the dispatch table is asserted by the console pill in
+    // `renderer.spec.ts`. What is left, and what this is for, is that the
+    // command those two lead to says something useful — it existed before this
+    // and nobody could be expected to find it.
+    await evalClj(window, `
+        (do (lt.objs.editor/focus (first (pool/by-path "${file}")))
+            (lt.objs.notifos/set-msg! "")
+            (lt.actions/dispatch! [[:cmd/exec :lsp.status]])
+            :asked)`);
+    await expect.poll(async () => await evalClj(window, '(:text (:message @lt.state/app))'))
+        .toContain('Connected to');
+
+    // A file with no server configured for it draws nothing at all — this is
+    // a fact about the file you are in, so most files have none.
+    await evalClj(window, `
+        (do (doseq [ed (pool/by-path "${file}")] (object/raise ed :close))
+            (cmd/exec! :new-file)
+            (lt.state.objects/sync!)
+            :plain)`);
+    await expect.poll(async () => await lsp.count()).toBe(0);
+
     fs.rmSync(path.dirname(path.dirname(file)), { recursive: true, force: true });
 });

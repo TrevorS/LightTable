@@ -870,6 +870,11 @@
 .statusbar__waiting { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; }
 .statusbar__console { margin-left: auto; cursor: pointer; }
 .statusbar__waiting + .statusbar__console { margin-left: 0; }
+/* The language server sits with the cursor position rather than at the far
+   right: it is a fact about the file you are in, not something waiting on you.
+   `margin-left: auto` on the two above pushes them away from it. */
+.statusbar__lsp { cursor: pointer; opacity: 0.75; }
+.statusbar__lsp:hover { opacity: 1; }
 
 .commandbar {
   position: absolute;

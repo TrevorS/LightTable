@@ -318,7 +318,7 @@
   say — and why the console's unread count is the only way the console appears
   here at all. That is not new: the old bar hid its toggle in CSS whenever it
   was clean, and this says the same thing in the place the decision is made."
-  [{:keys [cursor runs message loading console]}]
+  [{:keys [cursor runs message loading console lsp]}]
   (let [waiting (->> (vals runs) (mapcat :edits) (remove :applied?) count)
         running (->> (vals runs) (filter (comp #{:executing} :status)) count)
         unread (:unread console 0)]
@@ -335,6 +335,21 @@
      (when (pos? running)
        [::chrome/status {:status :executing :pulse true}
         (str running " run" (when-not (= 1 running) "s"))])
+     ;; The language server, and this one is drawn even when it is fine —
+     ;; against the rule above, on purpose. \"I cannot tell if the language
+     ;; server is doing anything\" is a real report, and the four ways it can
+     ;; be quiet look identical from the outside: no server configured for this
+     ;; file type, one configured and not installed, one starting, one
+     ;; answering. Three of those are worth acting on and the fourth is worth
+     ;; being able to rule out. Clicking says which, in a sentence.
+     (when-let [{:keys [command status diagnostics]} lsp]
+       [:span.statusbar__lsp {:on {:click [[:cmd/exec :lsp.status]]}}
+        [::chrome/status {:status status
+                          :hollow (= status :queued)
+                          :pulse (= status :connecting)}
+         (str command
+              (when (and (= status :finished) (pos? (or diagnostics 0)))
+                (str " · " diagnostics)))]])
      (when (pos? waiting)
        [:span.statusbar__waiting "waiting on you " [::chrome/count-pill {:count waiting :tone :result}]])
      ;; Last, and only when there is something in it. Clicking runs the command

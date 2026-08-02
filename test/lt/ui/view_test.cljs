@@ -8,6 +8,7 @@
 
   Hiccup is data, so the assertions walk it. `find-all` is the whole harness."
   (:require [cljs.test :refer-macros [deftest is testing]]
+            [clojure.string :as string]
             [lt.support.hiccup :as h]
             [lt.ui.view :as view]))
 
@@ -363,3 +364,51 @@
   (let [nothing (-> state (assoc-in [:runs "port-fuzzy" :edits] []) (assoc-in [:review :at] 5))]
     (is (vector? (view/multibuffer nothing)))
     (is (empty? (h/find-all (view/multibuffer nothing) :lt.ui.chrome/excerpt-header)))))
+
+(deftest statusbar-says-what-the-language-server-is-doing
+  ;; "I cannot tell if the language server is doing anything" is a real report,
+  ;; and the four ways it can be quiet look identical from the outside. Three of
+  ;; them are worth acting on and the fourth is worth being able to rule out.
+  ;;
+  ;; Asserted on the alias and its attributes rather than on the classes it
+  ;; expands to: an alias is a keyword until a renderer expands it, so `dot--lost`
+  ;; does not exist in this tree. `test-e2e/renderer.spec.ts` reads the classes,
+  ;; in a window, where they do.
+  (letfn [(bar [lsp] (view/statusbar (cond-> {:cursor {:line 0 :ch 0}} lsp (assoc :lsp lsp))))
+          (indicator [lsp] (first (h/find-all (bar lsp) :lt.ui.chrome/status)))]
+
+    (testing "no server configured for this file type draws nothing"
+      (is (empty? (h/find-all (bar nil) :span.statusbar__lsp))))
+
+    (testing "one that is declared and not installed is lost"
+      (is (= 1 (count (h/find-all (bar {:command "clojure-lsp" :status :lost})
+                                  :span.statusbar__lsp))))
+      (is (= :lost (:status (h/attrs-of (indicator {:command "clojure-lsp" :status :lost})))))
+      (is (string/includes? (h/text-of (bar {:command "clojure-lsp" :status :lost}))
+                            "clojure-lsp")))
+
+    (testing "one that has not been reached yet is hollow, and a starting one pulses"
+      (is (:hollow (h/attrs-of (indicator {:command "x" :status :queued}))))
+      (let [a (h/attrs-of (indicator {:command "x" :status :connecting}))]
+        (is (= :connecting (:status a)))
+        (is (:pulse a))))
+
+    (testing "and one that is answering says how many diagnostics it has drawn"
+      (is (= :finished (:status (h/attrs-of (indicator {:command "clojure-lsp"
+                                                        :status :finished})))))
+      (is (string/includes? (h/text-of (bar {:command "clojure-lsp" :status :finished
+                                             :diagnostics 3}))
+                            "clojure-lsp · 3"))
+      ;; None is not a number worth drawing.
+      (is (not (string/includes? (h/text-of (bar {:command "clojure-lsp" :status :finished
+                                                  :diagnostics 0}))
+                                 "·"))))
+
+    (testing "clicking it asks for the sentence"
+      (is (= [[:cmd/exec :lsp.status]]
+             (-> (bar {:command "clojure-lsp" :status :finished})
+                 (h/find-all :span.statusbar__lsp)
+                 first
+                 h/attrs-of
+                 :on
+                 :click))))))

@@ -206,9 +206,15 @@
  ;; Documentation and jump-to-definition are singular, so they stand down when
  ;; a REPL is connected that can answer — a REPL knows what is loaded, and
  ;; Light Table is an editor about the running program.
+ ;;
+ ;; And they take the question back when that REPL has nothing. cider-nrepl
+ ;; answers `info` with no-info for anything it has not loaded, which is most
+ ;; of what you point at, so standing down without a way back meant connecting
+ ;; a REPL cost you clojure-lsp entirely.
  [:editor :lt.objs.editor.lsp/completion-hints]
  [:editor :lt.objs.editor.lsp/update-completions]
  [:editor :lt.objs.editor.lsp/doc-at-cursor]
+ [:editor :lt.objs.editor.lsp/doc-when-nobody-else-did]
  [:editor :lt.objs.editor.lsp/jump-to-definition]
  [:editor :lt.objs.editor.lsp/find-references]
  [:editor :lt.objs.editor.lsp/document-symbols]

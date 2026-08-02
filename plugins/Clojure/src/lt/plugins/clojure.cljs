@@ -816,9 +816,14 @@
                         ;; nothing at all, and said nothing either way.
                         (if (or (seq (str (:doc result))) (seq (str (:args result))))
                           (object/raise editor :editor.doc.show! result)
-                          (notifos/set-msg! (str "No documentation for "
-                                                 (or (:name result) "that")
-                                                 "."))))))
+                          ;; Handed back rather than reported. A REPL takes this
+                          ;; surface from the language server — see
+                          ;; lt.objs.providers — and cider-nrepl answers `info`
+                          ;; with no-info for anything it has not loaded, which
+                          ;; is most of what you point at. Giving the question
+                          ;; back is what stops connecting a REPL from costing
+                          ;; you clojure-lsp.
+                          (object/raise editor :editor.doc.fallback!)))))
 
 (defn symbol-token? [s]
   ;; `(:string token)` is nil for a position CodeMirror has no token at, and

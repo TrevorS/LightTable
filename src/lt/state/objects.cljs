@@ -149,6 +149,34 @@
       (editor/->cursor ed)
       (catch :default _ nil))))
 
+(defn language-server
+  "What the language server is doing for the editor you are in.
+
+  Nil when no server is configured for this file type, which is most files and
+  is not a state worth drawing. Everything else is: a server that is starting,
+  one that is declared and not installed, and one that is answering are three
+  different reasons for the same silence, and telling them apart used to mean
+  knowing that `:lsp.status` exists.
+
+  `lt.objs.editor.lsp/status` already worked all of this out for that command;
+  this is the same answer, projected, so the bar can draw it."
+  []
+  (when-let [ed (pool/last-active)]
+    (let [{:keys [language-id command found connected? ready? diagnostics]} (lsp/status ed)]
+      (when language-id
+        {:command command
+         :diagnostics diagnostics
+         ;; What is connected wins over what is declared, and that order
+         ;; matters: `:found` describes the last-declared server while
+         ;; `:connected?` describes all of them, so a second server that is
+         ;; declared and not installed would otherwise report `lost` over a
+         ;; live connection to the first.
+         :status (cond
+                   ready? :finished
+                   connected? :connecting
+                   (nil? found) :lost
+                   :else :queued)}))))
+
 (defn snapshot
   "The whole projection, as one value."
   []
@@ -157,6 +185,7 @@
    :clients (clients*)
    :results (results)
    :cursor (or (cursor) {:line 0 :ch 0})
+   :lsp (language-server)
    :command-bar {:commands (commands)}})
 
 (defn sync!
