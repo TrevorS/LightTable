@@ -11,8 +11,9 @@
             [lt.util.dom :as dom]
             [lt.util.cljs :refer [str-contains?]]
             [clojure.set :as set]
-            [lt.objs.command :as cmd])
-  (:require-macros [lt.macros :refer [behavior defui]]))
+            [lt.objs.command :as cmd]
+            [lt.ui :as ui])
+  (:require-macros [lt.macros :refer [behavior]]))
 
 (defn doc-on-line? [editor line]
   (let [line (editor/line-handle editor line)]
@@ -132,50 +133,35 @@
                                     doc)]
                           (inline-doc editor (doc-ui doc) {} (:loc doc))))))
 
-(defui search-item [item]
-  [:li
+(defn- search-item [i item]
+  [:li {:replicant/key i}
    [:h2 (:name item)]
    [:h3 (:ns item)]
    [:pre (str (:args item))]
    [:pre (:doc item)]])
 
-(defui search-input [this]
-  [:input.search {:type "text" :placeholder "search docs"}]
-  :focus (fn []
-           (ctx/in! :sidebar.doc.search.input this))
-  :blur (fn []
-          (ctx/out! :sidebar.doc.search.input)))
-
-(defui type-item [this i]
-  [:li (:label i)]
-  :click (fn []
-           (object/raise this :set-item! i)))
-
-(defui type-list [this]
+(defn- type-list [this]
   (let [types (object/raise-reduce this :types+ [])
         cur (or (:cur @this) (first types))]
     [:div.types
      [:span (:label cur)]
      [:ul.types
-      (map (partial type-item this) types)]]))
+      (for [i types]
+        [:li {:replicant/key (:label i)
+              :on {:click (fn [] (object/raise this :set-item! i))}}
+         (:label i)])]]))
 
-(defui connect-button []
-  [:button "Connect"]
-  :click (fn []
-           (cmd/exec! :show-add-connection)))
-
-(defui no-client-ui [this]
+(defn- no-client-ui []
   [:div.no-client
    [:p "There's no client for us to use to search for these kinds of docs. "]
-   [:p (connect-button) " to one."]])
+   [:p [:button {:on {:click (fn [] (cmd/exec! :show-add-connection))}} "Connect"] " to one."]])
 
 (defn try-trigger [this cur v]
   (let [cs (clients/discover* (:trigger cur))]
     (if-not (seq cs)
       (object/raise this :no-client)
       (do
-        (when-let [nc (dom/$ :.no-client (object/->content this))]
-          (dom/remove nc))
+        (object/merge! this {:no-client? false})
         (notifos/set-msg! "Searching for docs...")
         (doseq [c cs]
           (notifos/working)
@@ -184,36 +170,35 @@
 (defn ->val [this]
   (dom/val (dom/$ :input.search (object/->content this))))
 
-(defn grouped-items [results v prev]
-  (let [normal (dom/fragment [])
-        exact (dom/fragment [])]
-    (doseq [r results
-            :when (not (prev r))]
-      (if (str-contains? (str (:name r)) v)
-        (dom/append exact (search-item r))
-        (dom/append normal (search-item r))))
-    {:normal normal
-     :exact exact}))
+(defn grouped-items
+  "`results` with the ones whose name contains `v` first.
+
+  Was two document fragments, one prepended to the list and one appended, so
+  the order on screen came from the order the batches arrived in. It is a
+  function of the whole list now — every exact match above every other, however
+  many replies it took — which is what the two fragments were reaching for."
+  [results v]
+  (let [exact? #(str-contains? (str (:name %)) (str v))]
+    (concat (filter exact? results) (remove exact? results))))
 
 (behavior ::set-item
           :triggers #{:set-item!}
           :reaction (fn [this i]
+                      ;; No `dom/replace-with` on the type list: `:cur` is what
+                      ;; it drew from, so setting it redraws.
                       (object/merge! this {:cur i})
                       (object/raise this :clear!)
-                      (dom/replace-with (dom/$ :.types (object/->content this)) (type-list this))
                       (object/raise this :focus!)))
 
 (behavior ::clear!
           :triggers #{:clear!}
           :reaction (fn [this]
-                      (dom/empty (dom/$ :.results (object/->content this)))
-                      (object/merge! this {:results #{}})))
+                      (object/merge! this {:results []})))
 
 (behavior ::no-client
           :triggers #{:no-client}
           :reaction (fn [this]
-                      (when-not (dom/$ :.no-client (object/->content this))
-                        (dom/before (dom/$ :.results (object/->content this)) (no-client-ui this)))))
+                      (object/merge! this {:no-client? true})))
 
 (behavior ::cur-from-last-editor
           :triggers #{:show}
@@ -232,6 +217,9 @@
                       (let [v (->val this)
                             trigger (-> @this :cur :trigger)]
                         (object/raise this :clear!)
+                        ;; Kept, so the view can group by it. It used to be read
+                        ;; back out of the input every time results arrived.
+                        (object/merge! this {:query v})
                         (when-not (empty? v)
                           (if (fn? trigger)
                             (trigger v)
@@ -240,13 +228,15 @@
 (behavior ::doc.search.results
           :triggers #{:doc.search.results}
           :reaction (fn [this results]
-                      (let [v (->val this)
-                            {:keys [normal exact]} (grouped-items results v (:results @this))
-                            old (dom/$ :.results (object/->content this))]
-                        (object/merge! this {:results (into (:results @this) results)})
-                        (notifos/done-working (str "Found " (count (:results @this)) " doc results."))
-                        (dom/prepend old exact)
-                        (dom/append old normal))))
+                      ;; A vector rather than the set this was, because the
+                      ;; order on screen is the order replies arrived in and a
+                      ;; set has none. The dedup a set was doing is here
+                      ;; explicitly — several clients answer one search.
+                      (let [seen (set (:results @this))
+                            fresh (remove seen results)]
+                        (object/merge! this {:results (into (vec (:results @this)) fresh)})
+                        (notifos/done-working
+                         (str "Found " (count (:results @this)) " doc results.")))))
 
 (behavior ::focus-on-show
           :triggers #{:show}
@@ -262,17 +252,24 @@
                           (.select input))
                         (object/raise (-> @this :active :options) :focus!))))
 
+(defn- doc-search-ui [this]
+  (let [{:keys [results query no-client?]} @this]
+    (list
+     [:input.search {:type "text" :placeholder "search docs"
+                     :on {:focus (fn [] (ctx/in! :sidebar.doc.search.input this))
+                          :blur (fn [] (ctx/out! :sidebar.doc.search.input))}}]
+     (type-list this)
+     (when no-client? (no-client-ui))
+     [:ul.results
+      (map-indexed search-item (grouped-items results query))])))
+
 (object/object* ::sidebar.doc.search
                 :tags #{:sidebar.docs.search}
                 :label "Doc search"
+                :results []
                 :init (fn [this]
                         (object/merge! this {:cur (first (object/raise-reduce this :types+ []))})
-                        [:div.docs-search.filter-list
-                         (search-input this)
-                         (type-list this)
-                         [:ul.results
-                          ]]
-                        ))
+                        (ui/node this [:div.docs-search.filter-list] doc-search-ui)))
 
 (def doc-search nil)
 
