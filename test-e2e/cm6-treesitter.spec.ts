@@ -14,7 +14,7 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { test, expect, evalClj as evalWith, scratchDir } from './fixtures';
+import { test, expect, evalClj as evalWith, insideEditor, scratchDir } from './fixtures';
 import type { Page } from '@playwright/test';
 
 /** Longer than the default, because a tree-sitter grammar is fetched and compiled on first use. */
@@ -53,20 +53,13 @@ async function close(window: Page, file: string): Promise<void> {
 
 /** Every `cm-ts-…` class present in the editor showing `file`, sorted. */
 async function paintedClasses(window: Page, file: string): Promise<string[]> {
-    return await window.evaluate(([p]) => {
-        const w = globalThis as any;
-        const cljs = w.cljs.core;
-        const ed = cljs.first.call(null, w.lt.objs.editor.pool.by_path(p));
-        if (!ed) return ['no editor'];
-        const root = w.lt.objs.editor.__GT_elem(ed) as HTMLElement;
-        const seen = new Set<string>();
-        for (const el of Array.from(root.querySelectorAll('[class*="cm-ts-"]'))) {
-            for (const c of Array.from((el as HTMLElement).classList)) {
-                if (c.startsWith('cm-ts-')) seen.add(c);
-            }
-        }
-        return [...seen].sort();
-    }, [file]);
+    return (await insideEditor<string[]>(window, file, `
+        (->> (array-seq (.querySelectorAll root "[class*='cm-ts-']"))
+             (mapcat #(array-seq (.-classList ^js %)))
+             (filter #(clojure.string/starts-with? % "cm-ts-"))
+             distinct
+             sort
+             vec)`)) ?? ['no editor'];
 }
 
 const classesFor = async (window: Page): Promise<string[]> => {
@@ -134,17 +127,13 @@ test('the theme that ships is dark, and colours the captures itself', async ({ w
     await expect.poll(async () => (await paintedClasses(window, file)).length)
         .toBeGreaterThan(0);
 
-    const look = await window.evaluate(([p]) => {
-        const w = globalThis as any;
-        const ed = w.cljs.core.first.call(null, w.lt.objs.editor.pool.by_path(p));
-        const root = w.lt.objs.editor.__GT_elem(ed) as HTMLElement;
-        const type = root.querySelector('.cm-ts-type') as HTMLElement | null;
-        return {
-            background: getComputedStyle(root).backgroundColor,
-            colour: getComputedStyle(root).color,
-            type: type ? getComputedStyle(type).color : null
-        };
-    }, [file]);
+    const look = (await insideEditor<{ background: string, colour: string, type: string | null }>(
+        window, file, `
+        (let [style (fn [n] (js/getComputedStyle n))
+              type ^js (.querySelector root ".cm-ts-type")]
+          {:background (.-backgroundColor (style root))
+           :colour (.-color (style root))
+           :type (some-> type style .-color)})`))!;
 
     expect(look.background).toBe('rgb(30, 30, 46)');   // base
     expect(look.colour).toBe('rgb(205, 214, 244)');    // text

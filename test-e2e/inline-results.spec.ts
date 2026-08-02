@@ -7,7 +7,7 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { test, expect, evalClj as evalWith, scratchDir } from './fixtures';
+import { test, expect, evalClj as evalWith, insideEditor, scratchDir } from './fixtures';
 import type { Page } from '@playwright/test';
 
 /** Longer than the default, because an evaluation round-trips through a client. */
@@ -33,14 +33,10 @@ async function close(window: Page, file: string): Promise<void> {
 
 /** What is drawn inside the editor showing `file`. */
 const inside = (window: Page, file: string, selector: string) =>
-    window.evaluate(([p, s]) => {
-        const w = globalThis as any;
-        const ed = w.cljs.core.first.call(null, w.lt.objs.editor.pool.by_path(p));
-        if (!ed) return null;
-        const root = w.lt.objs.editor.__GT_elem(ed) as HTMLElement;
-        const found = root.querySelectorAll(s);
-        return { count: found.length, text: (found[0] as HTMLElement)?.innerText ?? '' };
-    }, [file, selector] as [string, string]);
+    insideEditor<{ count: number, text: string }>(window, file, `
+        (let [found (array-seq (.querySelectorAll root "${selector}"))]
+          {:count (count found)
+           :text (or (some-> ^js (first found) .-innerText) "")})`);
 
 /** One engine now. The constant stays so the file reads as it did. */
 const engine = ':cm6';

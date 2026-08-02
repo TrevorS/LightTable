@@ -7,28 +7,20 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { test, expect, launch, editorWindow, scratchDir, openFile } from './fixtures';
+import { test, expect, evalClj, evalData, launch, editorWindow, scratchDir, openFile, waitFor } from './fixtures';
 import type { ElectronApplication, Page } from '@playwright/test';
-
-/** Open a file and wait for its editor. */
 
 /** The paths currently open, in tab order. */
 async function openPaths(window: Page): Promise<string[]> {
-    return await window.evaluate(`(function () {
-        var kw = function (n) { return cljs.core.keyword.call(null, n); };
-        return cljs.core.clj__GT_js(cljs.core.mapv.call(null, lt.objs.tabs.__GT_path,
-            cljs.core.vec(cljs.core.mapcat.call(null,
-                function (ts) { return cljs.core.get.call(null, cljs.core.deref(ts), kw('objs')); },
-                cljs.core.get.call(null, cljs.core.deref(lt.objs.tabs.multi), kw('tabsets'))))));
-    })()`) as string[];
+    return await evalData<string[]>(window, `
+        (mapv tabs/->path (mapcat #(:objs @%) (:tabsets @tabs/multi)))`);
 }
 
 async function shutDown(app: ElectronApplication): Promise<void> {
     // Through :closed, so the session is written the way a real quit writes it
     // rather than by calling store! directly.
     const window = await app.firstWindow();
-    await window.evaluate(`lt.object.raise.call(null, lt.objs.app.app,
-                                                cljs.core.keyword.call(null,'closed'))`);
+    await evalClj(window, '(do (object/raise lt.objs.app/app :closed) :closing)');
     await window.waitForTimeout(1000);
     await app.evaluate(({ BrowserWindow }) => {
         for (const w of BrowserWindow.getAllWindows()) w.destroy();
@@ -49,12 +41,9 @@ test('the files that were open come back, with the cursor where it was', async (
     const firstWindow = await editorWindow(first);
     await openFile(firstWindow, path.join(work, 'a.txt'));
     await openFile(firstWindow, path.join(work, 'b.txt'));
-    await firstWindow.evaluate(([f]) => {
-        const lt = (globalThis as any).lt, cljs = (globalThis as any).cljs;
-        const ed = cljs.core.first.call(null, lt.objs.editor.pool.by_path(f));
-        lt.objs.editor.move_cursor(ed, cljs.core.PersistentArrayMap.createAsIfByAssoc(
-            [cljs.core.keyword.call(null, 'line'), 2, cljs.core.keyword.call(null, 'ch'), 3]));
-    }, [path.join(work, 'b.txt')]);
+    await evalClj(firstWindow, `
+        (do (editor/move-cursor (first (pool/by-path "${path.join(work, 'b.txt')}")) {:line 2 :ch 3})
+            :moved)`);
     expect(await openPaths(firstWindow)).toEqual([path.join(work, 'a.txt'), path.join(work, 'b.txt')]);
     await shutDown(first);
 
@@ -69,21 +58,14 @@ test('the files that were open come back, with the cursor where it was', async (
     // Second run, same home directory: both come back, in order.
     const second = await launch({ LT_USER_DIR: home });
     const secondWindow = await editorWindow(second);
-    await secondWindow.waitForFunction(
-        ([f]) => {
-            const lt = (globalThis as any).lt, cljs = (globalThis as any).cljs;
-            return !!cljs.core.first.call(null, lt.objs.editor.pool.by_path(f));
-        }, [path.join(work, 'b.txt')], { timeout: 60_000 });
+    await waitFor(secondWindow, `(some? (first (pool/by-path "${path.join(work, 'b.txt')}")))`,
+                  { timeout: 60_000 });
 
     expect(await openPaths(secondWindow)).toEqual([path.join(work, 'a.txt'), path.join(work, 'b.txt')]);
 
-    const cursor = await secondWindow.evaluate(([f]) => {
-        const lt = (globalThis as any).lt, cljs = (globalThis as any).cljs;
-        const ed = cljs.core.first.call(null, lt.objs.editor.pool.by_path(f));
-        return cljs.core.clj__GT_js(lt.objs.editor.__GT_cursor(ed));
-    }, [path.join(work, 'b.txt')]) as { line: number; ch: number };
-    expect(cursor.line).toBe(2);
-    expect(cursor.ch).toBe(3);
+    expect(await evalData(secondWindow,
+        `(select-keys (editor/->cursor (first (pool/by-path "${path.join(work, 'b.txt')}"))) [:line :ch])`))
+        .toEqual({ line: 2, ch: 3 });
 
     await shutDown(second);
     fs.rmSync(home, { recursive: true, force: true });
@@ -106,11 +88,8 @@ test('a file deleted since last time is skipped rather than fatal', async () => 
 
     const second = await launch({ LT_USER_DIR: home });
     const secondWindow = await editorWindow(second);
-    await secondWindow.waitForFunction(
-        ([f]) => {
-            const lt = (globalThis as any).lt, cljs = (globalThis as any).cljs;
-            return !!cljs.core.first.call(null, lt.objs.editor.pool.by_path(f));
-        }, [path.join(work, 'stays.txt')], { timeout: 60_000 });
+    await waitFor(secondWindow, `(some? (first (pool/by-path "${path.join(work, 'stays.txt')}")))`,
+                  { timeout: 60_000 });
 
     const paths = await openPaths(secondWindow);
     expect(paths).toContain(path.join(work, 'stays.txt'));
@@ -127,24 +106,17 @@ test('and the folders that were expanded are expanded again', async () => {
     fs.mkdirSync(path.join(work, 'nested'), { recursive: true });
     fs.writeFileSync(path.join(work, 'nested', 'deep.txt'), 'deep\n');
 
-    const expandedIn = async (window: Page) => await window.evaluate(`(function () {
-        return cljs.core.clj__GT_js(cljs.core.vec(
-            lt.objs.sidebar.workspace.open_dirs.call(null)));
-    })()`) as string[];
+    const expandedIn = async (window: Page) =>
+        await evalData<string[]>(window, '(vec (lt.objs.sidebar.workspace/open-dirs))');
 
     const first = await launch({ LT_USER_DIR: home });
     const firstWindow = await editorWindow(first);
     // A folder in the workspace, expanded, and a file open so the session is
     // written at all.
-    await firstWindow.evaluate(([d]) => {
-        const lt = (globalThis as any).lt, cljs = (globalThis as any).cljs;
-        lt.object.raise.call(null, lt.objs.workspace.current_ws,
-                             cljs.core.keyword.call(null, 'add.folder!'), d);
-    }, [work]);
+    await evalClj(firstWindow,
+        `(do (object/raise workspace/current-ws :add.folder! "${work}") :added)`);
     await firstWindow.waitForTimeout(1500);
-    await firstWindow.evaluate(([d]) => {
-        (globalThis as any).lt.objs.sidebar.workspace.expand_BANG_.call(null, d);
-    }, [work]);
+    await evalClj(firstWindow, `(do (lt.objs.sidebar.workspace/expand! "${work}") :expanded)`);
     await firstWindow.waitForTimeout(500);
     await openFile(firstWindow, path.join(work, 'nested', 'deep.txt'));
     expect(await expandedIn(firstWindow)).toContain(work);

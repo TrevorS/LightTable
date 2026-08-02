@@ -113,6 +113,10 @@ export async function ready(window: Page): Promise<void> {
         "typeof lt !== 'undefined' && lt.objs && typeof lt.objs.app === 'object'",
         null, { timeout: 90_000 });
 
+    // The one place left that spells a ClojureScript name in JavaScript, and
+    // it has to: this is the probe that decides whether the window is up, so it
+    // cannot go through the control surface, which is part of what it is
+    // waiting for. Everywhere else uses `evalClj` or `evalData`.
     const count = () => window.evaluate(
         "cljs.core.count(cljs.core.deref(lt.object.behaviors))") as Promise<number>;
 
@@ -207,6 +211,29 @@ export async function evalData<T = any>(window: Page, source: string,
 }
 
 /**
+ * Ask a question about the inside of the editor showing `file`.
+ *
+ * Three specs wanted this and each spelled it out in `window.evaluate`, which
+ * is where the munged names come from: there is no way to reach an editor by
+ * path from JavaScript without `cljs.core.first.call(null, …by_path(p))` and
+ * `lt.objs.editor.__GT_elem`.
+ *
+ * `source` is ClojureScript with `root` bound to the editor's element, and
+ * `ed` to the editor. It answers `null` when nothing has that file open,
+ * which is what a poll wants rather than a throw.
+ *
+ * ```ts
+ * await insideEditor(window, file, '(some-> (.querySelector root ".inline-doc") .-innerText)');
+ * ```
+ */
+export async function insideEditor<T = any>(window: Page, file: string, source: string): Promise<T | null> {
+    return await evalData<T | null>(window, `
+        (when-let [ed (first (lt.objs.editor.pool/by-path "${file}"))]
+          (let [^js root (lt.objs.editor/->elem ed)]
+            ${source}))`);
+}
+
+/**
  * Wait until ClojureScript answers `true`.
  *
  * Every spec had its own `expect.poll` around a predicate, differing only in
@@ -236,10 +263,8 @@ export async function waitFor(window: Page, source: string,
  */
 export async function openFile(window: Page, path: string): Promise<void> {
     await evalClj(window, `(do (lt.objs.command/exec! :open-path "${path}") :opening)`);
-    await window.waitForFunction(
-        ([p]) => !!(globalThis as any).cljs.core.first.call(
-            null, (globalThis as any).lt.objs.editor.pool.by_path(p)),
-        [path], { timeout: 30_000 });
+    await waitFor(window, `(some? (first (lt.objs.editor.pool/by-path "${path}")))`,
+                  { timeout: 30_000 });
 }
 
 /** Evaluate a ClojureScript expression the way script/lt-repl.sh `cljs` does. */
@@ -260,9 +285,8 @@ export async function connectLocalClient(window: Page): Promise<void> {
     // connect panel is a view now, and the kinds of connection are a private
     // table of closures behind `connect!` — a closure is not data and does not
     // belong in the state.
-    await window.evaluate(
-        `lt.objs.sidebar.clients.connect_BANG_.call(null, "Light Table UI")`);
-    await window.waitForFunction("!!lt.objs.clients.by_name('LightTable-UI')", null, { timeout: 15_000 });
+    await evalClj(window, '(do (lt.objs.sidebar.clients/connect! "Light Table UI") :connecting)');
+    await waitFor(window, '(some? (lt.objs.clients/by-name "LightTable-UI"))', { timeout: 15_000 });
 }
 
 /** A directory of this test's own, removed when the test ends. */
@@ -365,13 +389,16 @@ export const test = base.extend<Fixtures, WorkerFixtures>({
     // decided not to act. This is how a test tells the difference.
     ltErrors: async ({ window }, use) => {
         await use(async function() {
-            return await window.evaluate(`(function () {
-                try {
-                    var el = lt.object.__GT_content(lt.objs.console.console);
-                    return Array.from(el.querySelectorAll('li.error'))
-                                .map(function (n) { return (n.innerText || '').slice(0, 300); });
-                } catch (e) { return ['could not read the console: ' + e.message]; }
-            })()`) as string[];
+            // Not guarded any more. It used to answer `['could not read the
+            // console: …']` on a throw, and an assertion of `toEqual([])`
+            // against that fails legibly — but an assertion of "no errors"
+            // that could pass because the reader broke is the wrong way round.
+            // `evalClj` throws, which is the loud end.
+            return await evalData<string[]>(window, `
+                (->> (.querySelectorAll ^js (object/->content lt.objs.console/console) "li.error")
+                     array-seq
+                     (mapv #(let [t (or (.-innerText ^js %) "")]
+                              (subs t 0 (min 300 (count t))))))`);
         });
     }
 });

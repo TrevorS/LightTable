@@ -7,7 +7,7 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { test, expect, scratchDir, openFile } from './fixtures';
+import { test, expect, evalData, scratchDir, openFile } from './fixtures';
 
 
 /** One engine now. The constant stays so the file reads as it did. */
@@ -24,30 +24,26 @@ fs.writeFileSync(file, 'const total = 1;\nconst other = total + total;\n');
 
 await openFile(window, file);
 
-const result = await window.evaluate(([f]) => {
-    const lt = (globalThis as any).lt, cljs = (globalThis as any).cljs;
-    const kw = (n: string) => cljs.core.keyword.call(null, n);
-    const run = (c: string) => lt.objs.command.exec_BANG_(kw(c));
-    const ed = cljs.core.first.call(null, lt.objs.editor.pool.by_path(f));
-    const cm = lt.objs.editor.__GT_cm_ed(ed);
-
-    cm.setCursor({ line: 0, ch: 6 });
-    run('editor.sublime.selectNextOccurrence');
-    run('editor.sublime.selectNextOccurrence');
-    run('editor.sublime.selectNextOccurrence');
-    const selected = cm.listSelections().length;
-
-    run('editor.sublime.undoSelection');
-    const afterUndo = cm.listSelections().length;
-    run('editor.sublime.redoSelection');
-
-    cm.replaceSelections(cm.listSelections().map(() => 'sum'));
-    const text = cm.getValue().split('\n')[1];
-
-    run('editor.sublime.singleSelectionTop');
-    const afterClear = cm.listSelections().length;
-    return { selected, afterUndo, text, afterClear };
-}, [file]) as { selected: number; afterUndo: number; text: string; afterClear: number };
+// One round trip, because each step depends on the one before it: the
+// selections are the editor's own state and reading them back between
+// commands would be four more crossings for nothing.
+const result = await evalData<{ selected: number; afterUndo: number; text: string; afterClear: number }>(
+    window, `
+    (let [cm ^js (editor/->cm-ed (first (pool/by-path "${file}")))
+          selections #(.-length (.listSelections cm))]
+      (.setCursor cm #js {:line 0 :ch 6})
+      (dotimes [_ 3] (cmd/exec! :editor.sublime.selectNextOccurrence))
+      (let [selected (selections)]
+        (cmd/exec! :editor.sublime.undoSelection)
+        (let [after-undo (selections)]
+          (cmd/exec! :editor.sublime.redoSelection)
+          (.replaceSelections cm (into-array (repeat (selections) "sum")))
+          (let [text (second (clojure.string/split (.getValue cm) "\n"))]
+            (cmd/exec! :editor.sublime.singleSelectionTop)
+            {:selected selected
+             :afterUndo after-undo
+             :text text
+             :afterClear (selections)}))))`);
 
 // Three occurrences of `total`, all selected, all replaced at once.
 expect(result.selected).toBe(3);
@@ -62,18 +58,11 @@ fs.rmSync(dir, { recursive: true, force: true });
 test('and every one of them is reachable from a key', async ({ window }) => {
     // The gap this whole file is about: a command nothing can invoke is a
     // command that does not exist as far as anyone using the editor knows.
-    const bound = await window.evaluate(`(function () {
-        var kw = function (n) { return cljs.core.keyword.call(null, n); };
-        var normal = cljs.core.get.call(null, cljs.core.deref(lt.objs.keyboard.keys),
-                                        kw('editor.keys.normal'));
-        var found = [];
-        cljs.core.doall(cljs.core.map.call(null, function (kv) {
-            var cmds = cljs.core.pr_str(cljs.core.second(kv));
-            if (cmds.indexOf('sublime') !== -1) found.push(cmds);
-            return null;
-        }, normal));
-        return found.join(' ');
-    })()`) as string;
+    const bound = await evalData<string[]>(window, `
+        (->> (:editor.keys.normal @lt.objs.keyboard/keys)
+             (map (comp pr-str val))
+             (filter #(clojure.string/includes? % "sublime"))
+             vec)`).then((found) => found.join(' '));
 
     for (const command of ['selectNextOccurrence', 'addCursorToNextLine', 'addCursorToPrevLine',
                            'splitSelectionByLine', 'undoSelection', 'singleSelectionTop']) {
@@ -84,19 +73,10 @@ test('and every one of them is reachable from a key', async ({ window }) => {
 test('a platform-only binding does not leak onto other platforms', async ({ window }) => {
     // mac:pmeta-d and linux:ctrl-alt-d are the same command spelled for two
     // platforms; exactly one of them should have survived being read.
-    const keys = await window.evaluate(`(function () {
-        var kw = function (n) { return cljs.core.keyword.call(null, n); };
-        var normal = cljs.core.get.call(null, cljs.core.deref(lt.objs.keyboard.keys),
-                                        kw('editor.keys.normal'));
-        var found = [];
-        cljs.core.doall(cljs.core.map.call(null, function (kv) {
-            if (cljs.core.pr_str(cljs.core.second(kv)).indexOf('selectNextOccurrence') !== -1) {
-                found.push(cljs.core.first(kv));
-            }
-            return null;
-        }, normal));
-        return found;
-    })()`) as string[];
+    const keys = await evalData<string[]>(window, `
+        (->> (:editor.keys.normal @lt.objs.keyboard/keys)
+             (filter #(clojure.string/includes? (pr-str (val %)) "selectNextOccurrence"))
+             (mapv key))`);
 
     expect(keys.length).toBe(1);
     // And the prefix itself never reaches the key table.

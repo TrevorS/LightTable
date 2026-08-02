@@ -19,6 +19,11 @@ async function openForms(window: Page, file: string, expected: number) {
                                count))`, { timeout: 60_000 });
 }
 
+/** Evaluate the whole buffer, the way ctrl-enter on the file does. */
+async function evalAll(window: Page, file: string) {
+    await evalClj(window, `(do (object/raise (first (pool/by-path "${file}")) :eval) :evaluating)`);
+}
+
 /** The results drawn beside each form, in order. */
 async function inlineResults(window: Page, file: string): Promise<string[]> {
     return await evalData<string[]>(window, `
@@ -50,33 +55,25 @@ test('a ClojureScript buffer changes the editor it is open in', async ({ window,
         ''
     ].join('\n'));
 
-    expect(await window.evaluate(
-        "!!lt.objs.command.by_id(cljs.core.keyword.call(null,'e2e.defined-while-running'))")).toBe(false);
+    const defined = '(some? (cmd/by-id :e2e.defined-while-running))';
+    expect(await evalData(window, defined)).toBe(false);
 
     await openForms(window, file, 3);
-    await window.evaluate(([f]) => {
-        const lt = (globalThis as any).lt, cljs = (globalThis as any).cljs;
-        const ed = cljs.core.first.call(null, lt.objs.editor.pool.by_path(f));
-        lt.object.raise.call(null, ed, cljs.core.keyword.call(null, 'eval'));
-    }, [file]);
+    await evalAll(window, file);
 
     // The first evaluation of a session loads cljs.core's analysis, which is
     // most of the cost and is paid once.
-    await window.waitForFunction(
-        "!!lt.objs.command.by_id(cljs.core.keyword.call(null,'e2e.defined-while-running'))",
-        null, { timeout: 90_000 });
+    await waitFor(window, defined, { timeout: 90_000 });
 
     // The command did not exist when the editor started. It does now, it runs,
     // and it can see a def from the same buffer.
-    expect(await window.evaluate(
-        "lt.objs.command.exec_BANG_(cljs.core.keyword.call(null,'e2e.defined-while-running'))")).toBe(42);
+    expect(await evalData(window, '(cmd/exec! :e2e.defined-while-running)')).toBe(42);
 
     // A result beside each form, which is what makes it a REPL rather than an
     // eval button: the ns form, the def as a var, and the command as nil.
     expect(await inlineResults(window, file)).toEqual(['nil', "#'lt.e2e-probe/answer", 'nil']);
 
-    expect(await window.evaluate("cljs.core.pr_str(lt.objs.cljs_compiler.describe())"))
-        .toContain(':status :ready');
+    expect(await evalData(window, '(:status (lt.objs.cljs-compiler/describe))')).toBe('ready');
     expect(await ltErrors()).toEqual([]);
 
     fs.rmSync(dir, { recursive: true, force: true });
@@ -95,25 +92,15 @@ test('a CSS buffer restyles the running editor', async ({ window, ltErrors }) =>
     // Opened first: a fresh window shows the Welcome tab, which is not a
     // CodeMirror, so there is nothing to read a background off until a file is
     // in front of you.
-    await window.evaluate(
-        ([f]) => (globalThis as any).lt.objs.command.exec_BANG_(
-            (globalThis as any).cljs.core.keyword.call(null, 'open-path'), f),
-        [file]);
-    await window.waitForFunction(
-        ([f]) => {
-            const lt = (globalThis as any).lt, cljs = (globalThis as any).cljs;
-            return !!cljs.core.first.call(null, lt.objs.editor.pool.by_path(f))
-                && !!document.querySelector('.CodeMirror, .cm-editor');
-        }, [file], { timeout: 30_000 });
+    await evalClj(window, `(do (cmd/exec! :open-path "${file}") :opening)`);
+    await waitFor(window, `
+        (and (some? (first (pool/by-path "${file}")))
+             (some? (lt.util.dom/$ ".CodeMirror, .cm-editor")))`, { timeout: 30_000 });
 
     const before = await window.evaluate(
         "getComputedStyle(document.querySelector('.CodeMirror, .cm-editor')).backgroundColor");
 
-    await window.evaluate(([f]) => {
-        const lt = (globalThis as any).lt, cljs = (globalThis as any).cljs;
-        const ed = cljs.core.first.call(null, lt.objs.editor.pool.by_path(f));
-        lt.object.raise.call(null, ed, cljs.core.keyword.call(null, 'eval'));
-    }, [file]);
+    await evalAll(window, file);
 
     await expect.poll(async () => await window.evaluate(
         "getComputedStyle(document.querySelector('.CodeMirror, .cm-editor')).backgroundColor"))
@@ -130,21 +117,10 @@ test('a JavaScript buffer evaluates straight into the window', async ({ window, 
     const file = path.join(dir, 'probe.js');
     fs.writeFileSync(file, 'window.__e2e_marker = "evaluated in the window";\n');
 
-    await window.evaluate(
-        ([f]) => (globalThis as any).lt.objs.command.exec_BANG_(
-            (globalThis as any).cljs.core.keyword.call(null, 'open-path'), f),
-        [file]);
-    await window.waitForFunction(
-        ([f]) => {
-            const lt = (globalThis as any).lt, cljs = (globalThis as any).cljs;
-            return !!cljs.core.first.call(null, lt.objs.editor.pool.by_path(f));
-        }, [file], { timeout: 30_000 });
+    await evalClj(window, `(do (cmd/exec! :open-path "${file}") :opening)`);
+    await waitFor(window, `(some? (first (pool/by-path "${file}")))`, { timeout: 30_000 });
 
-    await window.evaluate(([f]) => {
-        const lt = (globalThis as any).lt, cljs = (globalThis as any).cljs;
-        const ed = cljs.core.first.call(null, lt.objs.editor.pool.by_path(f));
-        lt.object.raise.call(null, ed, cljs.core.keyword.call(null, 'eval'));
-    }, [file]);
+    await evalAll(window, file);
 
     await expect.poll(async () => await window.evaluate("window.__e2e_marker"))
         .toBe('evaluated in the window');

@@ -12,18 +12,16 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { test, expect, ready, launch, editorWindow, scratchDir } from './fixtures';
+import { test, expect, evalClj, evalData, ready, launch, editorWindow, scratchDir } from './fixtures';
 
 test('the editor builds itself in the first window', async ({ window }) => {
     expect(await window.evaluate("typeof lt.objs.app")).toBe('object');
-    const behaviors = await window.evaluate(
-        "cljs.core.count(cljs.core.deref(lt.object.behaviors))") as number;
-    expect(behaviors).toBeGreaterThan(500);
+    expect(await evalData<number>(window, '(count @object/behaviors)')).toBeGreaterThan(500);
 });
 
 test('a second window builds the editor too', async ({ app, window }) => {
     // Through the command, so this is the path a person takes.
-    await window.evaluate("lt.objs.command.exec_BANG_(cljs.core.keyword.call(null,'window.new'))");
+    await evalClj(window, '(do (cmd/exec! :window.new) :opening)');
 
     const second = await app.waitForEvent('window');
     await ready(second);
@@ -33,7 +31,7 @@ test('a second window builds the editor too', async ({ app, window }) => {
 });
 
 test('and its preload ran, which is what the blank one was missing', async ({ app, window }) => {
-    await window.evaluate("lt.objs.command.exec_BANG_(cljs.core.keyword.call(null,'window.new'))");
+    await evalClj(window, '(do (cmd/exec! :window.new) :opening)');
     const second = await app.waitForEvent('window');
     await ready(second);
 
@@ -66,16 +64,12 @@ test('user data is written outside the application, not inside it', async ({ app
     // User/, logs/ and ltcache/ into the .app — `codesign --verify` then said
     // "a sealed resource is missing or invalid", and an application installed
     // where the user cannot write could not start at all.
-    const info = await window.evaluate(`(function () {
-        var kw = function (n) { return cljs.core.keyword.call(null, n); };
-        var i = lt.util.bridge.app_info;
-        return {
-            appPath: String(cljs.core.get.call(null, i, kw('appPath'))),
-            userDataPath: String(cljs.core.get.call(null, i, kw('userDataPath'))),
-            userDir: String(lt.objs.files.lt_user_dir.cljs$core$IFn$_invoke$arity$1('')),
-            home: String(lt.objs.files.lt_home.cljs$core$IFn$_invoke$arity$1(''))
-        };
-    })()`) as { appPath: string; userDataPath: string; userDir: string; home: string };
+    const info = await evalData<{ appPath: string; userDataPath: string; userDir: string; home: string }>(
+        window, `
+        {:appPath (str (:appPath lt.util.bridge/app-info))
+         :userDataPath (str (:userDataPath lt.util.bridge/app-info))
+         :userDir (str (files/lt-user-dir ""))
+         :home (str (files/lt-home ""))}`);
 
     expect(info.userDataPath.length).toBeGreaterThan(0);
     // userData is somewhere of the user's, not somewhere of the application's.
@@ -108,11 +102,10 @@ test('the User plugin is refreshed from the build, not left stale', async () => 
     const window = await editorWindow(second);
     expect(fs.readFileSync(copied, 'utf8')).not.toContain('cljs$cst$1$stale');
 
-    const errors = await window.evaluate(`(function () {
-        var el = lt.object.__GT_content(lt.objs.console.console);
-        return Array.from(el.querySelectorAll('li.error')).map(function (n) {
-            return (n.innerText || '').slice(0, 200); });
-    })()`) as string[];
+    const errors = await evalData<string[]>(window, `
+        (->> (.querySelectorAll ^js (object/->content lt.objs.console/console) "li.error")
+             array-seq
+             (mapv #(subs (or (.-innerText ^js %) "") 0 (min 200 (count (or (.-innerText ^js %) ""))))))`);
     expect(errors.join(' ')).not.toContain('user_compiled.js');
 
     await second.close().catch(() => { /* already gone */ });

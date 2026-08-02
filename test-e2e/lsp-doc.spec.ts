@@ -11,7 +11,7 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { test, expect, evalClj as evalWith, scratchDir } from './fixtures';
+import { test, expect, evalClj as evalWith, insideEditor, scratchDir } from './fixtures';
 import type { Page } from '@playwright/test';
 
 /** Longer than the default, because a real language server has to start. */
@@ -75,13 +75,8 @@ test(`Toggle docs shows the server's hover, on ${engine}`, async ({ window }) =>
 
     await evalClj(window, '(do (cmd/exec! :editor.doc.toggle) :toggled)');
 
-    const doc = async () => await window.evaluate(([p]) => {
-        const w = globalThis as any;
-        const ed = w.cljs.core.first.call(null, w.lt.objs.editor.pool.by_path(p));
-        const root = w.lt.objs.editor.__GT_elem(ed) as HTMLElement;
-        const found = root.querySelector('.inline-doc') as HTMLElement | null;
-        return found ? found.innerText : null;
-    }, [file]);
+    const doc = async () => await insideEditor<string>(window, file,
+        '(some-> ^js (.querySelector root ".inline-doc") .-innerText)');
 
     // The position is in the text the server sent back, so this also says
     // the request carried the cursor rather than the start of the file.

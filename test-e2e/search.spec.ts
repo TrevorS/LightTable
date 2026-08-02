@@ -7,7 +7,7 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { test, expect, scratchDir, openFile } from './fixtures';
+import { test, expect, evalClj, evalData, scratchDir, openFile } from './fixtures';
 import type { Page } from '@playwright/test';
 
 
@@ -21,16 +21,14 @@ import type { Page } from '@playwright/test';
  */
 async function runSearcher(window: Page, dir: string, search: string,
                            replace: string, trigger: 'search!' | 'replace!') {
-    await window.evaluate(([d, s, r, t]) => {
-        const lt = (globalThis as any).lt, cljs = (globalThis as any).cljs;
-        const kw = (n: string) => cljs.core.keyword.call(null, n);
-        const searcher = lt.objs.search.searcher;
-        const content = lt.object.__GT_content(searcher);
-        (content.querySelector('.search') as HTMLInputElement).value = s!;
-        (content.querySelector('.replace') as HTMLInputElement).value = r!;
-        (content.querySelector('.loc') as HTMLInputElement).value = d!;
-        lt.object.raise.call(null, searcher, kw(t!));
-    }, [dir, search, replace, trigger]);
+    await evalClj(window, `
+        (let [content (object/->content lt.objs.search/searcher)
+              put! (fn [sel v] (set! (.-value ^js (lt.util.dom/$ sel content)) v))]
+          (put! :.search "${search}")
+          (put! :.replace "${replace}")
+          (put! :.loc "${dir}")
+          (object/raise lt.objs.search/searcher :${trigger})
+          :ran)`);
 }
 
 const replaceAll = (window: Page, dir: string, search: string, replace: string) =>
@@ -50,11 +48,8 @@ test('a replace reaches the tab as well as the disk', async ({ window, ltErrors 
     await expect.poll(() => fs.readFileSync(closedFile, 'utf8')).toBe('THREAD there\n');
 
     // ...and the open one is rewritten in the tab, not only underneath it.
-    const buffer = await window.evaluate(([f]) => {
-        const lt = (globalThis as any).lt, cljs = (globalThis as any).cljs;
-        const ed = cljs.core.first.call(null, lt.objs.editor.pool.by_path(f));
-        return lt.objs.editor.__GT_val(ed);
-    }, [shown]) as string;
+    const buffer = await evalData<string>(window,
+        `(editor/->val (first (pool/by-path "${shown}")))`);
     expect(buffer).toBe('THREAD here\nand nothing else\n');
 
     // Which is the whole point: what the tab shows is what is on disk.
@@ -77,7 +72,7 @@ test('and the whole replace is one undo', async ({ window }) => {
 
     // Across files, which is the reason lt.objs.workspace-edit keeps its own
     // stack: CodeMirror's history is per document, and b.txt was never open.
-    await window.evaluate("lt.objs.workspace_edit.undo_BANG_()");
+    await evalClj(window, '(do (lt.objs.workspace-edit/undo!) :undone)');
 
     await expect.poll(() => fs.readFileSync(a, 'utf8')).toBe('NEEDLE one\n');
     expect(fs.readFileSync(b, 'utf8')).toBe('NEEDLE two\n');
@@ -96,15 +91,13 @@ test('node_modules is not searched', async ({ window }) => {
 
     // One result, and it is not the dependency. On this repository the
     // difference is 10,507 files walked against 1,296 worth reading.
-    await expect.poll(async () => await window.evaluate(
-        "cljs.core.get.call(null, cljs.core.deref(lt.objs.search.searcher), " +
-        "cljs.core.keyword.call(null,'result-count'))")).toBe(1);
+    await expect.poll(async () => await evalData(window,
+        '(:result-count @lt.objs.search/searcher)')).toBe(1);
 
-    const files = await window.evaluate(`(function () {
-        var kw = function (n) { return cljs.core.keyword.call(null, n); };
-        var rs = cljs.core.get.call(null, cljs.core.deref(lt.objs.search.searcher), kw('results'));
-        return Array.prototype.map.call(rs, function (r) { return r.file; });
-    })()`) as string[];
+    // `:results` is a JavaScript array of plain objects from the worker, so the
+    // field is read with `.-file` rather than as a keyword.
+    const files = await evalData<string[]>(window,
+        '(mapv #(.-file ^js %) (array-seq (:results @lt.objs.search/searcher)))');
     expect(files.join(' ')).not.toContain('node_modules');
 
     fs.rmSync(dir, { recursive: true, force: true });
