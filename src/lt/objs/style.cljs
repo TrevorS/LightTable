@@ -12,8 +12,7 @@
             [lt.objs.deploy :as deploy]
             [lt.util.dom :as dom]
             [lt.util.load :as load]
-            [singultus.binding :refer [bound subatom]]
-            [singultus.compiler :refer [dom-attr]]
+            [lt.ui :as ui]
             [clojure.string :as string])
   (:require-macros [lt.macros :refer [behavior]]))
 
@@ -37,12 +36,12 @@
             (when (:font-size settings)
               (css-expr :font-size (str (:font-size settings) "pt")))))
 
+(defn- styles-ui [this]
+  [:style {:type "text/css"} (->css (:font-settings @this))])
+
 (object/object* ::styles
                 :init (fn [this]
-                        [:div
-                         [:style {:type "text/css"}
-                          (bound (subatom this :font-settings) ->css)
-                          ]]))
+                        (ui/node this [:div] styles-ui)))
 
 (def styles (object/create ::styles
                            :theme "default"))
@@ -83,7 +82,7 @@
   (let [skins (object/raise-reduce app/app :skins+ {})
         path (get skins skin (plugins/adjust-path "core/css/skins/new-dark.css"))
         elem (load/css path)]
-    (dom-attr elem {:id (str "skin-" skin)})
+    (set! (.-id ^js elem) (str "skin-" skin))
     elem))
 
 (defn inject-skin [skin]
@@ -126,7 +125,7 @@
   (let [themes (object/raise-reduce app/app :themes+ {})
         path (get themes theme (plugins/adjust-path "core/css/themes/default.css"))
         elem (load/css path)]
-    (dom-attr elem {:id (str "theme-" theme)})
+    (set! (.-id ^js elem) (str "theme-" theme))
     elem))
 
 (defn inject-theme [theme]

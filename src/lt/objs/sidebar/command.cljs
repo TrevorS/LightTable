@@ -13,8 +13,7 @@
             [lt.util.dom :as dom]
             [lt.util.cljs]
             [clojure.string :as string]
-            [lt.ui.host :as host]
-            [singultus.binding :refer [subatom computed]])
+            [lt.ui.host :as host])
   (:require-macros [lt.macros :refer [behavior]]))
 
 
@@ -420,11 +419,13 @@
                 :active nil
                 :order 3
                 :init (fn [this]
-                        (let [commands (subatom cmd/manager :commands)
-                              f2 (computed [commands]
-                                           (fn [cmds]
-                                             (filter #(not (:hidden %)) (vals cmds))))
-                              s2 (filter-list {:items f2
+                        ;; A function rather than a `computed` over a
+                        ;; `subatom`: `->items` calls it when it needs the
+                        ;; list, which is what those two were arranging.
+                        (let [s2 (filter-list {:items (fn []
+                                                        (->> (:commands @cmd/manager)
+                                                             vals
+                                                             (remove :hidden)))
                                                :transform #(command->display % %2 %3 %4)
                                                :key :desc
                                                :empty-what "No command matches"

@@ -6,22 +6,26 @@
             [lt.objs.animations :as anim]
             [lt.objs.canvas :as canvas]
             [lt.ui :as ui]
+            [lt.ui.host :as host]
             [lt.util.dom :as dom]
-            [lt.util.cljs]
-            [singultus.binding :refer [bound subatom]])
+            [lt.util.cljs])
   (:require-macros [lt.macros :refer [behavior]]))
 
 (def default-width 200)
 
 (defn- vertical-grip
-  "The handle you drag to resize a sidebar. See [[lt.objs.bottombar]]: the
-  panel's width is bound and stays that way, the grip is a node."
+  "The handle you drag to resize a sidebar.
+
+  Plain hiccup: this is inside a view now, so Replicant draws it. It was an
+  `lt.ui/element` while the bar around it was still singultus hiccup, and a
+  node left in hiccup after the bar became a view is dropped without a word —
+  which is what happened, and what the grip test in `renderer.spec.ts` is for."
   [this]
-  (ui/element [:div.vertical-grip
-               {:draggable "true"
-                :on {:dragstart (fn [_] (object/raise this :start-drag))
-                     :dragend (fn [_] (object/raise this :end-drag))
-                     :drag (fn [e] (object/raise this :width! e))}}]))
+  [:div.vertical-grip
+   {:draggable "true"
+    :on {:dragstart (fn [_] (object/raise this :start-drag))
+         :dragend (fn [_] (object/raise this :end-drag))
+         :drag (fn [e] (object/raise this :width! e))}}])
 
 (behavior ::no-anim-on-drag
           :triggers #{:start-drag}
@@ -97,6 +101,24 @@
 (defn ->width [width]
   (str (or width 0) "px"))
 
+(defn- panels
+  "Every panel registered with this bar, in `:order`.
+
+  All of them, in one element, which is how a sidebar has always worked:
+  `#side .content > *` and `#right-bar .content > *` are sized to nothing and
+  the one with `active` on it is given the space. So which panel you are
+  looking at is a class another behavior writes, not something drawn here —
+  see `::open!`.
+
+  `add-item` used to append into this element itself. It puts the panel in
+  `:items` and this places it."
+  [this]
+  [::host/host {:class "content"
+                :content (map object/->content (vals (:items @this)))}])
+
+(defn- width-attrs [obj]
+  {:style {:width (->width (:width @obj))}})
+
 (object/object* ::sidebar
                 :tags #{:sidebar}
                 :items {}
@@ -105,10 +127,9 @@
                 :transients '()
                 :max-width default-width
                 :init (fn [this]
-                        [:div#side {:style {:width (bound (subatom this :width) ->width)}}
-                         [:div.content
-                          (bound (subatom this :active) active-content)]
-                         (vertical-grip this)]))
+                        (ui/node this [:div#side]
+                                 (fn [t] (list (panels t) (vertical-grip t)))
+                                 width-attrs)))
 
 (object/object* ::right-bar
                 :items {}
@@ -117,10 +138,9 @@
                 :side :right
                 :max-width 300
                 :init (fn [this]
-                        [:div#right-bar {:style {:width (bound (subatom this :width) ->width)}}
-                         (vertical-grip this)
-                         [:div.content
-                          ]]))
+                        (ui/node this [:div#right-bar]
+                                 (fn [t] (list (vertical-grip t) (panels t)))
+                                 width-attrs)))
 
 (def sidebar (object/create ::sidebar))
 (def rightbar (object/create ::right-bar))
@@ -129,8 +149,8 @@
 (canvas/add! rightbar)
 
 (defn add-item [bar item]
-  (object/update! bar [:items] assoc (:order @item) item)
-  (dom/append (dom/$ :.content (object/->content bar)) (object/->content item)))
+  ;; No `dom/append`: `:items` is what the bar draws from.
+  (object/update! bar [:items] assoc (:order @item) item))
 
 (cmd/command {:command :close-sidebar
               :desc "Sidebar: close"

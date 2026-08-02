@@ -41,11 +41,19 @@
     ;; the node is already the right one is what keeps that cheap.
     :replicant/on-render
     (fn [{:replicant/keys [node]}]
-      (let [^js el node]
-        (when-not (identical? content (.-firstChild el))
-          ;; Removed rather than replaced wholesale: the old one is another
-          ;; object's and may well be hosted again somewhere else.
-          (when-let [old (.-firstChild el)]
-            (.removeChild el old))
-          (when content
-            (.appendChild el content)))))}])
+      (let [^js el node
+            wanted (cond
+                     (nil? content) []
+                     ;; One node or several. The sidebars keep every panel in
+                     ;; the same element and show one by class, so a host that
+                     ;; only took one would have had them reaching into their
+                     ;; own DOM to append the rest.
+                     (or (sequential? content) (seq? content)) (vec (remove nil? content))
+                     :else [content])]
+        (when-not (= wanted (vec (array-seq (.-childNodes el))))
+          ;; Taken out rather than thrown away: each one is another object's
+          ;; and may well be hosted again somewhere else.
+          (while (.-firstChild el)
+            (.removeChild el (.-firstChild el)))
+          (doseq [^js n wanted]
+            (.appendChild el n)))))}])

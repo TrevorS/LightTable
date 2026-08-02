@@ -78,7 +78,13 @@
 (behavior ::init-statusbar
           :triggers #{:init}
           :reaction (fn [app]
-                      (dom/append (object/->content tabs/multi) (object/->content container))))
+                      ;; A slot on `#multi` rather than an append into it.
+                      ;; `lt.objs.tabs` draws its own children now, and anything
+                      ;; put there behind its back is taken out again on the
+                      ;; next draw — which is how the cursor position went
+                      ;; missing from the bar.
+                      (object/merge! tabs/multi
+                                     {:statusbar (object/->content container)})))
 
 ;;**********************************************************
 ;; the bar

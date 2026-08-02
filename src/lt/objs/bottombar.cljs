@@ -6,8 +6,8 @@
             [lt.objs.canvas :as canvas]
             [lt.util.cljs]
             [lt.ui :as ui]
-            [lt.util.style :refer [->px]]
-            [singultus.binding :refer [bound subatom]])
+            [lt.ui.host :as host]
+            [lt.util.style :refer [->px]])
   (:require-macros [lt.macros :refer [behavior]]))
 
 
@@ -15,19 +15,14 @@
 (def default-height 130)
 
 (defn- horizontal-grip
-  "The handle you drag to resize the bottombar.
-
-  A node rather than a view, and spliced into the singultus hiccup below —
-  which is what the `:init` around it stays. The bar's geometry is bound to
-  atoms (`#multi`'s insets, its own height) and that is layout the object model
-  owns; the grip inside it is three handlers on an empty div, and nothing
-  redraws it."
+  "The handle you drag to resize the bottombar. Plain hiccup — the bar is a
+  view, so Replicant draws this along with the rest of it."
   [this]
-  (ui/element [:div.horizontal-grip
-               {:draggable "true"
-                :on {:dragstart (fn [_] (object/raise this :start-drag))
-                     :dragend (fn [_] (object/raise this :end-drag))
-                     :drag (fn [e] (object/raise this :height! e))}}]))
+  [:div.horizontal-grip
+   {:draggable "true"
+    :on {:dragstart (fn [_] (object/raise this :start-drag))
+         :dragend (fn [_] (object/raise this :end-drag))
+         :drag (fn [e] (object/raise this :height! e))}}])
 
 (defn active-content [active]
   (when active
@@ -56,13 +51,20 @@
                 :height 0
                 :max-height default-height
                 :init (fn [this]
-                        [:div#bottombar {:class (bound this ->active-class)
-                                         :style {:left (bound (subatom tabs/multi :left) ->px)
-                                                 :right (bound (subatom tabs/multi :right) ->px)
-                                                 :height (bound (subatom this :height) ->px)}}
-                         (horizontal-grip this)
-                         [:div.content
-                          (bound (subatom this :active) active-content)]]))
+                        ;; Two atoms: its own height, and `#multi`'s insets,
+                        ;; which move when a sidebar is dragged. `ui/watch` is
+                        ;; what redraws this when the other one changes.
+                        (ui/watch this tabs/multi)
+                        (ui/node this [:div#bottombar]
+                                 (fn [t]
+                                   (list (horizontal-grip t)
+                                         [::host/host {:class "content"
+                                                       :content (active-content (:active @t))}]))
+                                 (fn [obj]
+                                   {:class (->active-class @obj)
+                                    :style {:left (->px (:left @tabs/multi))
+                                            :right (->px (:right @tabs/multi))
+                                            :height (->px (:height @obj))}}))))
 
 (def bottombar (object/create ::bottombar))
 

@@ -11,8 +11,6 @@
             [lt.objs.sidebar :as sidebar]
             [lt.util.dom :as dom]
             [lt.util.load :as load]
-            [singultus.core :as crate]
-            [singultus.binding :refer [subatom]]
             [lt.objs.thread :as thread])
   (:require-macros [lt.macros :refer [behavior]]))
 
@@ -109,7 +107,9 @@
                                                      :transform (fn [orig _ marked _]
                                                                   (list [:h2 (files/basename orig)]
                                                                         [:p marked]))
-                                                     :items (subatom this :files)
+                                                     ;; A function rather than a subatom: `->items` takes either, and
+                                                     ;; this is the only thing that wanted one.
+                                                     :items (fn [] (:files @this))
                                                      :placeholder "file"
                                                      :empty-what "No files to navigate"
                                                      :empty-why "Add a folder to the workspace and every file in it is one keystroke away."})]

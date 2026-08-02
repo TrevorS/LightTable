@@ -12,9 +12,7 @@
             [lt.ui.view :as view]
             [lt.util.dom :refer [append] :as dom]
             [lt.util.style :refer [->px]]
-            [lt.util.js]
-            [singultus.core :as crate]
-            [singultus.binding :refer [bound subatom]])
+            [lt.util.js])
   (:require-macros [lt.macros :refer [behavior]]))
 
 
@@ -26,14 +24,34 @@
                         :right 0
                         :bottom 0
                         :init (fn [this]
-                                (let [tabsets (crate/html [:div.tabsets {:style {:bottom (bound (subatom this :tabset-bottom) ->px)}}])]
-                                  (object/merge! this {:tabsets-elem tabsets})
-                                  (ctx/in! :tabs this)
-                                  [:div#multi {:style {:left (bound (subatom this :left) ->px)
-                                                       :right (bound (subatom this :right) ->px)
-                                                       :bottom (bound (subatom this :bottom) ->px)}}
-                                   tabsets]
-                                  ))))
+                                (ctx/in! :tabs this)
+                                (ui/node this [:div#multi]
+                                         (fn [t]
+                                           (list
+                                            ;; The host element *is* `.tabsets`:
+                                            ;; a tabset is an inline-block with
+                                            ;; a percentage width, so a wrapper
+                                            ;; between it and this would be the
+                                            ;; column layout.
+                                            [::host/host
+                                             {:class "tabsets"
+                                              :style {:bottom (->px (:tabset-bottom @t))}
+                                              :content (map object/->content (:tabsets @t))}]
+                                            ;; The strip along the bottom, which
+                                            ;; belongs to `lt.objs.statusbar`
+                                            ;; and lives here. It used to be
+                                            ;; appended into this element; now
+                                            ;; that Replicant owns these
+                                            ;; children, an appended one is
+                                            ;; removed on the next draw — so it
+                                            ;; is a slot rather than a
+                                            ;; side effect.
+                                            (when-let [bar (:statusbar @t)]
+                                              [::host/host {:class "statusbar-slot" :content bar}])))
+                                         (fn [obj]
+                                           {:style {:left (->px (:left @obj))
+                                                    :right (->px (:right @obj))
+                                                    :bottom (->px (:bottom @obj))}})))))
 
 (def multi (object/create multi-def))
 
@@ -186,9 +204,8 @@
     ))
 
 (defn add-tabset [ts]
-  (object/update! multi [:tabsets] conj ts)
-  (dom/append (:tabsets-elem @multi) (object/->content ts))
-  )
+  ;; No `dom/append`: `:tabsets` is what `#multi` draws from.
+  (object/update! multi [:tabsets] conj ts))
 
 (defn spawn-tabset []
   (let [ts (object/create ::tabset)
@@ -253,10 +270,6 @@
                                        (fn [obj] {:style {:width (->perc (:width @obj))}}))
                           (dom/on :click (fn [] (object/raise this :active))))))
 
-(defn ->tabsets [tabs]
-  (for [k tabs]
-    (object/->content k)))
-
 (def tabset (object/create ::tabset))
 
 (defn add!
@@ -266,9 +279,12 @@
      (object/add-tags obj [:tabset.tab])
      (object/update! cur-tabset [:objs] conj obj)
      (object/merge! obj {::tabset cur-tabset})
-     (add-watch (subatom obj [:dirty]) :tabs (fn [_ _ _ cur]
-                                               (object/raise cur-tabset :tab.updated)
-                                               ))
+     ;; A watch on the object rather than on a subatom of it, comparing the one
+     ;; key that matters. `subatom` was the last thing in this namespace still
+     ;; asking singultus for anything.
+     (add-watch obj :tabs (fn [_ _ old new]
+                            (when (not= (:dirty old) (:dirty new))
+                              (object/raise cur-tabset :tab.updated))))
      (object/raise cur-tabset :tab.updated)
      obj)))
 
