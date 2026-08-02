@@ -1,5 +1,16 @@
 (ns lt.objs.find
-  "Provide find and replace functionality for current file"
+  "Find and replace, in the editor you are in.
+
+  Drawn once, with [[lt.ui/element]], and that is the whole of the rendering
+  decision: the bar is two text fields and a button, and none of it is a
+  function of anything. What changes when you search is in the editor.
+
+  The fields are the browser's — `->val` reads `.value` rather than the object
+  mirroring it. A view that put `:value` in the hiccup would be writing
+  `.value` back on every render, and Replicant sets it unconditionally, so
+  editing anywhere but the end of the query would send the caret to the end.
+  `:default-value` is the other half of that story and is not wanted here
+  either: the fields start empty."
   (:require [lt.object :as object]
             [lt.objs.context :as ctx]
             [lt.objs.statusbar :as statusbar]
@@ -9,50 +20,36 @@
             [lt.objs.editor.pool :as pool]
             [lt.objs.keyboard :as keyboard]
             [lt.objs.editor :as editor]
-            [lt.util.dom :as dom]
-            [singultus.binding]
-            [lt.util.style])
-  (:require-macros [lt.macros :refer [behavior defui]]))
-
-(def find-height 30)
+            [lt.ui :as ui]
+            [lt.util.dom :as dom])
+  (:require-macros [lt.macros :refer [behavior]]))
 
 (declare bar)
 
-(defui input [this]
+(defn- input [this]
   [:input.find {:type "text"
-                :placeholder "find"}]
-  :input (fn []
-           (this-as me
-                    (object/raise this :search! (dom/val me))))
-  :focus (fn []
-           (ctx/in! :find-bar this)
-           (object/raise bar :active))
-  :blur (fn []
-          (ctx/out! :find-bar)
-          (object/raise bar :inactive)))
+                :placeholder "find"
+                :on {:input (fn [e] (object/raise this :search! (.. ^js e -target -value)))
+                     :focus (fn []
+                              (ctx/in! :find-bar this)
+                              (object/raise bar :active))
+                     :blur (fn []
+                             (ctx/out! :find-bar)
+                             (object/raise bar :inactive))}}])
 
-(defui replace-input [this]
+(defn- replace-input [this]
   [:input.replace {:type "text"
-                   :placeholder "replace"}]
-  :input (fn []
-           (this-as me
-                    (object/raise this :replace.changed (dom/val me))))
-  :focus (fn []
-           (ctx/in! :find-bar.replace this)
-           (object/raise bar :active))
-  :blur (fn []
-          (ctx/out! :find-bar.replace)
-          (object/raise bar :inactive)))
+                   :placeholder "replace"
+                   :on {:input (fn [e] (object/raise this :replace.changed (.. ^js e -target -value)))
+                        :focus (fn []
+                                 (ctx/in! :find-bar.replace this)
+                                 (object/raise bar :active))
+                        :blur (fn []
+                                (ctx/out! :find-bar.replace)
+                                (object/raise bar :inactive))}}])
 
-(defui replace-all-button [this]
-  [:button "all"]
-  :click (fn []
-           (cmd/exec! :find.replace-all)))
-
-(defn ->shown-width [shown?]
-  (if shown?
-    ""
-    "0"))
+(defn- replace-all-button []
+  [:button {:on {:click (fn [] (cmd/exec! :find.replace-all))}} "all"])
 
 (defn ->val [this]
   (dom/val (dom/$ :input.find (object/->content this))))
@@ -107,10 +104,7 @@
           :reaction (fn [this]
                       (object/merge! this {:searching? false})
                       (when-let [ed (pool/last-active)]
-                        (editor/clear-search! ed))
-                      (let [input (dom/$ :input (object/->content this))]
-                        (when (= "" (dom/val input))
-                          (dom/val input "")))))
+                        (editor/clear-search! ed))))
 
 
 (behavior ::replace!
@@ -143,10 +137,10 @@
                 :shown false
                 :pos nil
                 :init (fn [this]
-                        [:div#find-bar
-                         (input this)
-                         (replace-input this)
-                         (replace-all-button this)]))
+                        (ui/element [:div#find-bar
+                                     (input this)
+                                     (replace-input this)
+                                     (replace-all-button)])))
 
 (behavior ::init
           :triggers #{:init}

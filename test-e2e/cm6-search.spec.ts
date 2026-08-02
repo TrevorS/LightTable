@@ -1,12 +1,14 @@
-// Find and replace, through the find bar's own path.
+// Find and replace.
 //
 // `lt.objs.find` used to call four CodeMirror 5 global commands directly. Those
 // come from a vendored addon and operate on a CodeMirror 5 editor, so on
 // CodeMirror 6 they were a TypeError in the search box. They are four functions
 // on `lt.objs.editor` now, and the find bar names no editor at all.
 //
-// So this drives the commands a person's keys are bound to, and runs the whole
-// thing twice.
+// Most of what is here drives those four, which is what the find bar drives.
+// The last test drives the bar itself — the fields, the button and the space
+// it takes from the tabs — because nothing else did, and the bar's markup went
+// from three `defui` to one `lt.ui/element` with none of it covered.
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -110,4 +112,62 @@ test('a lower-case query ignores case and a capital makes it matter', async ({ w
     });
 
     expect(out).toEqual([0, 1]);
+});
+
+test('the find bar is the bar you type in, and it gives the space back', async ({ window }) => {
+    // The bar is drawn once and never again, which is the whole rendering
+    // decision: two fields and a button, none of it a function of anything.
+    // What that leaves worth asserting is the wiring — the handlers, the
+    // context it takes, and the height contract it has with the tabs above it.
+    const dir = scratchDir('find-bar');
+    const file = path.join(dir, 'typed.txt');
+    fs.writeFileSync(file, DOC);
+
+    await evalClj(window, `(do (cmd/exec! :open-path "${file}") :opened)`);
+    await expect.poll(async () => await evalClj(window,
+        `(count (pool/by-path "${file}"))`)).toBe('1');
+    await evalClj(window, `
+        (do (lt.objs.editor/move-cursor (first (pool/by-path "${file}")) {:line 0 :ch 0}) :top)`);
+
+    const bar = window.locator('#find-bar');
+    // Closed is height 0 rather than display:none — `#find-bar` is in the
+    // statusbar strip at :order -1 and the strip animates the height.
+    expect(await bar.evaluate((n) => n.getBoundingClientRect().height)).toBe(0);
+
+    await evalClj(window, '(do (cmd/exec! :find.show) :shown)');
+    await expect.poll(async () =>
+        await bar.evaluate((n) => n.getBoundingClientRect().height)).toBe(30);
+
+    // Focusing takes the keyboard context, which is what makes Enter mean
+    // "next match" rather than "newline".
+    await bar.locator('input.find').click();
+    expect(await evalClj(window, '(boolean (lt.objs.context/->obj :find-bar))')).toBe('true');
+
+    // Typed, not dispatched: the `:input` handler is the thing being asserted,
+    // and `:search!` is debounced behind it.
+    await bar.locator('input.find').fill('alpha');
+    await expect.poll(async () => await evalClj(window, '(:searching? @lt.objs.find/bar)')).toBe('true');
+    await expect.poll(async () => await evalClj(window,
+        `(:line (lt.objs.editor/->cursor (first (pool/by-path "${file}"))))`)).toBe('0');
+
+    await evalClj(window, '(do (cmd/exec! :find.next) :next)');
+    await expect.poll(async () => await evalClj(window,
+        `(:line (lt.objs.editor/->cursor (first (pool/by-path "${file}"))))`)).toBe('2');
+
+    // The one control in the bar, clicked rather than commanded.
+    await bar.locator('input.replace').fill('ALPHA');
+    await bar.locator('button').click();
+    await expect.poll(async () => await evalClj(window,
+        `(lt.objs.editor/->val (first (pool/by-path "${file}")))`))
+        .toBe('"ALPHA one\\nbeta two\\nALPHA three\\ngamma four\\n"');
+
+    // And hiding gives the height back, which is the contract the strip has
+    // with the tabs — a bar that closed without it would leave a gap.
+    await evalClj(window, '(do (cmd/exec! :find.hide) :hidden)');
+    await expect.poll(async () =>
+        await bar.evaluate((n) => n.getBoundingClientRect().height)).toBe(0);
+
+    await evalClj(window, `
+        (do (doseq [ed (pool/by-path "${file}")] (object/raise ed :close)) :closed)`);
+    fs.rmSync(dir, { recursive: true, force: true });
 });
