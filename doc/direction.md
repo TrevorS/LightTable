@@ -43,9 +43,15 @@ Worth being specific, because "roots" is otherwise a licence to change nothing.
   was extensible and none were inspectable.
 - **The connection model.** Attaching to a running process rather than shelling
   out is what makes the results live rather than a batch report.
-- **Plugins that can replace almost anything**, including precompiled ones that
-  nobody will ever rebuild. The require shim and `lt.compat` exist because a
-  ten-year-old plugin still working is a feature.
+- **Plugins that can replace almost anything.** The require shim is why a
+  precompiled plugin still loads at all.
+
+  The *second* half of this was dropped on 2026-08-01: `lt.compat` published
+  `crate.core` and `crate.binding` so a plugin built before the hiccup library
+  was renamed kept drawing, and it is deleted. This fork is one person's
+  editor, the only plugins that matter are the ones in this repository, and
+  those are ported rather than supported — see doc/hygiene.md. A ten-year-old
+  plugin still working stopped being a feature worth carrying a renderer for.
 
 **Do not keep:**
 

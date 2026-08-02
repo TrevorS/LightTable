@@ -159,10 +159,11 @@ Ranked by what a failure would cost.
 
 | gap | where it is covered today |
 |---|---|
-| The browser tab and its webview | `script/smoke-test.mts` only — one script, once per run, on the surface most likely to break on an Electron bump |
+| The browser tab and its webview | `test-e2e/browser-tab.spec.ts` covers the controls, the absent `preload`, and the webview surviving a redraw; smoke covers it end to end with a real page. What is still uncovered is the devtools connection, which needs the remote debugging port the e2e fixture turns off |
 | Plugin capability enforcement | smoke only for the general case; `windows.spec.ts` covers two specific historical bugs |
 | The application menu | smoke only, one assertion |
 | The settings and keymap UI | nothing, at any layer |
+| The docs sidebar, the plugin manager and the object inspector | `doc-sidebar.spec.ts`, `plugin-manager.spec.ts` and `inspector.spec.ts` cover what each draws and what changes it. Each was written with the conversion off `defui`; none existed before |
 | `contextIsolation` / no Node in the renderer | smoke only — a security-relevant invariant that would be cheap to pin as an e2e one-liner |
 | The background search worker round-trip | smoke proves the worker answers; the e2e search tests go through the UI and might not exercise it |
 | Dragging a grip to resize a panel | `renderer.spec.ts` asserts each grip exists, is in the right parent and is `draggable`, and drives `:width!` directly — Playwright does not synthesise HTML5 drag, so the browser's half is unproven |
