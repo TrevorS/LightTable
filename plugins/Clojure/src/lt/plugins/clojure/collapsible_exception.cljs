@@ -25,7 +25,13 @@
   (let [{:keys [result summary]} @this]
     ;; A seq rather than a vector: Replicant renders one node or a list of
     ;; them, and a vector of two would read as a tag and its children.
-    (list [:span.truncated (str summary " ...")]
+    ;;
+    ;; Truncated here rather than by each caller, which is what the class is
+    ;; called and what the "..." promises. `::cljs-expandable-exception` passed
+    ;; the whole stack as the summary whenever there was one — `.truncated` is
+    ;; `nowrap` with `overflow:hidden`, so it drew as a single very long line
+    ;; that happened to be clipped rather than as a summary.
+    (list [:span.truncated (str (truncate summary) " ...")]
           [:span.full result])))
 
 (defn- collapsible-exception-UI
@@ -63,21 +69,40 @@
           :triggers #{:editor.exception.collapsible}
           :reaction
   (fn [this summary stack loc]
-    (let [ed      (:ed @this)
-          line    (ed/line-handle ed (:line loc))
-          ex-obj  (object/create ::collapsible-exception
-                                 {:ed this, :result stack,
-                                  :summary summary
-                                  :loc loc, :line line})]
-      (when-let [prev (get (@this :widgets) [line :inline])]
-        (when (:open @prev) (object/merge! ex-obj {:open true}))
-        (object/raise prev :clear!))
-      (when (:start-line loc)
-        (doseq [widget (map #(get (@this :widgets) [(ed/line-handle ed %) :inline])
-                             (range (:start-line loc) (:line loc)))
-                :when widget]
-          (object/raise widget :clear!)))
-      (object/update! this [:widgets] assoc [line :inline] ex-obj))))
+    ;; The guard `lt.objs.eval/::inline-exceptions` has, for the reason it has
+    ;; it: the line is `(dec (:end-line meta))`, and nREPL reports no end line
+    ;; for an exception it cannot place — a reader error, a form sent without
+    ;; position. `(dec nil)` is -1 in ClojureScript rather than an error, so
+    ;; without this the first unplaceable exception asks for line -1.
+    ;;
+    ;; `integer?` and not `(>= (:line loc) 0)` alone: `(>= nil 0)` compiles to
+    ;; `null >= 0`, which is *true*, so a nil line passes a bounds check.
+    (when (and stack (integer? (:line loc)) (not (neg? (:line loc))))
+      (let [ed      (:ed @this)
+            line    (ed/line-handle ed (:line loc))
+            ex-obj  (object/create ::collapsible-exception
+                                   {:ed this, :result stack,
+                                    :summary summary
+                                    :loc loc, :line line})]
+        ;; Both kinds of widget, not just `:inline`. `lt.objs.eval` writes
+        ;; underline results to `[line :underline]`, so an exception landing on
+        ;; a line that already has one has to clear whichever is there —
+        ;; clearing one of the two leaves the other on screen with nothing
+        ;; holding it. Being open carries over from whichever it replaces,
+        ;; which is what makes nREPL's second, better exception land expanded
+        ;; if you had expanded the first.
+        (doseq [prev [(get (@this :widgets) [line :inline])
+                      (get (@this :widgets) [line :underline])]
+                :when prev]
+          (when (:open @prev) (object/merge! ex-obj {:open true}))
+          (object/raise prev :clear!))
+        (when (:start-line loc)
+          (doseq [type [:inline :underline]
+                  widget (map #(get (@this :widgets) [(ed/line-handle ed %) type])
+                              (range (:start-line loc) (:line loc)))
+                  :when widget]
+            (object/raise widget :clear!)))
+        (object/update! this [:widgets] assoc [line :inline] ex-obj)))))
 
 
 (behavior ::clj-expandable-exception

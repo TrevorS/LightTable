@@ -80,36 +80,6 @@ Found writing the copy test in `test-e2e/inline-results.spec.ts`, which is why
 that test opens a file per case. Narrow: it needs two different producers on
 one line.
 
-### The collapsible exception is a whole feature nothing can reach
-
-`plugins/Clojure/src/lt/plugins/clojure/collapsible_exception.cljs` is 111
-lines: an object, a view, and `::expandable-exceptions`, which draws a
-truncated exception you can click to expand. It is wired — `clojure.behaviors`
-gives `:editor.clj.common` that behavior and gives the `:collapsible.exception`
-tag seven more.
-
-What is not wired is the two behaviors that start it. `::clj-expandable-
-exception` and `::cljs-expandable-exception` trigger on
-`:editor.eval.clj.exception` and `:editor.eval.cljs.exception` and raise
-`:editor.exception.collapsible`, which is the only thing `::expandable-
-exceptions` listens for and which nothing else raises. Both triggers are taken
-instead by `lt.plugins.clojure/clj-exception` and `::cljs-exception`, which
-raise plain `:editor.exception` — so the older implementation answers and the
-newer one, along with the object, the view and the eight behavior lines
-downstream of it, is unreachable.
-
-Found by cross-checking every `(behavior ::…)` in the repository against every
-name in a `.behaviors` file: 37 are declared and unreferenced, 28 of which are
-`:type :user` and therefore the documented opt-in config surface. These two are
-in the other nine.
-
-Two ways to close it, and they are opposite. Wiring it means swapping the two
-`clojure.behaviors` lines that name `clj-exception` and `cljs-exception`, which
-turns a feature on and is a change to what evaluating broken Clojure looks
-like. Deleting it means the file, its module entry in `shadow-cljs.edn`, and
-nine lines of `clojure.behaviors`. Not decided here because turning it on is a
-product call rather than a hygiene one.
-
 ### Splits are half-projected
 
 Each tabset draws its own strip and the actions carry the tabset id, so the
@@ -281,6 +251,44 @@ would create the second source of truth it exists to avoid.
 ---
 
 ## Closed
+
+**The collapsible exception was a whole feature nothing could reach** — wired
+on 2026-08-02. An object, a view and eight lines of `:collapsible.exception`
+tag config, all downstream of `::expandable-exceptions`, which listens for
+`:editor.exception.collapsible` — and the only two behaviors that raise it were
+absent from `clojure.behaviors`. Both of their triggers were taken by
+`lt.plugins.clojure/clj-exception` and `::cljs-exception`, which raise the
+generic `:editor.exception` instead, so the older implementation answered and
+the newer one was unreachable. Found by cross-checking every `(behavior ::…)`
+in the repository against every name in a `.behaviors` file.
+
+Wiring it was not the two-line swap the entry predicted, because a path nothing
+runs drifts from the one beside it. Two divergences from
+`lt.objs.eval/::inline-exceptions`, both real:
+
+*No guard on the line.* `::inline-exceptions` checks `(>= (:line loc) 0)`
+because the line is `(dec (:end-line meta))` and nREPL reports no end line for
+an exception it cannot place — a reader error, a form sent without position.
+`(dec nil)` is -1 in ClojureScript rather than an error. The guard here is
+`integer?` as well, because `(>= nil 0)` compiles to `null >= 0`, which is
+*true* — so a bounds check alone is not one.
+
+*Cleared one of the two widget kinds.* It cleared `[line :inline]` and not
+`[line :underline]`, which is the open entry above about a doc orphaning an
+underline result, in a second place. An exception landing on a line that
+already had a result would have left it on screen with nothing holding it.
+
+Also `::cljs-expandable-exception` passed the whole stack as the *summary*
+whenever there was one, and `.truncated` is `nowrap` with `overflow:hidden` —
+so it drew as one very long clipped line. The view truncates now, which is what
+the class is called and what the "..." promises.
+
+Three tests in `test-e2e/inline-results.spec.ts`, and the negative control was
+run: with the wiring reverted, two of the three fail. The third is the guard,
+which only the collapsible path needed. One of them asserts the widget's height
+grows when it expands rather than only that the class flipped — CodeMirror 5
+wanted a `:changed` raise for that and CodeMirror 6 does not, and this is what
+says so.
 
 **`make clean` removed none of the nine modules on Linux.** It had been fixed
 once already — the list named five of nine — and the fix was written

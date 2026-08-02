@@ -44,7 +44,7 @@
  [:editor.clj :lt.plugins.clojure/clj-result.replace]
  [:editor.clj :lt.plugins.clojure/clj-result.inline-at-cursor]
  [:editor.clj :lt.plugins.clojure/clj-result.return]
- [:editor.clj :lt.plugins.clojure/clj-exception]
+ [:editor.clj :lt.plugins.clojure.collapsible-exception/clj-expandable-exception]
  [:editor.clj :lt.plugins.clojure/clj-watch-result]
  [:editor.clj :lt.plugins.clojure/clj-watch-src]
  [:editor.clj :lt.plugins.clojure/clj-watch-custom-src]
@@ -83,7 +83,7 @@
  [:editor.cljs :lt.plugins.clojure/cljs-result.replace]
  [:editor.cljs :lt.plugins.clojure/cljs-result.inline-at-cursor]
  [:editor.cljs :lt.plugins.clojure/cljs-result.return]
- [:editor.cljs :lt.plugins.clojure/cljs-exception]
+ [:editor.cljs :lt.plugins.clojure.collapsible-exception/cljs-expandable-exception]
  [:editor.cljs :lt.plugins.clojure/cljs-watch-result]
  [:editor.cljs :lt.plugins.clojure/cljs-watch-src]
  [:editor.cljs :lt.plugins.clojure/cljs-watch-custom-src]
@@ -121,7 +121,18 @@
  [:sidebar.docs.search :lt.plugins.clojure/clj-doc-search]
  [:sidebar.docs.search :lt.plugins.clojure/cljs-doc-search]
 
- ; collapsible stacktrace
+ ; A Clojure exception is drawn collapsed: the first line, and the frames
+ ; behind a click. `:editor.clj.common` is on both Clojure and ClojureScript
+ ; editors, so this one entry serves the two above.
+ ;
+ ; It replaces `lt.objs.eval/inline-exceptions`, which draws the whole stack
+ ; at once — that is still what every other language gets, because only nREPL
+ ; sends a summary and frames as separate fields. Both cannot be wired: each
+ ; writes `[line :inline]`, so the second would orphan the first's widget.
+ ;
+ ; To go back, put `lt.plugins.clojure/clj-exception` and `/cljs-exception`
+ ; on the two editor tags above instead. They are the adapters onto the
+ ; generic `:editor.exception`, and they are kept for that.
  [:editor.clj.common :lt.plugins.clojure.collapsible-exception/expandable-exceptions]
  ; new :collapsible.exception TAG
  [:collapsible.exception :lt.objs.menu/menu!]

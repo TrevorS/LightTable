@@ -218,3 +218,127 @@ test(`a result that is a DOM node is hosted, not dropped, on ${engine}`, async (
 
     await close(window, file);
 });
+
+// ── The collapsible exception ───────────────────────────────────────────────
+//
+// A Clojure exception is drawn as its first line, with the frames behind a
+// click. It had been written and never wired: the two behaviors that start it
+// were absent from `clojure.behaviors`, so nothing raised
+// `:editor.exception.collapsible` and the object, its view and eight lines of
+// tag wiring were all unreachable. These are the first time any of it has run.
+//
+// The trigger is raised directly rather than through nREPL, which is the same
+// path from the editor's side and needs no server.
+
+/** Ask a Clojure editor to draw an exception, as `nrepl/->exception` shapes one. */
+async function raiseException(window: Page, file: string, res: string): Promise<void> {
+    await evalClj(window, `
+        (let [ed (first (pool/by-path "${file}"))]
+          (object/raise ed :editor.eval.clj.exception ${res} :passed)
+          :raised)`);
+}
+
+const DIVIDE_BY_ZERO = `
+    {:result "java.lang.ArithmeticException: Divide by zero"
+     :stack "java.lang.ArithmeticException: Divide by zero
+\tat clojure.lang.Numbers.divide(Numbers.java:190)
+\tat user$eval1.invokeStatic(NO_SOURCE_FILE:1)"
+     :meta {:line 1 :end-line 2 :end-column 5}}`;
+
+test('an exception is drawn collapsed, and the frames are behind a click', async ({ window }) => {
+    const file = await open(window, engine, 'boom.clj', '(ns user)\n(/ 1 0)\n');
+
+    await raiseException(window, file, DIVIDE_BY_ZERO);
+
+    await expect.poll(async () => (await inside(window, file, '.inline-exception.result-mark'))?.count).toBe(1);
+
+    // Collapsed: `.result-mark .full` is `display:none` until `.open` is on the
+    // root, so both halves are always drawn and the class decides which you see.
+    const collapsed = await insideEditor<{ open: boolean, truncated: string, full: string }>(
+        window, file, `
+        (let [^js root (.querySelector root ".inline-exception.result-mark")]
+          {:open (.contains (.-classList root) "open")
+           :truncated (.-textContent ^js (.querySelector root ".truncated"))
+           :full (.-textContent ^js (.querySelector root ".full"))})`);
+    expect(collapsed?.open).toBe(false);
+    expect(collapsed?.truncated).toContain('Divide by zero');
+    expect(collapsed?.truncated).not.toContain('Numbers.java');
+    // Present, and not visible — which is what makes expanding free.
+    expect(collapsed?.full).toContain('Numbers.java');
+
+    await insideEditor(window, file,
+        '(do (.click ^js (.querySelector root ".inline-exception.result-mark")) :clicked)');
+
+    await expect.poll(async () => await insideEditor<boolean>(window, file, `
+        (.contains (.-classList ^js (.querySelector root ".inline-exception.result-mark")) "open")`))
+        .toBe(true);
+
+    // And the editor made room for it. Toggling a class is not the feature —
+    // the frames being readable is, and a block widget that grew inside a
+    // CodeMirror 6 layout that did not remeasure would be clipped instead.
+    // Nothing raises the `:changed` that CodeMirror 5 needed here; this is
+    // what says none is wanted.
+    const grew = await insideEditor<{ before: number, after: number }>(window, file, `
+        (let [^js el (.querySelector root ".inline-exception.result-mark")
+              ^js full (.querySelector el ".full")]
+          {:before (.-offsetHeight ^js (.querySelector el ".truncated"))
+           :after (.-offsetHeight full)})`);
+    expect(grew!.after).toBeGreaterThan(grew!.before);
+
+    await close(window, file);
+});
+
+test('and a second exception on the line replaces the first, keeping it open', async ({ window }) => {
+    // nREPL sends a Clojure exception twice on purpose — once instantly from
+    // what it printed, once with orchard's frames when they arrive. The second
+    // has to replace the first rather than stack on it, and if you had expanded
+    // the first the better one arrives expanded.
+    const file = await open(window, engine, 'twice.clj', '(ns user)\n(/ 1 0)\n');
+
+    await raiseException(window, file, DIVIDE_BY_ZERO);
+    await expect.poll(async () => (await inside(window, file, '.inline-exception.result-mark'))?.count).toBe(1);
+
+    await insideEditor(window, file,
+        '(do (.click ^js (.querySelector root ".inline-exception.result-mark")) :clicked)');
+    await expect.poll(async () => await insideEditor<boolean>(window, file, `
+        (.contains (.-classList ^js (.querySelector root ".inline-exception.result-mark")) "open")`))
+        .toBe(true);
+
+    await raiseException(window, file, `
+        {:result "java.lang.ArithmeticException: Divide by zero"
+         :stack "java.lang.ArithmeticException: Divide by zero
+\tat clojure.lang.Numbers.divide(Numbers.java:190)
+\tat user/eval1 (NO_SOURCE_FILE:1)
+\tat clojure.main/repl (main.clj:437)"
+         :meta {:line 1 :end-line 2 :end-column 5}}`);
+
+    // One widget, not two.
+    await expect.poll(async () => (await inside(window, file, '.inline-exception.result-mark'))?.count).toBe(1);
+    expect(await insideEditor<string>(window, file,
+        '(.-textContent ^js (.querySelector root ".inline-exception.result-mark .full"))'))
+        .toContain('clojure.main/repl');
+    expect(await insideEditor<boolean>(window, file, `
+        (.contains (.-classList ^js (.querySelector root ".inline-exception.result-mark")) "open")`))
+        .toBe(true);
+
+    await close(window, file);
+});
+
+test('and an exception nREPL could not place draws nothing rather than throwing', async ({ window }) => {
+    // A reader error has no end line, and `(dec nil)` is -1 in ClojureScript
+    // rather than an error — so this asked for line -1. The guard is the one
+    // `lt.objs.eval/inline-exceptions` has; `(>= nil 0)` is `null >= 0`, which
+    // is true, so a bounds check alone would not have been one.
+    const file = await open(window, engine, 'unplaced.clj', '(ns user)\n(/ 1 0)\n');
+    await window.evaluate(() => (globalThis as any).lt.objs.control.request('clear-errors', {}));
+
+    await raiseException(window, file, `
+        {:result "RuntimeException: EOF while reading" :stack "RuntimeException: EOF" :meta {}}`);
+
+    expect((await inside(window, file, '.inline-exception.result-mark'))?.count).toBe(0);
+    const errors = await window.evaluate(() =>
+        (globalThis as any).lt.objs.control.request('errors', {}));
+    expect(errors.errors).toEqual([]);
+
+    await close(window, file);
+});
