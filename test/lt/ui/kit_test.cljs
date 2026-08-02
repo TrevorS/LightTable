@@ -12,6 +12,7 @@
   Replicant calls it: `(f attrs children)`."
   (:require [cljs.test :refer-macros [deftest is testing]]
             [clojure.string :as string]
+            [lt.support.hiccup :as h]
             [lt.ui.band :as band]
             [lt.ui.chrome :as chrome]
             [lt.ui.row]
@@ -57,29 +58,6 @@
   ([k attrs body]
    ((get (alias/get-registered-aliases) k) attrs body)))
 
-(defn- nodes [hiccup]
-  (cond
-    (vector? hiccup) (cons hiccup (mapcat nodes hiccup))
-    (seq? hiccup) (mapcat nodes hiccup)
-    :else nil))
-
-(defn- classes-of
-  "Every class the tree names, however it was written — a keyword tag's own
-  classes, a `:class` string, or a `:class` vector with nils in it."
-  [hiccup]
-  (->> (nodes hiccup)
-       (mapcat (fn [node]
-                 (let [tag (name (first node))
-                       a (second node)
-                       c (when (map? a) (:class a))]
-                   (concat (rest (string/split tag #"\."))
-                           (cond
-                             (string? c) (string/split c #"\s+")
-                             (coll? c) (mapcat #(when (string? %) (string/split % #"\s+")) c)
-                             :else nil)))))
-       (remove string/blank?)
-       set))
-
 (deftest the-kit-is-the-twenty-five-the-document-draws
   ;; The three kit namespaces and nothing else, which is what makes the count
   ;; exact here: a live window also has `:lt.ui.pane/pane`, registered by a
@@ -108,7 +86,7 @@
                                         :message "m" :value "v" :before "b" :after "a"
                                         :yours "y" :name-of "n" :what "w"}
                                        "body")]
-                        node (nodes drawn)
+                        node (h/nodes drawn)
                         :let [style (when (map? (second node)) (:style (second node)))]
                         :when (map? style)
                         [prop] style
@@ -123,7 +101,7 @@
   ;; class that a stylesheet hangs one off — so the tone is asserted to be a
   ;; whole-row class and nothing else.
   (doseq [tone [:warning :error :agent :disabled]]
-    (let [classes (classes-of (expand :lt.ui.row/list-row {:tone tone} "x"))]
+    (let [classes (h/classes-in (expand :lt.ui.row/list-row {:tone tone} "x"))]
       (is (contains? classes (str "row--" (name tone)))
           (str "tone " tone " is a role the stylesheet resolves"))))
   (let [drawn (expand :lt.ui.row/list-row {:tone :error} "x")
@@ -148,7 +126,7 @@
             (str "depth " depth)))))
   (testing "and the twist sits in the leading slot, so names line up down the list"
     (let [drawn (expand :lt.ui.row/tree-row {:depth 0 :open? true} "src")]
-      (is (contains? (classes-of (expand :lt.ui.row/list-row (second drawn) (drop 2 drawn)))
+      (is (contains? (h/classes-in (expand :lt.ui.row/list-row (second drawn) (drop 2 drawn)))
                      "row__leading")))))
 
 (deftest a-band-is-complete-from-its-props-alone
@@ -156,22 +134,22 @@
   ;; a live buffer. Every band is expanded with nothing but props and asked for
   ;; the parts the document says it has.
   (testing "a result carries its own gutter, so it lands on the code"
-    (is (contains? (classes-of (expand :lt.ui.band/result {:line 6 :value "v"}))
+    (is (contains? (h/classes-in (expand :lt.ui.band/result {:line 6 :value "v"}))
                    "band__gutter")))
   (testing "a stale value is marked rather than cleared"
-    (let [classes (classes-of (expand :lt.ui.band/result
+    (let [classes (h/classes-in (expand :lt.ui.band/result
                                       {:line 6 :value "v" :status :lost :stale? true}))]
       (is (contains? classes "band--stale"))
       (is (contains? classes "band__stale"))))
   (testing "a watch inside a loop is a sequence, not its last value"
     (let [drawn (expand :lt.ui.band/watch {:line 19 :history [0 1 2] :reads 3})]
-      (is (contains? (classes-of drawn) "band__history"))
-      (is (= 3 (count (filter #(= :span.band__read (first %)) (nodes drawn)))))))
+      (is (contains? (h/classes-in drawn) "band__history"))
+      (is (= 3 (count (filter #(= :span.band__read (first %)) (h/nodes drawn)))))))
   (testing "severity carries the diagnostic's tint, so a warning is not an error"
-    (is (contains? (classes-of (expand :lt.ui.band/diagnostic {:line 1 :message "m"}))
+    (is (contains? (h/classes-in (expand :lt.ui.band/diagnostic {:line 1 :message "m"}))
                    "band--error")
         "error by default")
-    (is (contains? (classes-of (expand :lt.ui.band/diagnostic
+    (is (contains? (h/classes-in (expand :lt.ui.band/diagnostic
                                        {:line 1 :severity :warning :message "m"}))
                    "band--warning")))
   (testing "and no band replaces its line number with a marker"
@@ -185,10 +163,10 @@
                        :lt.ui.band/watch {:line 19 :value "v"}
                        :lt.ui.band/proposed-edit {:line 14 :before "b" :after "a"}}]
       (let [gutter (first (filter #(= :div.band__gutter (first %))
-                                  (nodes (expand k attrs))))]
+                                  (h/nodes (expand k attrs))))]
         (is (some #(= (:line attrs) %) (flatten gutter))
             (str k " names the line it belongs to"))
-        (is (empty? (filter #(string/starts-with? % "dot--") (classes-of gutter)))
+        (is (empty? (filter #(string/starts-with? % "dot--") (h/classes-in gutter)))
             (str k " draws no marker"))))))
 
 (deftest the-gutter-column-still-takes-a-marker
@@ -196,10 +174,10 @@
   ;; gutter would be, and that is the one place a marker belongs — it replaces
   ;; the number rather than crowding it, because there is one column.
   (let [marked (band/gutter 90 {:marker :error})]
-    (is (contains? (classes-of marked) "band__gutter--marked"))
-    (is (contains? (classes-of marked) "dot--error"))
+    (is (contains? (h/classes-in marked) "band__gutter--marked"))
+    (is (contains? (h/classes-in marked) "dot--error"))
     (is (not (some #(= 90 %) (flatten marked))) "the number is gone, not beside it"))
-  (is (contains? (classes-of (band/gutter 89 {:active? true})) "band__gutter--active"))
+  (is (contains? (h/classes-in (band/gutter 89 {:active? true})) "band__gutter--active"))
   (is (some #(= 88 %) (flatten (band/gutter 88)))))
 
 (deftest evidence-holds-more-than-two-claims
@@ -210,12 +188,12 @@
                        :rows [{:label "before" :value "TypeError" :tone :before}
                               {:label "after" :value "(\"a.ts\")" :tone :after}
                               {:label "types" :value "clean" :tone :after}]})]
-    (is (= 3 (count (filter #(= :div.evidence__row (first %)) (nodes drawn)))))
+    (is (= 3 (count (filter #(= :div.evidence__row (first %)) (h/nodes drawn)))))
     (testing "the age is shown rather than hidden"
       (is (string/includes? (pr-str drawn) "just now"))))
   (testing "and the two-row shorthand still draws two"
     (let [drawn (expand :lt.ui.band/evidence {:before "was" :after "is"})]
-      (is (= 2 (count (filter #(= :div.evidence__row (first %)) (nodes drawn))))))))
+      (is (= 2 (count (filter #(= :div.evidence__row (first %)) (h/nodes drawn))))))))
 
 (deftest time-is-formatted-from-an-age-rather-than-a-clock
   ;; Which is what keeps every component above renderable twice from the same

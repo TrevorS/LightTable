@@ -8,37 +8,8 @@
 
   Hiccup is data, so the assertions walk it. `find-all` is the whole harness."
   (:require [cljs.test :refer-macros [deftest is testing]]
-            [clojure.string :as string]
+            [lt.support.hiccup :as h]
             [lt.ui.view :as view]))
-
-(defn- nodes
-  "Every vector in `hiccup`, depth first. Hiccup is a tree of vectors and seqs,
-  and this flattens it into the nodes to assert about."
-  [hiccup]
-  (cond
-    (vector? hiccup) (cons hiccup (mapcat nodes hiccup))
-    (seq? hiccup) (mapcat nodes hiccup)
-    :else nil))
-
-(defn- find-all
-  "Every node whose tag is `tag`."
-  [hiccup tag]
-  (filter #(= tag (first %)) (nodes hiccup)))
-
-(defn- attrs-of [node]
-  (let [a (second node)]
-    (when (map? a) a)))
-
-(defn- text-of
-  "Every string in the tree, joined — what a person would read.
-
-  Attribute maps are not descended into: a key and a handler are both data a
-  reader never sees, and counting them as text made `:replicant/key` look like
-  a label."
-  [hiccup]
-  (->> (tree-seq #(and (coll? %) (not (map? %))) seq hiccup)
-       (filter string?)
-       (string/join " ")))
 
 (def ^:private state
   {:tabsets [{:id 0
@@ -71,40 +42,40 @@
    :keymap {"⌘⏎" [[:eval/form "src-worker/fuzzy.ts" 7]]}})
 
 (deftest a-run-is-a-tab-like-any-other
-  (let [tabs (find-all (view/titlebar state) :lt.ui.chrome/tab)]
+  (let [tabs (h/find-all (view/titlebar state) :lt.ui.chrome/tab)]
     (is (= 2 (count tabs)))
     (testing "a tab carries its own label, because most tabs are not files"
       ;; The console, the plugin manager and the component kit have a name and
       ;; no path at all — a strip that took the leaf of one would draw `obj-42`.
-      (is (= "fuzzy.ts" (text-of (first tabs)))))
+      (is (= "fuzzy.ts" (h/text-of (first tabs)))))
     (testing "and the run is named by its label, with what it is waiting on"
       (let [run (second tabs)]
-        (is (= :run (:origin (attrs-of run))))
-        (is (= 2 (:count (attrs-of run))) "two edits, neither applied")))
+        (is (= :run (:origin (h/attrs-of run))))
+        (is (= 2 (:count (h/attrs-of run))) "two edits, neither applied")))
     (testing "a run that is not in the tab list is still a tab"
       ;; The projection owns the tab list and knows nothing about runs, so the
       ;; view is what makes "a run is a tab like any other" true on screen.
       (let [projected (update-in state [:tabsets 0 :tabs] (comp vec (partial take 1)))]
-        (is (= 2 (count (find-all (view/titlebar projected) :lt.ui.chrome/tab))))))
+        (is (= 2 (count (h/find-all (view/titlebar projected) :lt.ui.chrome/tab))))))
     (testing "and it is not listed twice when it is in both"
       (is (= 2 (count tabs))))
     (testing "the active one says so"
-      (is (true? (:active? (attrs-of (first tabs))))))
+      (is (true? (:active? (h/attrs-of (first tabs))))))
     (testing "a dirty editor says so in the tab, as a prop rather than a child"
       ;; The dot is the tab's to draw. A view that appended one would be
       ;; deciding what dirty looks like, which is the component's decision and
       ;; would have to be made the same way in every other place a tab appears.
-      (is (true? (:dirty? (attrs-of (first tabs)))))
-      (is (false? (:dirty? (attrs-of (second tabs))))))
+      (is (true? (:dirty? (h/attrs-of (first tabs)))))
+      (is (false? (:dirty? (h/attrs-of (second tabs))))))
     (testing "and what you can do to it is a handler it is given"
-      (is (= [[:tab/activate 0 0]] (:on-select (attrs-of (first tabs)))))
-      (is (= [[:tab/menu 0 0]] (:on-menu (attrs-of (first tabs)))))
-      (is (= [[:tab/close 0 0]] (:on-close (attrs-of (first tabs)))))
+      (is (= [[:tab/activate 0 0]] (:on-select (h/attrs-of (first tabs)))))
+      (is (= [[:tab/menu 0 0]] (:on-menu (h/attrs-of (first tabs)))))
+      (is (= [[:tab/close 0 0]] (:on-close (h/attrs-of (first tabs)))))
       (testing "closing only when the user behavior asks for it"
-        (is (nil? (:on-close (attrs-of (second tabs))))))
+        (is (nil? (:on-close (h/attrs-of (second tabs))))))
       (testing "and picking it up is two state changes, not a library"
-        (is (= [[:tab/drag-start 0 0]] (:on-drag-start (attrs-of (first tabs)))))
-        (is (= [[:tab/drop 0 1]] (:on-drop (attrs-of (second tabs)))))))))
+        (is (= [[:tab/drag-start 0 0]] (:on-drag-start (h/attrs-of (first tabs)))))
+        (is (= [[:tab/drop 0 1]] (:on-drop (h/attrs-of (second tabs)))))))))
 
 (deftest a-strip-belongs-to-its-tabset
   ;; There is one per tabset, because a tabset is a column of the window and
@@ -115,60 +86,60 @@
                      :tabsets
                      [{:id 0 :active 0 :tabs [{:id "a" :label "a"}]}
                       {:id 1 :active 0 :tabs [{:id "b" :label "b"} {:id "c" :label "c"}]}])]
-    (is (= ["a"] (map text-of (find-all (view/titlebar split 0) :lt.ui.chrome/tab))))
-    (is (= ["b" "c"] (map text-of (find-all (view/titlebar split 1) :lt.ui.chrome/tab))))
+    (is (= ["a"] (map h/text-of (h/find-all (view/titlebar split 0) :lt.ui.chrome/tab))))
+    (is (= ["b" "c"] (map h/text-of (h/find-all (view/titlebar split 1) :lt.ui.chrome/tab))))
     (testing "and the tabset it belongs to is in every action it emits"
       (is (= [[:tab/activate 1 1]]
-             (:on-select (attrs-of (second (find-all (view/titlebar split 1)
+             (:on-select (h/attrs-of (second (h/find-all (view/titlebar split 1)
                                                      :lt.ui.chrome/tab)))))))
     (testing "no argument is the first, which is a window that was never split"
-      (is (= ["a"] (map text-of (find-all (view/titlebar split) :lt.ui.chrome/tab)))))
+      (is (= ["a"] (map h/text-of (h/find-all (view/titlebar split) :lt.ui.chrome/tab)))))
     (testing "and a run with no tab is appended to the first strip and only it"
       ;; It has to be somewhere, and "wherever you happen to be looking" would
       ;; put one in every column of a split window.
       (let [with-run (assoc split :runs (:runs state))]
         (is (= ["a" "port fuzzy to ranges"]
-               (map text-of (find-all (view/titlebar with-run 0) :lt.ui.chrome/tab))))
+               (map h/text-of (h/find-all (view/titlebar with-run 0) :lt.ui.chrome/tab))))
         (is (= ["b" "c"]
-               (map text-of (find-all (view/titlebar with-run 1) :lt.ui.chrome/tab))))))))
+               (map h/text-of (h/find-all (view/titlebar with-run 1) :lt.ui.chrome/tab))))))))
 
 (deftest the-review-queue-is-rows-keyed-by-address
-  (let [rows (find-all (view/review-queue state) :lt.ui.row/list-row)]
+  (let [rows (h/find-all (view/review-queue state) :lt.ui.row/list-row)]
     (is (= 2 (count rows)))
     (testing "keyed by [path line], so a row survives the list changing under it"
-      (is (= ["src-worker/fuzzy.ts" 14] (:replicant/key (attrs-of (first rows))))))
+      (is (= ["src-worker/fuzzy.ts" 14] (:replicant/key (h/attrs-of (first rows))))))
     (testing "the selected one is the review cursor, not a remembered click"
-      (is (false? (:selected? (attrs-of (first rows)))))
-      (is (true? (:selected? (attrs-of (second rows))))))
+      (is (false? (:selected? (h/attrs-of (first rows)))))
+      (is (true? (:selected? (h/attrs-of (second rows))))))
     (testing "a conflict is a tone, and tone is a role rather than a colour"
-      (is (= :warning (:tone (attrs-of (second rows))))))
+      (is (= :warning (:tone (h/attrs-of (second rows))))))
     (testing "focus is separate from selection, because a keyboard has both"
-      (is (true? (:focused? (attrs-of (second rows))))))
+      (is (true? (:focused? (h/attrs-of (second rows))))))
     (testing "and the handler is a vector"
-      (is (= [[:review/goto 0]] (:on-select (attrs-of (first rows))))))))
+      (is (= [[:review/goto 0]] (:on-select (h/attrs-of (first rows))))))))
 
 (deftest an-empty-queue-says-what-would-fill-it
   (let [empty-state (assoc-in state [:runs "port-fuzzy" :edits] [])]
-    (is (seq (find-all (view/review-queue empty-state) :lt.ui.chrome/empty-state)))))
+    (is (seq (h/find-all (view/review-queue empty-state) :lt.ui.chrome/empty-state)))))
 
 (deftest the-agent-is-a-client-like-the-others
-  (let [rows (find-all (view/connections state) :lt.ui.chrome/connection-row)]
+  (let [rows (h/find-all (view/connections state) :lt.ui.chrome/connection-row)]
     (is (= 2 (count rows)))
     (testing "and where it evaluates through is drawn rather than assumed"
-      (let [agent (first (filter #(= :agent (:kind (attrs-of %))) rows))]
+      (let [agent (first (filter #(= :agent (:kind (h/attrs-of %))) rows))]
         (is (some? agent))
-        (is (re-find #"through 51423" (:what (attrs-of agent))))))))
+        (is (re-find #"through 51423" (:what (h/attrs-of agent))))))))
 
 (deftest the-statusbar-counts-what-is-waiting-on-you
   (let [bar (view/statusbar state)]
     (testing "line and column are one-based on screen and zero-based in the data"
-      (is (re-find #"7 / 4" (text-of bar))))
+      (is (re-find #"7 / 4" (h/text-of bar))))
     (testing "two unapplied edits, one executing run"
-      (is (= 2 (:count (attrs-of (first (find-all bar :lt.ui.chrome/count-pill))))))
-      (is (re-find #"1 run" (text-of bar))))
+      (is (= 2 (:count (h/attrs-of (first (h/find-all bar :lt.ui.chrome/count-pill))))))
+      (is (re-find #"1 run" (h/text-of bar))))
     (testing "and a quiet editor says nothing"
       (let [quiet (assoc state :runs {})]
-        (is (empty? (find-all (view/statusbar quiet) :lt.ui.chrome/count-pill)))))))
+        (is (empty? (h/find-all (view/statusbar quiet) :lt.ui.chrome/count-pill)))))))
 
 (deftest the-statusbar-is-the-bar-at-the-bottom-of-the-window
   ;; The three facts that used to be three objects with three nodes. They are
@@ -176,42 +147,42 @@
   ;; in a window — which is the whole reason the surface moved.
   (let [quiet (assoc state :runs {})]
     (testing "working is a count, so two tasks finishing does not stop it once"
-      (is (empty? (find-all (view/statusbar quiet) :lt.ui.chrome/status-dot)))
-      (is (= 1 (count (find-all (view/statusbar (assoc quiet :loading 2))
+      (is (empty? (h/find-all (view/statusbar quiet) :lt.ui.chrome/status-dot)))
+      (is (= 1 (count (h/find-all (view/statusbar (assoc quiet :loading 2))
                                 :lt.ui.chrome/status-dot))))
-      (is (empty? (find-all (view/statusbar (assoc quiet :loading 0))
+      (is (empty? (h/find-all (view/statusbar (assoc quiet :loading 0))
                             :lt.ui.chrome/status-dot))))
 
     (testing "a message is shown, and an error one is toned rather than reworded"
       (let [said (view/statusbar (assoc quiet :message {:text "saved fuzzy.ts"}))
             failed (view/statusbar (assoc quiet :message {:text "no language server" :tone :error}))]
-        (is (re-find #"saved fuzzy.ts" (text-of said)))
-        (is (nil? (:class (attrs-of (first (find-all said :span.statusbar__message))))))
+        (is (re-find #"saved fuzzy.ts" (h/text-of said)))
+        (is (nil? (:class (h/attrs-of (first (h/find-all said :span.statusbar__message))))))
         (is (= "statusbar__message--error"
-               (:class (attrs-of (first (find-all failed :span.statusbar__message))))))))
+               (:class (h/attrs-of (first (h/find-all failed :span.statusbar__message))))))))
 
     (testing "the console appears only when it has something you have not read"
-      (is (empty? (find-all (view/statusbar quiet) :span.statusbar__console)))
-      (is (empty? (find-all (view/statusbar (assoc quiet :console {:unread 0})) :span.statusbar__console)))
+      (is (empty? (h/find-all (view/statusbar quiet) :span.statusbar__console)))
+      (is (empty? (h/find-all (view/statusbar (assoc quiet :console {:unread 0})) :span.statusbar__console)))
       (let [unread (view/statusbar (assoc quiet :console {:unread 4}))]
-        (is (= 4 (:count (attrs-of (first (find-all unread :lt.ui.chrome/count-pill))))))
+        (is (= 4 (:count (h/attrs-of (first (h/find-all unread :lt.ui.chrome/count-pill))))))
         (testing "and clicking it runs the command rather than reaching for the console"
           (is (= [[:cmd/exec :toggle-console]]
-                 (get-in (attrs-of (first (find-all unread :span.statusbar__console))) [:on :click]))))))
+                 (get-in (h/attrs-of (first (h/find-all unread :span.statusbar__console))) [:on :click]))))))
 
     (testing "an error in it colours the count and nothing else"
       (let [bad (view/statusbar (assoc quiet :console {:unread 2 :tone :error}))]
-        (is (= :error (:tone (attrs-of (first (find-all bad :lt.ui.chrome/count-pill))))))))))
+        (is (= :error (:tone (h/attrs-of (first (h/find-all bad :lt.ui.chrome/count-pill))))))))))
 
 (deftest the-connect-panel-shows-the-clients-or-the-kinds-of-client
   ;; One panel, two lists, and the state says which — the same shape the
   ;; workspace panel has for tree-or-recents, and for the same reason: CSS
   ;; hiding one of them is a second place the answer lives.
   (let [drawn (view/connections state)]
-    (is (= 2 (count (find-all drawn :lt.ui.chrome/connection-row))))
-    (is (empty? (find-all drawn :lt.ui.row/list-row)) "the kinds are not underneath")
+    (is (= 2 (count (h/find-all drawn :lt.ui.chrome/connection-row))))
+    (is (empty? (h/find-all drawn :lt.ui.row/list-row)) "the kinds are not underneath")
     (testing "and what you can do to one is in its menu, never on the row"
-      (let [row (attrs-of (first (find-all drawn :lt.ui.chrome/connection-row)))]
+      (let [row (h/attrs-of (first (h/find-all drawn :lt.ui.chrome/connection-row)))]
         (is (= [[:client/menu 51423]] (:on-menu row)))
         (is (nil? (:trailing row)) "which is a hint when there is one, not a control"))))
 
@@ -219,20 +190,20 @@
                         {:choosing? true
                          :connectors [{:name-of "Ports" :desc "the local TCP and WebSocket ports"}]})
         drawn (view/connections choosing)]
-    (is (empty? (find-all drawn :lt.ui.chrome/connection-row)) "the clients are not underneath")
+    (is (empty? (h/find-all drawn :lt.ui.chrome/connection-row)) "the clients are not underneath")
     (is (= [[:client/connect "Ports"]]
-           (:on-select (attrs-of (first (find-all drawn :lt.ui.row/list-row))))))
+           (:on-select (h/attrs-of (first (h/find-all drawn :lt.ui.row/list-row))))))
     (testing "and none registered is a thing to say"
-      (is (seq (find-all (view/connections (assoc state :connect {:choosing? true :connectors []}))
+      (is (seq (h/find-all (view/connections (assoc state :connect {:choosing? true :connectors []}))
                          :lt.ui.chrome/empty-state))))))
 
 (deftest a-connection-is-drawn-as-bound-when-the-buffer-evaluates-through-it
   ;; The claim the panel makes — this is where an eval goes — is read from the
   ;; editor rather than stored, so it cannot be stale in the way a flag can.
-  (let [rows (find-all (view/connections state) :lt.ui.chrome/connection-row)]
-    (is (= [true false] (map (comp boolean :bound? attrs-of) rows)))
+  (let [rows (h/find-all (view/connections state) :lt.ui.chrome/connection-row)]
+    (is (= [true false] (map (comp boolean :bound? h/attrs-of) rows)))
     (testing "and an agent evaluating through a REPL says which one, on the row"
-      (is (= "agent · through 51423" (:what (attrs-of (second rows))))))))
+      (is (= "agent · through 51423" (:what (h/attrs-of (second rows))))))))
 
 (def ^:private with-tree
   (assoc state :workspace
@@ -249,34 +220,34 @@
   ;; The reason to draw from the state rather than to keep a node per file: a
   ;; closed folder is not hidden, it is not there. `/p/src` is loaded and shut,
   ;; so what is in it is remembered and undrawn.
-  (let [rows (find-all (view/workspace with-tree) :lt.ui.row/tree-row)
-        paths (map (comp :replicant/key attrs-of) rows)]
+  (let [rows (h/find-all (view/workspace with-tree) :lt.ui.row/tree-row)
+        paths (map (comp :replicant/key h/attrs-of) rows)]
     (is (= ["/p" "/p/src" "/p/deps.edn" "/notes.md"] paths))
 
     (testing "depth is the tree, and the row is what turns it into an indent"
-      (is (= [0 1 1 0] (map (comp :depth attrs-of) rows))))
+      (is (= [0 1 1 0] (map (comp :depth h/attrs-of) rows))))
 
     (testing "a file has no twist and a folder has one either way"
-      (is (= [true false nil nil] (map (comp :open? attrs-of) rows)))
-      (is (nil? (:open? (attrs-of (last rows)))) "nil reserves the column without drawing in it"))
+      (is (= [true false nil nil] (map (comp :open? h/attrs-of) rows)))
+      (is (nil? (:open? (h/attrs-of (last rows)))) "nil reserves the column without drawing in it"))
 
     (testing "clicking a folder opens it and clicking a file opens the file"
-      (is (= [[:tree/toggle "/p"]] (:on-select (attrs-of (first rows)))))
-      (is (= [[:tree/open "/p/deps.edn"]] (:on-select (attrs-of (nth rows 2))))))
+      (is (= [[:tree/toggle "/p"]] (:on-select (h/attrs-of (first rows)))))
+      (is (= [[:tree/open "/p/deps.edn"]] (:on-select (h/attrs-of (nth rows 2))))))
 
     (testing "and the file you are looking at is the row that is selected"
-      (is (empty? (filter (comp :selected? attrs-of) rows)))
-      (let [here (find-all (view/workspace
+      (is (empty? (filter (comp :selected? h/attrs-of) rows)))
+      (let [here (h/find-all (view/workspace
                             (assoc-in with-tree [:tabsets 0 :tabs]
                                       [{:id "/p/deps.edn" :label "deps.edn" :path "/p/deps.edn"}]))
                            :lt.ui.row/tree-row)]
-        (is (= ["/p/deps.edn"] (map (comp :replicant/key attrs-of)
-                                    (filter (comp :selected? attrs-of) here))))))))
+        (is (= ["/p/deps.edn"] (map (comp :replicant/key h/attrs-of)
+                                    (filter (comp :selected? h/attrs-of) here))))))))
 
 (deftest opening-a-folder-shows-what-was-already-read
   (let [opened (assoc-in with-tree [:workspace :nodes "/p/src" :open?] true)
-        paths (map (comp :replicant/key attrs-of)
-                   (find-all (view/workspace opened) :lt.ui.row/tree-row))]
+        paths (map (comp :replicant/key h/attrs-of)
+                   (h/find-all (view/workspace opened) :lt.ui.row/tree-row))]
     (is (= ["/p" "/p/src" "/p/src/core.cljs" "/p/deps.edn" "/notes.md"] paths))))
 
 (deftest a-row-being-renamed-is-an-input-rather-than-a-row
@@ -285,31 +256,31 @@
   (let [renaming (assoc-in with-tree [:workspace :renaming] "/p/deps.edn")
         drawn (view/workspace renaming)]
     (is (= ["/p" "/p/src" "/notes.md"]
-           (map (comp :replicant/key attrs-of) (find-all drawn :lt.ui.row/tree-row))))
-    (let [input (first (find-all drawn :input.tree__rename))]
-      (is (= "deps.edn" (:value (attrs-of input))))
+           (map (comp :replicant/key h/attrs-of) (h/find-all drawn :lt.ui.row/tree-row))))
+    (let [input (first (h/find-all drawn :input.tree__rename))]
+      (is (= "deps.edn" (:value (h/attrs-of input))))
       (testing "and what you typed reaches the action, which is what a placeholder is for"
         (is (= [[:tree/rename-submit "/p/deps.edn" :event/value]]
-               (get-in (attrs-of input) [:on :blur])))))))
+               (get-in (h/attrs-of input) [:on :blur])))))))
 
 (deftest an-empty-workspace-says-what-would-fill-it
   (let [empty-ws (assoc state :workspace {:roots [] :nodes {}})]
-    (is (seq (find-all (view/workspace empty-ws) :lt.ui.chrome/empty-state)))
-    (is (empty? (find-all (view/workspace empty-ws) :lt.ui.row/tree-row)))))
+    (is (seq (h/find-all (view/workspace empty-ws) :lt.ui.chrome/empty-state)))
+    (is (empty? (h/find-all (view/workspace empty-ws) :lt.ui.row/tree-row)))))
 
 (deftest the-panel-shows-the-tree-or-the-workspaces-and-nil-is-which
   ;; `nil` recents rather than an empty list, because having saved no
   ;; workspaces is something to say and not a reason to show the tree.
-  (is (empty? (find-all (view/workspace with-tree) :div.wstree__back)))
+  (is (empty? (h/find-all (view/workspace with-tree) :div.wstree__back)))
   (let [switching (assoc-in with-tree [:workspace :recents]
                             [{:path "/ws/a.clj" :folders ["/p"] :files []}])
         drawn (view/workspace switching)]
-    (is (= 1 (count (find-all drawn :div.wstree__back))) "and a way back to the tree")
-    (is (empty? (find-all drawn :lt.ui.row/tree-row)) "the tree is not underneath it")
+    (is (= 1 (count (h/find-all drawn :div.wstree__back))) "and a way back to the tree")
+    (is (empty? (h/find-all drawn :lt.ui.row/tree-row)) "the tree is not underneath it")
     (is (= [[:workspace/open "/ws/a.clj"]]
-           (:on-select (attrs-of (first (find-all drawn :lt.ui.row/list-row))))))
+           (:on-select (h/attrs-of (first (h/find-all drawn :lt.ui.row/list-row))))))
     (testing "and none saved is a thing to say"
-      (is (seq (find-all (view/workspace (assoc-in with-tree [:workspace :recents] []))
+      (is (seq (h/find-all (view/workspace (assoc-in with-tree [:workspace :recents] []))
                          :lt.ui.chrome/empty-state))))))
 
 (deftest the-command-bar-is-a-view-over-the-table
@@ -318,50 +289,50 @@
                          :commands [{:label "Evaluate this form" :action [:eval/form "f" 1]}
                                     {:label "Rename symbol" :action [:editor/rename]}]})]
     (testing "it is a search across labels"
-      (let [rows (find-all (view/command-bar with-bar) :lt.ui.row/list-row)]
+      (let [rows (h/find-all (view/command-bar with-bar) :lt.ui.row/list-row)]
         (is (= 1 (count rows)))
-        (is (= "Evaluate this form" (text-of (first rows))))))
+        (is (= "Evaluate this form" (h/text-of (first rows))))))
     (testing "choosing one runs the action it names, which is the same value the keymap holds"
       (is (= [[:eval/form "f" 1]]
-             (:on-select (attrs-of (first (find-all (view/command-bar with-bar)
+             (:on-select (h/attrs-of (first (h/find-all (view/command-bar with-bar)
                                                     :lt.ui.row/list-row)))))))
     (testing "and it is not there when it is not open"
       (is (nil? (view/command-bar state))))
     (testing "a query that matches nothing says so"
-      (is (seq (find-all (view/command-bar (assoc-in with-bar [:command-bar :query] "zzz"))
+      (is (seq (h/find-all (view/command-bar (assoc-in with-bar [:command-bar :query] "zzz"))
                          :lt.ui.chrome/empty-state))))))
 
 (deftest the-multibuffer-is-assembled-by-run
   (let [mb (view/multibuffer state)]
     (testing "two files, because a run touches files rather than a file"
-      (is (= 2 (count (find-all mb :lt.ui.chrome/excerpt-header)))))
+      (is (= 2 (count (h/find-all mb :lt.ui.chrome/excerpt-header)))))
     (testing "the ordinary edit is a proposal"
-      (is (= 1 (count (find-all mb :lt.ui.band/proposed-edit)))))
+      (is (= 1 (count (h/find-all mb :lt.ui.band/proposed-edit)))))
     (testing "the one you also edited is a conflict, not an error"
-      (is (= 1 (count (find-all mb :lt.ui.band/conflict)))))
+      (is (= 1 (count (h/find-all mb :lt.ui.band/conflict)))))
     (testing "and evidence is what the value was and what it becomes"
-      (let [ev (attrs-of (first (find-all mb :lt.ui.band/evidence)))]
+      (let [ev (h/attrs-of (first (h/find-all mb :lt.ui.band/evidence)))]
         (is (= "fs.readdir(dir)" (:before ev)))
         (is (= "fsp.readdir(dir)" (:after ev)))))))
 
 (deftest settings-is-a-view-over-the-keymap
-  (let [rows (find-all (view/settings state) :lt.ui.row/list-row)]
+  (let [rows (h/find-all (view/settings state) :lt.ui.row/list-row)]
     (is (= 1 (count rows)))
-    (is (re-find #"eval/form" (text-of (first rows)))
+    (is (re-find #"eval/form" (h/text-of (first rows)))
         "the binding shows the action vector, because that is what it is")))
 
 (deftest the-window-is-one-function-of-one-value
   (let [w (view/window state)]
     (is (= :div.window (first w)))
     (testing "and it contains every view that has something to show"
-      (is (seq (find-all w :lt.ui.chrome/tab)))
-      (is (seq (find-all w :lt.ui.row/list-row)))
-      (is (seq (find-all w :lt.ui.chrome/connection-row)))
+      (is (seq (h/find-all w :lt.ui.chrome/tab)))
+      (is (seq (h/find-all w :lt.ui.row/list-row)))
+      (is (seq (h/find-all w :lt.ui.chrome/connection-row)))
       ;; The pane, not the multibuffer: the window shows one or the other, and
       ;; this state has an editor open. What the multibuffer contains is
       ;; `the-multibuffer-is-a-window-onto-the-edits` below.
-      (is (seq (find-all w :lt.ui.pane/pane)))
-      (is (empty? (find-all w :lt.ui.band/proposed-edit)))))
+      (is (seq (h/find-all w :lt.ui.pane/pane)))
+      (is (empty? (h/find-all w :lt.ui.band/proposed-edit)))))
   (testing "an empty state renders rather than throwing, which is what a new window is"
     (is (vector? (view/window {})))))
 
@@ -375,20 +346,20 @@
                   (assoc-in [:runs "port-fuzzy" :edits] many)
                   (assoc-in [:review :at] 30))
         mb (view/multibuffer state)]
-    (is (= 25 (count (find-all mb :lt.ui.chrome/excerpt-header)))
+    (is (= 25 (count (h/find-all mb :lt.ui.chrome/excerpt-header)))
         "twelve either side of the cursor, and the cursor's own")
     (testing "and what is not rendered is said rather than dropped"
-      (let [folds (map attrs-of (find-all mb :lt.ui.chrome/fold-row))]
+      (let [folds (map h/attrs-of (h/find-all mb :lt.ui.chrome/fold-row))]
         (is (= [18 17] (map :lines folds)))))
     (testing "keyed by address, so an excerpt that scrolls out and back is the same node"
-      (is (= ["a.ts" 18] (:replicant/key (attrs-of (first (find-all mb :div.excerpt-group)))))))))
+      (is (= ["a.ts" 18] (:replicant/key (h/attrs-of (first (h/find-all mb :div.excerpt-group)))))))))
 
 (deftest a-review-cursor-outside-the-list-does-not-take-the-window-down
   ;; The cursor is state and the list is a projection, so the two are allowed
   ;; to disagree for a moment.
   (let [past-the-end (assoc-in state [:review :at] 99)]
     (is (vector? (view/multibuffer past-the-end)))
-    (is (= 2 (count (find-all (view/multibuffer past-the-end) :lt.ui.chrome/excerpt-header)))))
+    (is (= 2 (count (h/find-all (view/multibuffer past-the-end) :lt.ui.chrome/excerpt-header)))))
   (let [nothing (-> state (assoc-in [:runs "port-fuzzy" :edits] []) (assoc-in [:review :at] 5))]
     (is (vector? (view/multibuffer nothing)))
-    (is (empty? (find-all (view/multibuffer nothing) :lt.ui.chrome/excerpt-header)))))
+    (is (empty? (h/find-all (view/multibuffer nothing) :lt.ui.chrome/excerpt-header)))))

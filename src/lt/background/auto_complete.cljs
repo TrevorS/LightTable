@@ -3,13 +3,17 @@
   thread because it re-tokenizes the whole buffer on every request."
   (:require [lt.background.runtime :as bg]))
 
-(defn- tokenize
+(defn tokenize
   "Every distinct run of `pattern` characters in `text`.
 
   A hint pattern is a character class, so one regular expression finds every
   run — the same scan `lt.plugins.auto-complete/tokens` does on the other side
   of the thread, and for the same reason: this used to drive CodeMirror 5's
-  `StringStream` a character at a time, and that came out of the editor."
+  `StringStream` a character at a time, and that came out of the editor.
+
+  Public so it can be tested — see `test/lt/background/auto_complete_test.cljs`.
+  It is the whole of what this namespace does, and the empty-match guard below
+  is the kind of thing that is fine until the day a pattern can match nothing."
   [text pattern]
   (let [re (js/RegExp. (str "(?:" pattern ")+") "g")
         seen (js-obj)]

@@ -260,3 +260,59 @@ npx playwright show-trace test-results/<name>/trace.zip
 
 Traces and screenshots are kept only for failures, and CI uploads them as an
 artifact.
+
+**The ClojureScript suite has no way to run one namespace.** `:ns-regexp` in
+`shadow-cljs.edn` selects every `-test$` namespace and the compiled
+`target/test.js` reads no arguments, so `npm run test:cljs` is all of it or
+none. That is worth knowing rather than looking for; the whole suite is a few
+hundred assertions and finishes in about a second, so the loop is tight anyway.
+
+## Why a namespace will not load under `:test`
+
+The ClojureScript suite runs under plain node. Anything that touches a browser
+or the Electron bridge **at load time** takes the whole run down with it, and
+the error names the missing global rather than the namespace that wanted it:
+
+```
+SHADOW import error .../cljs-runtime/lt.util.dom.js
+ReferenceError: HTMLCollection is not defined
+```
+
+Three namespaces do this, and everything that requires them inherits it:
+
+| | |
+|---|---|
+| `lt.util.dom` | `extend-type js/HTMLCollection` / `js/NodeList` at the top level |
+| `lt.util.bridge` | `(def bridge js/lightTable)` — the preload injects that, node has no such thing |
+| `singultus.*` | a bare `js/document` reference while loading |
+
+ClojureScript loads namespaces eagerly, so this is transitive and the closure is
+large: `lt.object` requires `lt.util.dom`, and so does most of `lt.objs.*`. The
+practical rule is that a unit test can reach pure functions and the state layer
+(`lt.state`, `lt.actions`, `lt.ui.view`, `lt.ui.chrome`/`row`/`band`) and cannot
+reach anything holding an object or a node.
+
+`lt.state.objects` is the case worth naming, because it looks like it should be
+testable and is not — it is the projection every view reads, and reaching the
+object world is the whole of its job. It is covered at the e2e layer instead.
+
+## How a ClojureScript test is written here
+
+Consistent across every file in `test/`, and load-bearing enough to write down:
+
+- **A sentence for a name.** `a-run-is-a-tab-like-any-other`,
+  `later-declarations-win`, `a-plugin-that-needs-nothing-gets-nothing`. The name
+  is the claim; if it does not read as one, the test is probably checking an
+  implementation rather than a behaviour.
+- **A prose docstring on the namespace** saying why this is tested the way it
+  is, and naming the bug when there was one. `wire_test.cljs` on framing
+  desync, `require_shim_test.cljs` on prefix collisions.
+- **A reason on a `testing` block**, not a restatement of the assertion.
+- **Assert something positive nearby every negative.** `(is (empty? …))` passes
+  when a selector matches nothing, including when it matches nothing because
+  the tag name has a typo in it. Every negative assertion in `test/` has a
+  positive one in the same file proving the mechanism finds what it should.
+
+`test/lt/support/hiccup.cljs` holds the walkers a view test needs — `nodes`,
+`find-all`, `attrs-of`, `text-of`, `classes-in`. Require it rather than copying
+the walker, which is how there came to be two of it.
