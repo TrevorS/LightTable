@@ -470,3 +470,62 @@ test('and a doc press that nothing answers says so', async ({ window }) => {
             :closed)`);
     fs.rmSync(path.dirname(path.dirname(file)), { recursive: true, force: true });
 });
+
+test('and the bar follows the server without being nudged', async ({ window }) => {
+    // Reported as "it says connected while still saying connecting and flashing
+    // the light", which is exactly what it was: two indicators of one fact,
+    // one live and one a snapshot from before the handshake. `::on-ready` says
+    // its sentence the moment it happens; the dot beside it is drawn from the
+    // `:lsp` key the projection writes, and `lt.ui.window/sync-from-objects`
+    // listens for `:active :dirty :clean :close :focus :set-client` — none of
+    // which a language server ever raises.
+    //
+    // So the key kept whatever it held when the editor was last focused, which
+    // for a file opened before its server finished indexing is `:connecting`,
+    // pulsing, for as long as the window is open. Measured on this repository
+    // against the real clojure-lsp: ready at 1.2s, and the dot still pulsing
+    // `connecting` with a diagnostic count of 0 at nine seconds and rising.
+    //
+    // Nothing here focuses, switches tab or edits after opening — that is the
+    // whole test. Any of them would sync for another reason and hide this.
+    const file = project('lspbarfollows');
+
+    await evalClj(window, `
+        (do (lt.object/call-behavior-reaction
+              :lt.objs.editor.lsp/language-servers
+              lt.objs.editor.lsp/lsp-client
+              [{:tags [:editor.typescript]
+                :language-id "typescript"
+                :root ["tsconfig.json"]
+                :id "vtsls"
+                :command "node"
+                :args ["${FAKE_SERVER}"]}])
+            (cmd/exec! :open-path "${file}")
+            :opened)`);
+    await expect.poll(async () => await evalClj(window, `
+        (count (pool/by-path "${file}"))`)).toBe('1');
+
+    // The truth, from the objects. Waited for so that what follows is about
+    // the projection lagging rather than about the server being slow.
+    await expect.poll(async () => await evalData<boolean>(window, `
+        (:ready? (lt.objs.editor.lsp/status (first (pool/by-path "${file}"))))`),
+    { timeout: 30000 }).toBe(true);
+
+    // And the projection, which is what the bar draws. This was `:connecting`
+    // forever.
+    await expect.poll(async () => await evalData<string>(window,
+        '(str (:status (:lsp @lt.state/app)))'), { timeout: 10000 }).toBe(':finished');
+
+    // The count moves too, and for the same reason: it is the same key, drawn
+    // beside the server's name, and it only changed when you switched tabs.
+    await expect.poll(async () => await evalData<number>(window,
+        '(:diagnostics (:lsp @lt.state/app))'), { timeout: 20000 }).toBeGreaterThan(0);
+
+    const lsp = window.locator('#statusbar .statusbar__lsp');
+    await expect(lsp.locator('.dot--finished')).toHaveCount(1);
+    expect(await lsp.innerText()).toMatch(/ · \d+$/);
+
+    await evalClj(window, `
+        (do (doseq [ed (pool/by-path "${file}")] (object/raise ed :close)) :closed)`);
+    fs.rmSync(path.dirname(path.dirname(file)), { recursive: true, force: true });
+});

@@ -67,6 +67,28 @@
           :reaction (fn [_ & _]
                       (from-objects/sync!)))
 
+(behavior ::sync-from-language-servers
+          :triggers #{:lsp.ready :lsp.diagnostics}
+          :desc "State: Keep the state atom current with the language servers"
+          :doc "The statusbar draws what the language server is doing, from the
+                `:lsp` key the projection writes. Nothing here was listening
+                for a server becoming ready, so that key kept whatever it held
+                when the editor was last focused — which for a file opened
+                before its server finished indexing is `:connecting`, pulsing,
+                for as long as the window is open.
+
+                Reported as \"it says connected while still saying connecting
+                and flashing the light\", and that is exactly what it was: two
+                indicators of one fact, one of them live and one of them a
+                snapshot from before the handshake. `::on-ready` says the
+                sentence the moment it happens; the dot beside it was stale.
+
+                The diagnostic count is the same key and had the same problem —
+                it is drawn beside the server's name and only moved when you
+                changed tabs."
+          :reaction (fn [_ & _]
+                      (from-objects/sync!)))
+
 (behavior ::track-cursor
           :triggers #{:move :active}
           :desc "State: Keep the cursor where the statusbar can see it"

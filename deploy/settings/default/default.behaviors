@@ -194,6 +194,12 @@
  [:lsp.client :lt.objs.editor.lsp/on-error]
  [:lsp.client :lt.objs.editor.lsp/on-ready]
  [:lsp.client :lt.objs.editor.lsp/tag-from-capabilities]
+ ; The statusbar's language-server indicator is drawn from the projection,
+ ; so a server becoming ready — or sending diagnostics — has to reach it.
+ ; Without this the dot kept whatever it held when the editor was last
+ ; focused, which for a file opened before its server finished indexing is
+ ; "connecting", pulsing, forever.
+ [:lsp.client :lt.ui.window/sync-from-language-servers]
  [:editor :lt.objs.editor.lsp/use-language-server]
  [:editor :lt.objs.editor.lsp/sync-on-change]
  [:editor :lt.objs.editor.lsp/close-document]

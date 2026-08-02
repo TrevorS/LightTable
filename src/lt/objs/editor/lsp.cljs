@@ -1183,8 +1183,16 @@
           :reaction (fn [_ {:keys [method params]} conn]
                       (case method
                         "textDocument/publishDiagnostics"
-                        (doseq [ed (editors-for-uri (:uri params))]
-                          (draw-diagnostics! ed conn (:diagnostics params)))
+                        (do
+                          (doseq [ed (editors-for-uri (:uri params))]
+                            (draw-diagnostics! ed conn (:diagnostics params)))
+                          ;; Said rather than assumed, because the statusbar
+                          ;; draws the count and reads it from the projection.
+                          ;; Raised here rather than synced here: this
+                          ;; namespace must not know that a projection exists,
+                          ;; which is what `lt.ui.window/sync-from-language-servers`
+                          ;; is for.
+                          (object/raise lsp-client :lsp.diagnostics conn))
 
                         ;; A server telling the user something. The status bar
                         ;; is where Light Table says things of this size.
