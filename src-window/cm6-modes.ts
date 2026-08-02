@@ -22,6 +22,8 @@
 import type { Extension } from '@codemirror/state';
 import { StreamLanguage } from '@codemirror/language';
 import type { StreamParser } from '@codemirror/language';
+import { tags as t } from '@lezer/highlight';
+import type { Tag } from '@lezer/highlight';
 import { markdown } from '@codemirror/lang-markdown';
 import { html } from '@codemirror/lang-html';
 import { javascript } from '@codemirror/lang-javascript';
@@ -350,6 +352,39 @@ const LEGACY: Record<string, [string, string]> = {
 };
 
 /**
+ * CodeMirror 5 token names that CodeMirror 6 only understands on their own.
+ *
+ * `@codemirror/language` translates the legacy vocabulary — `variable` to
+ * `variableName`, `property` to `propertyName` and so on — but only when the
+ * whole token string is one of them. Several modes emit *compound* tokens
+ * instead: `javascript` marks a quoted object key as `cx.style + " property"`,
+ * which arrives as `"string property"`, and the translation table never sees
+ * it. Each space- or dot-separated part is looked up in `@lezer/highlight`'s
+ * tags directly, `property` is not one of those, and the result is a warning
+ * on the console and a key that is styled as a plain string.
+ *
+ * `tokenTable` is the documented way to add names, and it is consulted for
+ * every part — so naming the legacy vocabulary here fixes the compound case
+ * without touching the simple one. A mode with a `tokenTable` of its own
+ * still wins, because it knows more about itself than this does.
+ */
+const LEGACY_TOKENS: Record<string, Tag> = {
+    variable: t.variableName,
+    'variable-2': t.special(t.variableName),
+    'variable-3': t.typeName,
+    property: t.propertyName,
+    def: t.definition(t.variableName),
+    builtin: t.standard(t.variableName),
+    tag: t.tagName,
+    attribute: t.attributeName,
+    type: t.typeName,
+    qualifier: t.modifier,
+    error: t.invalid,
+    header: t.heading,
+    'string-2': t.special(t.string)
+};
+
+/**
  * The five with a real grammar.
  *
  * `gfm` is here rather than in the missing list: GitHub-flavoured markdown is
@@ -564,7 +599,9 @@ export function modeExtension(name: string): Extension {
         const parser = (typeof found === 'function'
             ? (found as (config: unknown) => StreamParser<unknown>)({})
             : found) as StreamParser<unknown> | undefined;
-        if (parser && typeof parser.token === 'function') extension = StreamLanguage.define(parser);
+        if (parser && typeof parser.token === 'function') {
+            extension = StreamLanguage.define({ ...parser, tokenTable: { ...LEGACY_TOKENS, ...parser.tokenTable } });
+        }
     } else if (mode in FALLBACK) {
         const to = FALLBACK[mode];
         extension = to ? modeExtension(to) : [];

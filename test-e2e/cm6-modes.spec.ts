@@ -136,3 +136,32 @@ test('a mode nobody knows is a document with no highlighting, not a crash', asyn
     const found = await tokens(window, 'not-a-real-mode', 'some text\n');
     expect(found).toEqual([]);
 });
+
+test('a compound token from a legacy mode is translated, not warned about', async ({ window }) => {
+    // `@codemirror/language` translates CodeMirror 5's token names — `variable`
+    // to `variableName`, `property` to `propertyName` — but only when the whole
+    // token string is one of them. The javascript mode marks a quoted object
+    // key as `cx.style + " property"`, which arrives as `"string property"`,
+    // and the translation never sees it: each part is looked up in
+    // `@lezer/highlight`'s tags directly, `property` is not one of those, and
+    // the key came out styled as a plain string with `Unknown highlighting tag
+    // property` on the console.
+    //
+    // `cm6-modes.ts` names the legacy vocabulary in a `tokenTable`, which *is*
+    // consulted per part. Asserted two ways, because the class is what a person
+    // sees and the warning is what says the mechanism is right.
+    const warnings: string[] = [];
+    const listen = (m: { type(): string; text(): string }) => {
+        if (m.type() === 'warning') warnings.push(m.text());
+    };
+    window.on('console', listen);
+
+    // Only a quoted key. A bare one takes a different branch and produces
+    // `cm-property` on its own, which would make this pass either way.
+    const classes = await tokens(window, 'javascript', '({"a": 1})\n');
+    window.off('console', listen);
+
+    expect(classes, 'a quoted key should be a property, not a string')
+        .toContain('cm-property');
+    expect(warnings.join(' | ')).not.toContain('Unknown highlighting tag');
+});
