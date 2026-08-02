@@ -46,6 +46,7 @@ rather than merely old, it says so at the top.
 | | |
 |---|---|
 | [Direction](direction.md) | What Light Table is for, what to keep, and the order to work in. Read this before proposing anything large. |
+| [Hygiene](hygiene.md) | What is known to be wrong or owed, what was decided against and why, and what has been closed. Read this before proposing anything small. |
 
 ## What changed, and why
 
