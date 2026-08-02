@@ -101,9 +101,18 @@
                 :search ""
                 :init (fn [this]
                         (let [list (cmd/filter-list {:key :rel
-                                                     :transform #(str "<h2>" (files/basename %) "</h2><p>" %3 "</p>")
+                                                     ;; Hiccup: the leaf in bold
+                                                     ;; and the path under it,
+                                                     ;; with the match marked.
+                                                     ;; It was a string of HTML
+                                                     ;; built around a filename.
+                                                     :transform (fn [orig _ marked _]
+                                                                  (list [:h2 (files/basename orig)]
+                                                                        [:p marked]))
                                                      :items (subatom this :files)
-                                                     :placeholder "file"})]
+                                                     :placeholder "file"
+                                                     :empty-what "No files to navigate"
+                                                     :empty-why "Add a folder to the workspace and every file in it is one keystroke away."})]
                         (object/add-tags list [:navigate.selector])
                         (object/merge! this {:filter-list list})
                         [:div.navigate

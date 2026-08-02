@@ -199,21 +199,6 @@ input {
   background: #ccc;
   color: #555;
 }
-.filter-list {
-  color: #ccc;
-}
-.filter-list em {
-  color: #c7e6ff;
-}
-.filter-list .selected,
-.filter-list li:hover {
-  color: #f4f4f4;
-  background: #616161;
-}
-.filter-list .selected em,
-.filter-list li:hover em {
-  color: #c7e6ff;
-}
 #side .content {
   background: #3b3f41;
   box-shadow: 0 0 10px #000;
@@ -230,44 +215,6 @@ input {
 #right-bar .command h2:hover {
   background: #616161;
   color: #f4f4f4;
-}
-#right-bar .command input {
-  background: #616161;
-  color: #f4f4f4;
-}
-#right-bar .command li + li {
-  border-top: 1px solid #606060;
-}
-#right-bar .command .filter-list p {
-  color: #aaa;
-}
-#right-bar .command .filter-list .selected p {
-  color: #f4f4f4;
-}
-#right-bar .command .filter-list p.binding {
-  color: #ccc;
-}
-#right-bar .command .filter-list .selected p.binding {
-  color: #ccc;
-}
-#right-bar .filter-list h2 {
-  color: #aaa;
-}
-#right-bar .filter-list .selected,
-#right-bar .filter-list .selected h2,
-#right-bar .filter-list li:hover {
-  color: #f4f4f4;
-  background: #616161;
-}
-#right-bar .filter-list input {
-  border: 0px solid #888;
-  background: #616161;
-}
-#right-bar .navigate .filter-list .selected p {
-  color: #ccc;
-}
-#right-bar .filter-list li + li {
-  border-top: 0px solid #606060;
 }
 #right-bar .docs-search h2 {
   color: #c7e6ff;
@@ -619,16 +566,6 @@ input {
   right: 0;
   padding: 5px;
   padding-bottom: 5px;
-}
-#right-bar .filter-list input {
-  padding: 6px 10px;
-  font-size: 10pt;
-  margin-top: 0;
-  border-radius: 0px;
-}
-#right-bar .filter-list ul {
-  top: 35px;
-  bottom: 10px;
 }
 #right-bar .content {
   padding: 0 15px;

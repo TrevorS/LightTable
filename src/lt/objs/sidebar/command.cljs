@@ -8,6 +8,8 @@
             [lt.objs.keyboard :as keyboard]
             [lt.util.load :as load]
             [lt.window.modules :as window]
+            [lt.ui :as ui]
+            [lt.ui.filter :as filter-view]
             [lt.util.dom :as dom]
             [lt.util.cljs]
             [clojure.string :as string]
@@ -80,52 +82,41 @@
 ;; filter list
 ;;**********************************************************
 
-(defn input-val [this]
-  (-> (dom/$ :input (object/->content this))
-      (dom/val)))
+(defn input-val
+  "What is typed in the list's input.
+
+  Read out of the object rather than off the `<input>`: the input is drawn from
+  `:search` now, so the state is the answer and the element is the picture."
+  [this]
+  (:search @this))
 
 (defn set-val [this v]
-  (-> (dom/$ :input (object/->content this))
-      (dom/val v)))
+  (object/merge! this {:search v}))
 
 (defn set-and-select [this v]
   (set-val this v)
   (object/raise this :change! v))
 
-(defn ensure-visible [this]
-  (let [list (dom/$ "ul" (object/->content this))
-        elem (dom/$ ".selected" list)]
-    (cond
-     (< (.-offsetTop elem) (.-scrollTop list)) (set! (.-scrollTop list) (- (.-offsetTop elem) 15))
-     (> (+ (.-offsetTop elem) (.-offsetHeight elem))
-        (+ (.-scrollTop list) (.-clientHeight list))) (set! (.-scrollTop list)
-                                                            (- (+ (.-offsetTop elem) (.-offsetHeight elem) 15) (.-clientHeight list)))
-     :else nil)))
+(defn ensure-visible
+  "Scroll the selected row into view.
 
-(defn fill-lis [{:keys [lis size search selected key transform] :as this} results]
-  (let [cnt (count results)
-        cur (mod selected (if (> cnt size)
-                            size
-                            cnt))
-        transform (if transform
-                    transform
-                    #(do %3))]
-    (if (= cnt 0)
-      (dom/add-class (:content this) :empty)
-      (dom/remove-class (:content this) :empty))
-    (doseq [[i li res] (map vector (range) lis results)
-            :when res]
-      (dom/html li (transform (aget res 1) (aget res 4) (if-not (empty? search)
+  The one thing here that still reads the document, because scrolling is about
+  where something ended up rather than about what it is. Both selectors follow
+  what `lt.ui.filter` draws — `.filter-list__results` and `row--selected`, not
+  the `ul`/`.selected` the pool used."
+  [this]
+  (when-let [list (dom/$ ".filter-list__results" (object/->content this))]
+    (when-let [elem (dom/$ ".row--selected" list)]
+      (cond
+        (< (.-offsetTop elem) (.-scrollTop list))
+        (set! (.-scrollTop list) (- (.-offsetTop elem) 15))
 
-                                                          (.wrapMatch window/fuzzy (aget res 1) (aget res 4))
-                                                          (aget res 1))
-                              (aget res 0)))
-      (dom/css li {:display "block"})
-      (if (= i cur)
-        (dom/add-class li :selected)
-        (dom/remove-class li :selected)))
-    (doseq [li (drop cnt lis)]
-      (dom/css li {:display "none"}))))
+        (> (+ (.-offsetTop elem) (.-offsetHeight elem))
+           (+ (.-scrollTop list) (.-clientHeight list)))
+        (set! (.-scrollTop list)
+              (- (+ (.-offsetTop elem) (.-offsetHeight elem) 15) (.-clientHeight list)))
+
+        :else nil))))
 
 (declare sidebar-command indexed-results)
 
@@ -139,18 +130,12 @@
 (behavior ::set-selection!
           :triggers #{:set-selection!}
           :reaction (fn [this idx]
-                      (let [cnt (count (:cur @this))
-                            neue-idx (when (> cnt 0)
-                                       (mod idx (if (> cnt (:size @this))
-                                                  (:size @this)
-                                                  cnt)))]
-                        (when neue-idx
-                          (let [old (nth (:lis @this) (:selected @this))
-                                neue (nth (:lis @this) neue-idx)]
-                            (when neue
-                              (dom/remove-class old :selected)
-                              (dom/add-class neue :selected)
-                              (object/merge! this {:selected neue-idx})))))))
+                      ;; One number. It was two DOM classes moved between two
+                      ;; nodes of a pool, which is the same fact written where
+                      ;; only a rendered document could hold it.
+                      (let [cnt (min (count (:cur @this)) (:size @this))]
+                        (when (pos? cnt)
+                          (object/merge! this {:selected (mod idx cnt)})))))
 
 (behavior ::change!
           :triggers #{:change!}
@@ -206,9 +191,8 @@
 (behavior ::clear!
           :triggers #{:clear!}
           :reaction (fn [this]
-                      (let [input (dom/$ :input (object/->content this))]
-                        (dom/val input "")
-                        (object/raise this :change! ""))))
+                      (object/merge! this {:search ""})
+                      (object/raise this :change! "")))
 
 (behavior ::filter-list.focus!
           :triggers #{:focus!}
@@ -220,21 +204,10 @@
 (behavior ::update-lis
           :triggers #{:refresh!}
           :reaction (fn [this]
-                      (object/merge! this {:cur (indexed-results @this)})
-                      (fill-lis @this
-                                (:cur @this))))
+                      ;; Which is the whole of a refresh now: the results are
+                      ;; state and the list is drawn from them.
+                      (object/merge! this {:cur (indexed-results @this)})))
 
-
-(defui input [this]
-  [:input.search {:type "text" :placeholder (bound this :placeholder) :tabindex "0"}]
-  :focus (fn [e]
-           (object/raise this :active))
-  :blur (fn [e]
-          (object/raise this :inactive))
-  :keyup (fn [e]
-           (this-as me
-                    (object/raise this :change! (dom/val me)))
-           ))
 
 (defn ->items [items]
   (cond
@@ -272,30 +245,36 @@
     (when (> cnt 0)
       (aget (aget cur i) 0))))
 
-(defui item [this x]
-  [:li {:index x}]
-  :mousedown (fn [e]
-               (dom/prevent e)
-               (dom/stop-propagation e)
-               (object/raise this :set-selection! x)
-               (object/raise this :select! x)))
+(defn- filter-ui
+  "The list, from what the object knows.
+
+  Handlers are functions rather than action vectors: a filter list belongs to
+  an object and there are four of them, so what a row does is a question about
+  which list you clicked in. See [[lt.ui.filter]]."
+  [this]
+  (filter-view/filter-list
+   (assoc @this :results (:cur @this))
+   {:on-input (fn [e] (object/raise this :change! (.. e -target -value)))
+    :on-focus (fn [_] (object/raise this :active))
+    :on-blur (fn [_] (object/raise this :inactive))
+    :on-select (fn [i]
+                 (fn [e]
+                   (dom/prevent e)
+                   (dom/stop-propagation e)
+                   (object/raise this :set-selection! i)
+                   (object/raise this :select! i)))}))
 
 (object/object* ::filter-list
                 :tags #{:filter-list}
                 :selected 0
                 :placeholder "search"
+                :size 100
                 :items []
                 :search ""
+                :cur []
                 :init (fn [this opts]
-                        (let [opts (merge {:size 100} opts)
-                              lis (for [x (range (:size opts))]
-                                         (item this x))]
-                          (object/merge! this (merge {:lis (vec lis)} opts))
-                          [:div.filter-list.empty
-                           (input this)
-                           [:ul
-                            lis]
-                           ])))
+                        (object/merge! this opts)
+                        (ui/node this [:div.filter-list-host] filter-ui)))
 
 
 (defn filter-list [opts]
@@ -408,9 +387,16 @@
          " (Vim)")
        ))
 
-(defn command->display [orig scored highlighted item]
-  (str "<p>" highlighted "<p>" (when-let [binding (seq (keyboard/cmd->bindings (item :command)))]
-                                 (str "<p class='binding'>" (string/join " | " (map ->binding (reverse binding))) "</p>"))))
+(defn command->display
+  "A command's row: what it is called, and what it is bound to.
+
+  Hiccup rather than a string of HTML. It was built by concatenation around the
+  command's own description, which meant a description with a `<` in it was
+  markup — see doc/hygiene.md."
+  [_orig _scored highlighted item]
+  (list [:p highlighted]
+        (when-let [binding (seq (keyboard/cmd->bindings (item :command)))]
+          [:p.binding (string/join " | " (map ->binding (reverse binding)))])))
 
 (object/object* ::sidebar.command
                 :tags #{:sidebar.command}
@@ -424,7 +410,9 @@
                                              (filter #(not (:hidden %)) (vals cmds))))
                               s2 (filter-list {:items f2
                                                :transform #(command->display % %2 %3 %4)
-                                               :key :desc})]
+                                               :key :desc
+                                               :empty-what "No command matches"
+                                               :empty-why "Nothing in the table has that name — the table is `lt.objs.command/manager`."})]
                           (object/merge! this {:selector s2})
                           (object/add-tags s2 [:command.selector])
                           [:div {:class (bound this ->command-class)}

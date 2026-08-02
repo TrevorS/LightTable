@@ -139,8 +139,18 @@
   "Teach Replicant that a handler may be data.
 
   Without this, `:on {:click [[:review/goto 3]]}` is a vector where a function
-  was expected and nothing happens. With it, every event handler in the kit is
-  a value that can be read."
+  was expected — Replicant throws `Cannot use non-function event handler`,
+  catches it itself, logs `you may have misbehaving aliases` with the exception
+  as `[object Object]`, and *skips that render*.
+
+  Called at the bottom of this namespace as well as from [[lt.core]], and that
+  is not belt and braces. Every namespace that draws requires this one, and a
+  required namespace loads first — so by the time `lt.objs.tabs` or
+  `lt.objs.sidebar.workspace` creates its object and draws for the first time,
+  this has to already be true. It was not: `lt.core` called `install!` at the
+  bottom of its own load, which is after every require, so the first paint of
+  the tab strip, the workspace tree and the connect panel was thrown away.
+  Nothing looked broken, because the second render is a state change away."
   []
   (r/set-dispatch!
    (fn [event-data handler-data]
@@ -370,3 +380,7 @@
                :inc (update-in state [:console :unread] (fnil inc 0))
                :tone (assoc-in state [:console :tone] tone)
                :clear (assoc state :console {:unread 0 :tone nil}))))
+
+;; Before anything can draw. See the docstring above: a namespace that renders
+;; requires this one, so this line runs before any of them exist.
+(install!)

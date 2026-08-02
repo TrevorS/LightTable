@@ -18,8 +18,40 @@
   (object/object* ::probe
                   :init (fn [this] (ui/node this [:div.probe] probe-ui)))
   ```"
-  (:require [replicant.dom :as r]
+  (:require [lt.object :as object]
+            [replicant.dom :as r]
             [singultus.core :as crate]))
+
+(defn render-safely!
+  "Render what `view` returns into `el`, and say whose view it was if it throws.
+
+  Replicant catches a render exception itself and logs \"you may have
+  misbehaving aliases\" with the exception as a second console argument — which
+  arrives as `[object Object]`, names neither the view nor the object it belongs
+  to, and is identical for every root in the window. Five of those and nothing
+  to bisect from is a real afternoon; this makes it one line naming a namespace.
+
+  It is not enough to wrap the call: a view builds hiccup out of `for`, so the
+  throw happens later, inside Replicant, while it walks the tree. Forcing the
+  tree first is what puts the failure back in a frame that means something."
+  [el what view]
+  (let [hiccup (try
+                 (let [h (view)]
+                   ;; Realized here rather than by the renderer, so a lazy
+                   ;; sequence that throws does it in this frame.
+                   (doall (tree-seq #(and (coll? %) (not (map? %))) seq h))
+                   h)
+                 (catch :default e
+                   (object/safe-report-error
+                    (str "The view for " what " threw while drawing: "
+                         (.-stack e)))
+                   nil))]
+    (when hiccup
+      (try
+        (r/render el hiccup)
+        (catch :default e
+          (object/safe-report-error
+           (str "Rendering the view for " what " threw: " (.-stack e))))))))
 
 (defonce ^:private rendered
   ;; Every object [[node]] is drawing, so that something which changes what a
@@ -83,7 +115,7 @@
                 ;; A destroyed object is nil, and the watch fires on the way
                 ;; there. Rendering nothing is right: the node is about to go.
                 (when @obj
-                  (r/render el (view obj))))]
+                  (render-safely! el (::object/type @obj) #(view obj))))]
     (draw!)
     (add-watch obj ::render (fn [_ _ _ _] (draw!)))
     (swap! redraws update obj (fnil conj []) (fn []
@@ -109,7 +141,7 @@
   (swap! rendered conj obj)
   (let [el (crate/html root)
         key [::state (hash el)]
-        draw! (fn [] (when @obj (r/render el (view))))]
+        draw! (fn [] (when @obj (render-safely! el (::object/type @obj) view)))]
     (draw!)
     (doseq [a atoms]
       (add-watch a key (fn [_ _ _ _] (draw!))))

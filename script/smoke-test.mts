@@ -626,8 +626,7 @@ app.on('ready', function () {
                         return [exact === 1, partial > 0 && partial < 1, absent === 0,
                                 f.fastScore('platform.cljs', 'ptc') === true,
                                 f.fastScore('platform.cljs', 'zqx') === false,
-                                m.score > 0,
-                                f.wrapMatch('abc', {matched: {0: true}}) === '<em>a</em>bc'].join(',');
+                                m.score > 0].join(',');
                     })(),
                     // lt.util.load reaches the filesystem through the bridge
                     // now, and everything else loads through it. If this were
@@ -949,7 +948,7 @@ app.on('ready', function () {
                     errors: (function () {
                         try {
                             var el = lt.object.__GT_content(lt.objs.console.console);
-                            return Array.from(el.querySelectorAll('li.error')).map(function (n) { return (n.innerText || '').slice(0, 200); });
+                            return Array.from(el.querySelectorAll('li.error')).map(function (n) { return (n.innerText || '').slice(0, 600); });
                         } catch (e) { return ['could not read the console: ' + e.message]; }
                     })()
                 })\`));
@@ -1264,7 +1263,7 @@ async function main(): Promise<void> {
         ['lt.util.load reaches the filesystem through the bridge',
          r.loadViaBridge === 'true,true,true,true,true'],
         ['the window TypeScript modules are required, not evaluated',
-         r.windowModules === 'true,true,true,true,true,true,true'],
+         r.windowModules === 'true,true,true,true,true,true'],
         ['the enforcement gate defaults to warn and persists a change',
          !!r.gate && r.gate.before === ':warn' && r.gate.refuseMode === ':refuse'],
         ['a plugin inside its manifest loads even when refusing',

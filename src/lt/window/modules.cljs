@@ -27,7 +27,11 @@
 
 (def ^js fuzzy
   "Fuzzy matching for the command bar and the file navigator: stringScore,
-  score, fastScore, wrapMatch."
+  score, fastScore.
+
+  `wrapMatch` was here too — it returned a string with `<em>` in it, for
+  `innerHTML`. A row is hiccup now and `lt.ui.filter/highlight` builds it from
+  the same match positions, so the string form had no caller left."
   fuzzy-js)
 
 (def ^js treesitter

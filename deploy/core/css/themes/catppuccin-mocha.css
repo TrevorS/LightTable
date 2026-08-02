@@ -159,11 +159,13 @@
   border: 1px solid #313244; background: #181825; font-size: 90%;
   font-family: inherit; max-height: 20em;
 }
-.CodeMirror-hints ul { overflow-y: auto; max-height: 20em; }
-.CodeMirror-hints ul li {
-  margin: 0; padding: 0 4px; border-radius: 2px; max-width: 60em;
+.CodeMirror-hints .filter-list__results { overflow-y: auto; max-height: 20em; }
+/* A completion is one line and never two, unlike a command or a file — so the
+   row is tightened back up from what .filter-list__results gives it. */
+.CodeMirror-hints .row {
+  height: auto; padding: 0 4px; border-radius: 2px; max-width: 60em;
   overflow: hidden; white-space: pre; color: #cdd6f4; cursor: pointer;
 }
 .CodeMirror-hints input { display: none; }
-.CodeMirror-hints .selected { background: #45475a; color: #cdd6f4; }
-.CodeMirror-hints ul::-webkit-scrollbar-thumb { background: #585b70; border-color: #585b70; }
+.CodeMirror-hints .row--selected { background: #45475a; color: #cdd6f4; }
+.CodeMirror-hints .filter-list__results::-webkit-scrollbar-thumb { background: #585b70; border-color: #585b70; }

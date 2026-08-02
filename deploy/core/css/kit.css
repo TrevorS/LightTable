@@ -781,6 +781,45 @@
 .connector__name { color: var(--lt-text); }
 .connector__desc { color: var(--lt-overlay2); font-size: 11.5px; margin-top: 3px; }
 
+/* A list you narrow by typing: the command bar, the file navigator, the syntax
+ * selector and the auto-complete hinter. One widget, four instances — see
+ * lt.ui.filter. */
+.filter-list {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  box-sizing: border-box;
+}
+
+.filter-list .search {
+  flex-shrink: 0;
+  width: 100%;
+  padding: 9px 10px;
+  margin-bottom: 8px;
+  border: none;
+  border-radius: var(--lt-radius-sm);
+  outline: none;
+  box-sizing: border-box;
+  background: var(--lt-crust);
+  color: var(--lt-text);
+  font-family: var(--lt-mono);
+  font-size: 12.5px;
+}
+.filter-list .search::placeholder { color: var(--lt-overlay0); }
+.filter-list .search:focus { outline: 1px solid var(--lt-sky); }
+
+.filter-list__results { flex: 1; min-height: 0; overflow-y: auto; }
+/* A candidate can be two lines — a name and the path it is in — so the row
+ * grows rather than truncating the half that says which one it is. */
+.filter-list__results .row { height: auto; padding: 5px 8px; align-items: flex-start; }
+.filter-list__row { flex: 1; min-width: 0; }
+.filter-list__results h2 { font-size: 12.5px; color: var(--lt-text); }
+.filter-list__results p { font-size: 11.5px; color: var(--lt-overlay2); }
+/* Where the query matched. Not bold — the row is already dense, and the point
+ * is which characters, not how many. */
+.filter-list__results em { font-style: normal; color: var(--lt-sky); }
+.filter-list__results .binding { color: var(--lt-subtext1); font-size: 11px; margin-top: 2px; }
+
 .wstree__back {
   padding: 4px 8px 10px;
   color: var(--lt-overlay2);

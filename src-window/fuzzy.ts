@@ -82,27 +82,6 @@ export function stringScore(candidate: string, query: string, fuzziness?: number
     return score;
 }
 
-/** Wraps the matched runs of `str` in `<em>`, for display. */
-export function wrapMatch(str: string, info: Match): string {
-    const matched = info.matched;
-    let run = "";
-    let final = "";
-    for (let i = 0; i < str.length; i++) {
-        while (matched[i]) {
-            run += str[i];
-            i++;
-        }
-        if (run) {
-            final += "<em>" + run + "</em>";
-            run = "";
-        }
-        if (i < str.length) {
-            final += str[i];
-        }
-    }
-    return final;
-}
-
 function clone(match: Match): Match {
     return { score: match.score, matched: Object.assign({}, match.matched) };
 }

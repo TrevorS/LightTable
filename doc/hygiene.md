@@ -34,21 +34,24 @@ the menu. That is a call about evaluation semantics rather than about chrome.
 `:bound?` is already read truthfully from the editor, so the panel *shows* the
 right thing; it is only the click that lies.
 
-### Match highlighting is injected as unescaped HTML
+### A view that throws says `[object Object]`
 
-`lt.objs.sidebar.command/fill-lis` sets a row's `innerHTML` from whatever
-`:transform` returned, and both transforms build markup by string
-concatenation: `command->display` wraps a command's description in `<p>`, and
-the file navigator's builds `<h2>`/`<p>` around a path. `wrapMatch` inserts
-`<em>` runs into the same string.
+Replicant catches a render exception, logs `you may have misbehaving aliases`
+with the exception as a second console argument, and skips that render. What
+reaches the console is five identical lines naming neither the view nor the
+object, and the window looks fine because the next render is one state change
+away.
 
-So any HTML-special character in a file path or a command description reaches
-the DOM as markup. Nothing here is attacker-controlled today in the usual
-sense, but a file named `<img onerror=…>` is a file a person can create.
+`lt.ui/render-safely!` now forces the hiccup tree before handing it over, so a
+lazy sequence that throws does it in a frame that names the object. That covers
+the common case and not the one that caused this: the throw happened inside
+Replicant's own reconcile, which no wrapper here can catch.
 
-Closing this falls out of converting `filter-list` to a view — `wrapMatch`
-already returns match *positions*, so the highlight can be hiccup instead of a
-string.
+Worth knowing when the next one appears: it was only visible in
+`script/smoke-test.mts`, because that is the only harness that leaves the
+remote debugging port on, so a devtools client forwards the window's own
+console into Light Table's. `page.addInitScript` with a `console.error` wrapper
+is what found it.
 
 ### Splits are half-projected
 
@@ -62,28 +65,15 @@ splits has exactly one — but both are silent about it.
 
 ## Open — claims the code does not keep
 
-### `filter-list` is three widgets' worth of machinery with no test
+### The hinter's rendering cost is unmeasured
 
-`lt.objs.sidebar.command` is 526 lines, 26 behaviors, and a hand-virtualized
-list: a fixed pool of `<li>` nodes repainted in place on every keystroke,
-because singultus renders once and has no diffing step. It backs the command
-bar, the file navigator, the syntax selector and — the load-bearing one — the
-auto-complete hinter, whose candidate list is unbounded and refreshed on every
-character typed.
-
-None of the command bar, the navigator, or the pool mechanism has any test at
-all. `cm6-hint.spec.ts` reaches the hinter's state machine and never touches
-the rendered rows.
-
-Two things the conversion has to preserve or deliberately redesign: `:selected`
-is an index modulo the pool size rather than an item's identity, and the keymap
-depends on that; and whatever the pool is doing for the hinter's performance is
-exercised there and nowhere else, so that is where a replacement gets measured.
-
-Two things scoped as risks that turned out not to be: `lt.plugins.doc` does
-**not** use the widget — it borrows the `.filter-list` CSS class and has its own
-hand-rolled everything — and nothing under `plugins/` constructs one, so this
-is not plugin API. Only the `:filter-list.input` keymap context is documented.
+`lt.ui.filter` replaced the `<li>` pool with ordinary diffing, which is right
+for the command bar and the navigator — lists that change when you type, a few
+hundred rows at most. The auto-complete hinter is the one that was actually
+being optimised for: its candidate list is unbounded and it refreshes on every
+character. Nothing has measured the new one under a large buffer with a
+language server attached, and `cm6-hint.spec.ts` asserts state rather than
+render time.
 
 ### The popup's automation surface is its DOM
 
@@ -141,7 +131,7 @@ Ranked by what a failure would cost.
 | The browser tab and its webview | `script/smoke-test.mts` only — one script, once per run, on the surface most likely to break on an Electron bump |
 | Plugin capability enforcement | smoke only for the general case; `windows.spec.ts` covers two specific historical bugs |
 | The application menu | smoke only, one assertion |
-| The command bar and the settings/keymap UI | nothing, at any layer |
+| The settings and keymap UI | nothing, at any layer |
 | `contextIsolation` / no Node in the renderer | smoke only — a security-relevant invariant that would be cheap to pin as an e2e one-liner |
 | The background search worker round-trip | smoke proves the worker answers; the e2e search tests go through the UI and might not exercise it |
 
@@ -230,3 +220,17 @@ the workspace tree had been drawing flat.
 **Two CSS blocks for the tab strip had drifted apart** — `5977a8b8`, along with
 a `.dirty.ui-sortable-placeholder:after` rule naming a jQuery-UI class nothing
 had produced since `dragdrop.ts` replaced it.
+
+**Every chrome panel lost its first paint.** A view with a data handler renders
+when its namespace loads, which is before `lt.core` reaches the bottom of its
+own file and calls `actions/install!` — so `r/set-dispatch!` was not installed
+yet and Replicant threw, caught, logged and skipped. `lt.actions` installs the
+dispatch when it loads now, which is before any namespace that draws.
+
+**The connect panel drew whatever a client put in `:name`.** A projection's job
+is to hand a view data it can draw, and `(:name @c)` is set by whoever made the
+connection. `lt.state.objects` stringifies it, and the tab label with it.
+
+**`filter-list` was a pool of `<li>` repainted with `innerHTML`** — the command
+bar, the navigator, the syntax selector and the hinter are `lt.ui.filter` now,
+which closed the unescaped-HTML entry above with it.

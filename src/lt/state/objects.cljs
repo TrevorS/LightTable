@@ -42,7 +42,9 @@
   `obj-42` would draw exactly that."
   [obj]
   {:id (tab-id obj)
-   :label (tabs/->name obj)
+   ;; A string for the same reason `:name` is one below: a browser tab's name
+   ;; is the page's title, which is whatever the page said.
+   :label (str (tabs/->name obj))
    :path (path-of obj)
    :dirty? (boolean (:dirty @obj))
    ;; Per tab, because it is a `:close-button+` raise-reduce and a user
@@ -91,7 +93,13 @@
     (into {} (for [[id c] @clients/cs
                    :when @c]
                [id (merge
-                    {:name (:name @c)
+                    ;; A string, whatever the client put there. `:name` is set
+                    ;; by whoever made the connection — a URL, a keyword, or in
+                    ;; one case a JavaScript object — and a projection's job is
+                    ;; to hand the view data it can draw. Replicant throws on
+                    ;; anything else, from inside its own render, which is five
+                    ;; identical console lines and no address.
+                    {:name (some-> (:name @c) str)
                      :kind (cond
                              (object/has-tag? c :client.agent) :agent
                              (object/has-tag? c :nrepl.client) :nrepl

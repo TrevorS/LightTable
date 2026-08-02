@@ -31,7 +31,7 @@
             [lt.objs.editor.bands :as ed-bands]
             [lt.state :as state]
             [lt.ui.band :as band]
-            [replicant.dom :as r]))
+            [lt.ui :as ui]))
 
 (defn- path-of [ed]
   (-> @ed :info :path))
@@ -82,7 +82,11 @@
     {:line line
      :key (pr-str [path line kind])
      :content hiccup
-     :mount #(r/render % hiccup)}))
+     ;; Through `render-safely!` so a band that throws names itself.
+     ;; A band's parent is a node the editor owns, so a Replicant exception
+     ;; here is otherwise five identical console lines and no address.
+     :mount #(ui/render-safely! % (str "a " (name kind) " band at " path ":" line)
+                                (constantly hiccup))}))
 
 (defn bands-for
   "Every band `state` asks for in `path`, as data.

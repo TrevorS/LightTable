@@ -676,3 +676,27 @@ test('the actions the views emit are all handled', async ({ window }) => {
     expect(said.length).toBeGreaterThan(0);
     await evalClj(window, '(do (object/clear-errors!) :cleared)');
 });
+
+test('a data handler works from the very first render', async ({ window }) => {
+    // The bug this is about was invisible and permanent. A view with a data
+    // handler — every panel in the chrome has one — renders when its namespace
+    // loads, which is before `lt.core` reaches the bottom of its own file. So
+    // `r/set-dispatch!` was not installed yet, Replicant threw
+    // `Cannot use non-function event handler`, caught it itself, logged
+    // `you may have misbehaving aliases` with the exception as `[object
+    // Object]`, and skipped that render. Nothing looked wrong, because the
+    // second render is one state change away.
+    //
+    // It surfaced only in the smoke script, where the remote debugging port is
+    // on and a devtools client forwards the window's own console into Light
+    // Table's. `lt.actions` installs the dispatch when it loads now.
+    expect(await evalClj(window, '(some? replicant.core/*dispatch*)')).toBe('true');
+
+    // And the panels that draw one are on screen with their handlers attached,
+    // rather than having lost their first paint.
+    const wired = await evalClj(window, `
+        (let [nodes (js/document.querySelectorAll "#side .wstree .action, #multi .titlebar .tab")]
+          [(pos? (.-length nodes))
+           (boolean (seq (js/document.querySelectorAll "#statusbar .statusbar__pos")))])`);
+    expect(wired).toBe('[true true]');
+});

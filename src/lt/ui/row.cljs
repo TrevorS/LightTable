@@ -22,7 +22,8 @@
 ;; name is silently dropped. [[tree-row]] passed its indent that way and had
 ;; been drawing a flat tree ever since.
 (defalias list-row
-  [{:keys [selected? focused? tone origin leading trailing style on-select on-menu]} body]
+  [{:keys [selected? focused? tone origin leading trailing style
+           on-select on-menu on-mouse-down]} body]
   [:div.row
    {:class [(when selected? "row--selected")
             (when focused? "row--focus")
@@ -32,8 +33,13 @@
     ;; one: right-clicking it. It is a separate prop rather than something the
     ;; row decides, because what is in the menu is a question about what the
     ;; row is, and the row does not know.
+    ;;
+    ;; `:on-mouse-down` is for a row in a list an input is filtering: a click
+    ;; blurs the input first, and blurring is what closes the panel — so the
+    ;; row would go away under the pointer before the click landed on it.
     :on {:click on-select
-         :contextmenu on-menu}}
+         :contextmenu on-menu
+         :mousedown on-mouse-down}}
    (when leading [:span.row__leading leading])
    body
    (when (= origin :run) [:span.dot.dot--agent])

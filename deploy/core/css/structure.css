@@ -151,12 +151,9 @@ body { -webkit-user-select: none; }
 #right-bar .command { padding:0px 0px; background:transparent; overflow:hidden; height:100%; }
 #right-bar .command h2 { font-size: 12pt; margin-bottom:10px; cursor:default; padding:10px; border-radius:2px; }
 #right-bar .command h2:after { float:right; content: "⇡"; }
-#right-bar .command input { outline:none; border:none; font-size:11pt; width:100%; border-radius:2px; padding:10px; margin-bottom:10px; }
 #right-bar .command .selector {overflow:hidden; }
 #right-bar .command.options .selector { display:none; }
 #right-bar .command.selector .options { display:none; overflow:hidden; }
-#right-bar .command li { padding:5px 5px; line-height:1.2em; }
-#right-bar .command .binding { font-size:8pt; }
 
 /* The workspace panel, and nothing about what is in it. The tree is a view —
    see `.wstree` in css/kit.css — and this only says that the panel fills the
@@ -164,23 +161,15 @@ body { -webkit-user-select: none; }
 #side .workspace { height:100%; overflow:hidden; }
 
 #right-bar .navigate { height:100%; overflow:auto; box-sizing:border-box; }
-#right-bar .navigate em { font-weight:normal; }
-#right-bar .navigate li { border:none; padding:5px 5px; cursor:default; width:100%; box-sizing:border-box; white-space:nowrap; }
-#right-bar .navigate li:empty { display:none; }
-#right-bar .navigate p { font-size:8pt; }
-#right-bar .navigate h2 { font-size:11pt; }
-#right-bar .navigate .selected, #side .navigate li:hover { border-radius:2px}
-#right-bar .navigate input { border:none; margin-bottom:20px; border-radius:2px; outline:none; box-sizing:border-box; width:100%; padding:10px; font-size:11pt;}
-#right-bar .navigate .filter-list.empty ul:before { content: "Add some files or folders to your workspace to fill the navigator."; padding:10px 0; text-align:center; display:inline-block;}
 #right-bar .navigate.active {overflow: auto;}
 
 /* The connect panel, and nothing about what is in it. It is
    `lt.ui.view/connections` — see `.panel` and `.connection` in css/kit.css. */
 #right-bar .clients { height:100%; overflow:auto; }
 
-#right-bar .filter-list { box-sizing:border-box; position:relative; height:100%; }
-#right-bar .filter-list > ul {position:absolute; top:55px; left:0px; right:0px; overflow-y:auto; bottom:0px;}
-#right-bar .filter-list li { border-radius:2px; }
+/* The panel a filter list is put in. What is inside it is a view — see
+   `.filter-list` in css/kit.css. */
+#right-bar .filter-list-host { height:100%; }
 #right-bar .content > * { width:0; height:0; overflow:hidden; }
 #right-bar .content > .active { width:100%; height:100%; }
 
@@ -279,4 +268,7 @@ body { -webkit-user-select: none; }
 .CodeMirror-linenumber { text-align:right; padding-right:10px; }
 .CodeMirror-lines { padding: 10px 0; /* Vertical padding around content */ }
 .CodeMirror pre { padding: 0 0 0 5px; /* Horizontal padding of content */ }
-.CodeMirror-hints.empty { display:none; }
+/* The hint popup with nothing in it. `filter-list--empty` is the view's
+   class; `.empty` was the old one and cm-hint.ts still adds neither, so this
+   matches what lt.ui.filter draws. */
+.CodeMirror-hints:has(.filter-list--empty) { display:none; }
