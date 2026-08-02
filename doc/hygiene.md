@@ -239,6 +239,36 @@ would create the second source of truth it exists to avoid.
 
 ## Closed
 
+**A closed editor stayed in the projection.** `lt.object/destroy!` raises
+`:destroy` and *then* removes the instance from the registry, so
+`lt.ui.window/sync-from-objects` — which covers `:close` — took its snapshot
+while `object/by-tag :editor` still found the editor being closed. It stayed in
+`:editors` until something else happened to sync.
+
+Found by `lt.objs.control/drift` on the first run of the check that compares
+the projection against the objects it is projected from, which is the entire
+reason that check exists. Synced a tick later rather than reordering
+`destroy!`: behaviors reacting to `:destroy` are entitled to find the object
+still registered, and taking that away to fix a projection would be the
+projection dictating terms to the object model.
+
+**Nothing could ask what fired.** Every step of a behavior chain may decline
+quietly, so a break looks like nothing at all — and "toggle docs isn't working"
+was reported five times with four causes and one symptom. `lt.object/raise*`
+already raised `:object.behavior.time` for every invocation, in the hot path,
+and nothing recorded it. `lt.objs.trace` does, off by default, and `raise`
+reports the listener count as well — so "nothing listens for this" and
+"something listened and declined" are one line apart instead of an afternoon.
+
+**The cross-checks lived in a transcript.** Unreferenced public vars, behaviors
+declared but never wired, behaviors wired but never declared, duplicate command
+keys, unused TypeScript exports: every one was written as throwaway Python,
+found something real — four broken event wrappers, an unreachable feature, a
+silently-shadowed command — and was thrown away. `script/audit.mts` is those
+five checks, `make audit`. Advisory by default, because "no caller in this
+repository" is a fact rather than a verdict; `--strict` fails on the two that
+are unambiguous.
+
 **Asking for a docstring started a REPL, and put a modal over the editor.**
 `::clj-doc` and `::cljs-doc` reached for `lt.objs.eval/get-client!` with
 `:create try-connect`, which answers a question nobody asked — is there a REPL

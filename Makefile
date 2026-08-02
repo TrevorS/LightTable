@@ -16,7 +16,7 @@
 .DEFAULT_GOAL := run
 .PHONY: help deps build build-cljs build-main build-plugins run check test \
         test-cljs test-electron test-e2e smoke lint typecheck docs repl clean \
-        clean-all dist screenshot
+        clean-all dist screenshot doctor audit
 
 help: ## Show this list
 	@grep -hE '^[a-z-]+:.*##' $(MAKEFILE_LIST) \
@@ -63,6 +63,12 @@ check: ## Lint, type-check, and confirm doc/api matches the source
 lint: ## clj-kondo over ClojureScript, eslint over JavaScript and TypeScript
 	npm run lint:cljs
 	npm run lint:js
+
+doctor: ## Is this checkout in a state where the next thing you try will work
+	npm run --silent doctor
+
+audit: ## Cross-checks no compiler or linter performs: dead code, unwired behaviors
+	npm run --silent audit
 
 typecheck: ## tsc --noEmit over every TypeScript project, tests included
 	npm run typecheck

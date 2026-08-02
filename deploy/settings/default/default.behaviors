@@ -168,6 +168,7 @@
 
 
  [:editor :lt.ui.window/sync-from-objects]
+ [:editor :lt.ui.window/sync-after-destroy]
  [:editor :lt.ui.window/track-cursor]
  [:client :lt.ui.window/sync-from-clients]
  [:editor :lt.objs.document/close-document-on-editor-close]

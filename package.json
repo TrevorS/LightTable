@@ -26,6 +26,8 @@
     "lint:cljs": "node script/lint-cljs.mts",
     "lint:js": "eslint script src-electron src-window src-worker src-browser test-electron test-e2e",
     "typecheck": "node script/typecheck.mts",
+    "audit": "node script/audit.mts",
+    "doctor": "node script/doctor.mts",
     "test": "node script/test.mts",
     "test:cljs": "shadow-cljs compile test && node target/test.js",
     "test:electron": "node --test \"test-electron/**/*.test.ts\"",

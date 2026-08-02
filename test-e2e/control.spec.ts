@@ -284,3 +284,92 @@ test('and two commands cannot claim the same key in silence', async ({ window })
 
     await window.evaluate(() => (globalThis as any).lt.objs.control.request('clear-errors', {}));
 });
+
+test('and it can say what the window is showing, not only what is open', async ({ window }) => {
+    // `snapshot` answers what is open; a screenshot answers what is on screen
+    // and cannot be asserted on. This is the third question, and it exists
+    // because an hour went into querying the DOM for an expected widget while
+    // a modal sat on top of it — which one screenshot answered instantly and
+    // no command could.
+    const dir = scratchDir('control-screen');
+    const file = path.join(dir, 'seen.txt');
+    fs.writeFileSync(file, 'alpha\nbeta\n');
+    await control(window, 'open', { path: file });
+    await expect.poll(async () => (await control(window, 'snapshot')).editors.length).toBe(1);
+
+    const screen = await control(window, 'screen');
+    expect(screen.tabs).toContain('seen.txt');
+    expect(screen['active-tab']).toBe('seen.txt');
+    expect(screen.modals).toEqual([]);
+    expect(screen.overlays).toEqual([]);
+    expect(typeof screen.statusbar).toBe('string');
+
+    // And a modal is the thing it exists to report.
+    await evalClj(window, `
+        (do (lt.objs.popup/popup! {:header "A question" :body "Well?"
+                                   :buttons [{:label "cancel"}]})
+            :asked)`);
+    await expect.poll(async () => (await control(window, 'screen')).modals.length).toBe(1);
+    expect((await control(window, 'screen')).modals[0]).toContain('A question');
+    expect((await control(window, 'screen')).overlays).toContain('popup');
+
+    const p = (await control(window, 'prompts')).prompts[0];
+    await control(window, 'answer', { prompt: p.id, choice: 'cancel' });
+    await expect.poll(async () => (await control(window, 'screen')).modals.length).toBe(0);
+
+    // Closed, not just deleted. The suite shares one application, so an editor
+    // left open on a removed file is a fact the next test inherits — which the
+    // drift check below caught the first time it ran.
+    await evalClj(window, `
+        (do (doseq [ed (pool/by-path "${file}")] (object/raise ed :close)) :closed)`);
+    fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('and it can say where the state atom disagrees with the objects', async ({ window }) => {
+    // `lt.state.objects/snapshot` is a pure function of the object world, so
+    // the projection can be recomputed and compared at any instant. Nothing
+    // did, and the two are kept in step by a list of triggers — so a fact
+    // changing on a trigger not in that list is stale until you click
+    // something. A statusbar stuck on "connecting" for as long as the window
+    // was open is what that looks like.
+    expect((await control(window, 'drift')).drifted,
+           'a settled window should agree with itself').toEqual([]);
+
+    // Made to disagree on purpose, so this is a check rather than a hope.
+    await evalClj(window, '(do (swap! lt.state/app assoc :editors {"/nowhere" {:lang "x"}}) :bent)');
+    const drifted = (await control(window, 'drift')).drifted;
+    expect(drifted.length).toBe(1);
+    expect(drifted[0].key).toBe(':editors');
+    expect(drifted[0].drawn).toContain('/nowhere');
+
+    await evalClj(window, '(do (lt.state.objects/sync!) :resynced)');
+    expect((await control(window, 'drift')).drifted).toEqual([]);
+});
+
+test('and it can say which behaviors a trigger actually ran', async ({ window }) => {
+    // This architecture's characteristic failure is a chain going quiet: a
+    // trigger is raised, some behaviors run, one declines, and nothing appears.
+    // Reading the code answers it — five times, for one bug. The hook was
+    // already in the hot path; nothing recorded it.
+    await evalClj(window, '(do (lt.objs.trace/on!) :tracing)');
+    await evalClj(window, `
+        (do (object/raise (first (object/by-tag :tabset)) :lt.probe/nobody-home)
+            (cmd/exec! :toggle-console)
+            (cmd/exec! :toggle-console)
+            :did-things)`);
+
+    const report = await evalData<string>(window, '(lt.objs.trace/report 500 nil)');
+    expect(report).toContain(':lt.probe/nobody-home');
+    // The half that is hardest to see any other way: raised, and nothing was
+    // listening. No error, no message, nothing happens.
+    expect(report).toContain('nothing is listening');
+    // And a trigger that did run something names what ran.
+    expect(await evalData<string>(window, '(lt.objs.trace/report 500 :toggle)'))
+        .toMatch(/ran :/);
+
+    await evalClj(window, '(do (lt.objs.trace/off!) :stopped)');
+    // Off by default is the claim that makes this free to ship.
+    const before = await evalData<number>(window, '(count @lt.objs.trace/records)');
+    await evalClj(window, '(do (cmd/exec! :toggle-console) (cmd/exec! :toggle-console) :more)');
+    expect(await evalData<number>(window, '(count @lt.objs.trace/records)')).toBe(before);
+});

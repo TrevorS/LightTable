@@ -27,6 +27,7 @@
             [lt.objs.editor :as editor]
             [lt.objs.tabs :as tabs]
             [lt.state :as state]
+            [lt.util.js :as util]
             [lt.state.objects :as from-objects]
             [lt.ui :as ui]
             [lt.ui.view :as view]
@@ -66,6 +67,28 @@
                 this its own behavior."
           :reaction (fn [_ & _]
                       (from-objects/sync!)))
+
+(behavior ::sync-after-destroy
+          :triggers #{:destroy}
+          :desc "State: Keep the state atom current when an object goes away"
+          :doc "`::sync-from-objects` covers `:close`, and that is not enough.
+                `lt.object/destroy!` raises `:destroy` and *then* removes the
+                instance from the registry, so a projection taken while that
+                trigger is in flight still finds the editor it is about — and
+                `lt.state.objects/editors` reads `object/by-tag`.
+
+                So a closed editor stayed in `:editors` until something else
+                happened to sync. Found by `lt.objs.control/drift` on the first
+                run of the check that compares the projection with the objects
+                it is projected from, which is the entire reason that check
+                exists.
+
+                A tick later rather than a reordering of `destroy!`: behaviors
+                reacting to `:destroy` are entitled to find the object still
+                registered, and taking that away to fix a projection would be
+                the projection dictating terms to the object model."
+          :reaction (fn [_ & _]
+                      (util/wait 0 from-objects/sync!)))
 
 (behavior ::sync-from-language-servers
           :triggers #{:lsp.ready :lsp.diagnostics}

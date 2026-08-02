@@ -15,6 +15,10 @@
 //   script/lt-repl.sh cljs 'files.cwd'       evaluate against lt.objs, munged
 //   script/lt-repl.sh shot out.png [secs]    capture the window as it is now
 //   script/lt-repl.sh boot-log [secs]        boot fresh, print what it logged
+//   script/lt-repl.sh trace on            record every raise and behavior
+//   script/lt-repl.sh trace show :editor.doc   what one trigger actually did
+//   script/lt-repl.sh screen              modals, tabs, statusbar, focus
+//   script/lt-repl.sh drift               projection vs the objects
 //   script/lt-repl.sh stop
 //
 // Every evaluation gets `LT`, a few helpers that exist because doing these by
@@ -438,6 +442,33 @@ async function main(): Promise<void> {
     if (command === 'job') return await control('job', { job: rest[0] });
     if (command === 'open') return await control('open', { path: path.resolve(rest[0] || '') }, true);
 
+    // What fired, when a chain went quiet. See src/lt/objs/trace.cljs — the
+    // whole point is that "nothing listens for this" and "something listened
+    // and declined" look identical from outside, and this tells them apart.
+    if (command === 'trace') {
+        const verb = rest[0] ?? 'show';
+        if (verb === 'on') return await control('eval', { source: '(do (lt.objs.trace/on!) :tracing)' }, true);
+        if (verb === 'off') return await control('eval', { source: '(do (lt.objs.trace/off!) :stopped)' }, true);
+        const trigger = rest[1] ? ` ${rest[1]}` : ' nil';
+        const n = Number(rest[2]) || 200;
+        return await control('eval',
+            { source: `(lt.objs.trace/report ${n}${trigger})` }, true);
+    }
+
+    // What the window is showing, as a sentence rather than a picture. `shot`
+    // gives a PNG; this gives the thing a PNG is usually read for — and it
+    // exists because an hour went into querying the DOM for the widget that
+    // was expected while a modal sat on top of it, which one screenshot
+    // answered instantly.
+    if (command === 'screen') return await control('screen', {});
+
+    // Whether the state atom still agrees with the objects it is projected
+    // from. `lt.state.objects/snapshot` is a pure function of the object
+    // world, so this is checkable at any instant — and a statusbar stuck on
+    // "connecting" while the server was ready for eight seconds is exactly
+    // what it catches.
+    if (command === 'drift') return await control('drift', {});
+
     if (command !== 'eval' && command !== 'cljs') {
         fail('usage: script/lt-repl.sh start | stop\n' +
              '  clj <expr>            evaluate ClojureScript, get a value back\n' +
@@ -445,6 +476,9 @@ async function main(): Promise<void> {
              '  answer <prompt-id> [choice]\n' +
              '  open <file>\n' +
              '  eval [-t ms] <js> | eval -f <file> | cljs <expr>\n' +
+             '  trace on | trace off | trace show [trigger] [n]\n' +
+             '  screen                what the window is showing right now\n' +
+             '  drift                 where the state atom disagrees with the objects\n' +
              '  shot <out.png> [settle-seconds] | boot-log [seconds]\n' +
              '  --release             boot the packaged app in builds/ rather than the tree');
     }

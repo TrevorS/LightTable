@@ -164,6 +164,28 @@
 
 (declare raise)
 
+;; Where a trace goes, when something is watching.
+;;
+;; This architecture's characteristic failure is a chain that goes quiet: a
+;; trigger is raised, some behaviors run, one of them decides not to act, and
+;; what you see is nothing at all. Reading the code answers it, and has, five
+;; times for one bug. What was missing was the ability to *ask*.
+;;
+;; Nil by default, so the cost when nobody is watching is one deref per raise.
+;; The interesting record is not only which behaviors ran but that a trigger
+;; had no listeners at all, which is why `raise` reports as well as `raise*`.
+;; See [[lt.objs.trace]].
+(defonce ^:private tracer (atom nil))
+
+(defn trace-with!
+  "Send every raise and every behavior invocation to `f`, or nil to stop."
+  [f]
+  (reset! tracer f))
+
+(defn- traced! [record]
+  (when-let [f @tracer]
+    (try (f record) (catch :default _ nil))))
+
 (defn- raise*
   ([obj reactions args] (raise* obj reactions args nil))
   ([obj reactions args trigger]
@@ -181,8 +203,10 @@
        (binding [*behavior-meta* meta]
          (apply func obj args))
        (when-not (= trigger :object.behavior.time)
+         (traced! {:kind :ran :behavior r :trigger trigger :ms time})
          (raise obj :object.behavior.time r time trigger)))
        (catch :default e
+         (traced! {:kind :threw :behavior r :trigger trigger :error (str e)})
          (safe-report-error (str "Invalid behavior: " (-> (->behavior r) :name)
                                  (when-let [file (@behavior-source (-> (->behavior r) :name))]
                                    (str ", attached by " file))))
@@ -192,6 +216,12 @@
   "Invoke object's behavior fns for given trigger. Args are passed to behavior fns"
   [obj k & args]
   (let [reactions (-> @obj :listeners k)]
+    ;; Reported even — especially — when there are none. "Nothing listens for
+    ;; this" and "something listened and declined" are the two halves of every
+    ;; silence in this editor, and they look identical from outside.
+    (when-not (= k :object.behavior.time)
+      (traced! {:kind :raised :trigger k :listeners (count reactions)
+                :object (->id obj) :tags (:tags @obj)}))
     (raise* obj reactions args k)))
 
 (defn call-behavior-reaction

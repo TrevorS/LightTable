@@ -48,3 +48,33 @@ For hunting down behaviors, objects and other things that don't live in vars use
 
 Finally, use the documentation searcher (Ctrl-Shift-d) for full-text search over the names and docstrings of all known vars. Most of Light Table doesn't have docstrings, but this is still useful for library code.
 
+
+## When something does nothing
+
+Five separate reports of "toggle docs isn't working" had four different causes
+and one symptom: nothing on screen, nothing in the bar, nothing in the console.
+Every step of a behavior chain is *allowed* to decline quietly — that is what
+makes the architecture extensible and what makes a break invisible. These are
+the tools for asking.
+
+| ask | command |
+| --- | --- |
+| what fired for a trigger, and what didn't | `script/lt-repl.sh trace on`, do it, `trace show :editor.doc` |
+| what the window is showing right now | `script/lt-repl.sh screen` |
+| where the state atom disagrees with the objects | `script/lt-repl.sh drift` |
+| does it work in the packaged app | `script/lt-repl.sh start --release` |
+| what build am I running | `App: What build is this?` |
+| is this checkout sane | `make doctor` |
+| dead code, unwired behaviors, duplicate keys | `make audit` |
+
+`trace` is the one to reach for first. It reports `:raised` with a listener
+count as well as which behaviors ran, so **"nothing listens for this"** and
+**"something listened and declined"** — the two halves of every silence here —
+are distinguishable in one line. It is off by default; the cost of it existing
+is one atom deref per raise.
+
+`drift` found a real bug the first time it ran: a closed editor stayed in the
+projection, because `lt.object/destroy!` raises `:destroy` *before* removing
+the instance. `screen` exists because an hour went into querying the DOM for an
+expected widget while a modal sat on top of it — a state one screenshot showed
+instantly and no command could.

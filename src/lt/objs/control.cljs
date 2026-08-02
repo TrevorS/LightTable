@@ -52,6 +52,8 @@
             [lt.objs.files :as files]
             [lt.objs.tabs :as tabs]
             [lt.objs.workspace :as workspace]
+            [lt.state :as state]
+            [lt.state.objects :as from-objects]
             [lt.util.dom :as dom]))
 
 ;;*********************************************************
@@ -414,6 +416,79 @@
 ;; One way in
 ;;*********************************************************
 
+(defn screen
+  "What the window is showing, as data.
+
+  A screenshot answers this and cannot be asserted on; `snapshot` answers what
+  is *open*, which is a different question. This is what is in front of you: a
+  modal covering the editor is the difference between a feature that does
+  nothing and one whose answer you cannot see, and an hour went into querying
+  the DOM for an expected widget while exactly that sat on top of it.
+
+  Read from the document rather than from state on purpose. State says what
+  should be drawn; this says what is."
+  []
+  (let [$$ (fn [sel] (array-seq (.querySelectorAll js/document sel)))
+        text (fn [^js el] (some-> el .-innerText string/trim))]
+    {:modals (mapv (fn [^js el] (some-> (text el) (subs 0 (min 200 (count (text el))))))
+                   ($$ ".popup"))
+     :tabs (mapv text ($$ ".tab__label"))
+     :active-tab (some-> ^js (.querySelector js/document ".tab--active .tab__label") text)
+     :statusbar (some-> ^js (.querySelector js/document ".statusbar") text)
+     :focused (let [^js el (.-activeElement js/document)]
+                (when el (str (string/lower-case (or (.-tagName el) "?"))
+                              (when (seq (str (.-className el)))
+                                (str "." (.-className el))))))
+     ;; What is drawn over the editor, which is the class of thing that hides
+     ;; an answer rather than replacing it.
+     :overlays (vec (concat (mapv (constantly "popup") ($$ ".popup"))
+                            (mapv (constantly "commandbar") ($$ ".commandbar"))))
+     :inline (count ($$ ".inline-doc, .inline-exception, .result-mark, .underline-result"))}))
+
+(defn drift
+  "Where the state atom disagrees with the objects it is projected from.
+
+  `lt.state.objects/snapshot` is a pure function of the object world, so the
+  projection can be recomputed at any instant and compared with what the views
+  are actually drawing from. Nothing did, and the two are kept in step by a
+  list of triggers in `lt.ui.window` — so a fact that changes on a trigger not
+  in that list is stale until you click something.
+
+  Which is not hypothetical: the statusbar reported a language server as
+  `:connecting`, pulsing, for as long as the window was open, because
+  `:lsp.ready` was not on the list. Empty is the answer you want."
+  []
+  (let [fresh (from-objects/snapshot)
+        live @state/app
+        ;; `:command-bar` because only its list of commands is projected — the
+        ;; open flag, the query and the selection are the state's own.
+        ;;
+        ;; `:cursor` because it has a different clock and that is deliberate:
+        ;; the statusbar renders from `lt.state/cursor`, its own atom, and a
+        ;; cursor going through the main one would re-render the window on
+        ;; every keypress. `(:cursor @state/app)` is therefore always behind,
+        ;; by design, and reporting it would make this tool cry wolf — which
+        ;; is how a check stops being read.
+        interesting (disj (set (keys fresh)) :command-bar :cursor)
+        ;; The observer is part of what it observes. This is reached through
+        ;; the control surface, which is itself an agent client, and asking
+        ;; puts it in `:executing` with a `:via` — so a fresh projection taken
+        ;; during the question always differs from the last one taken before
+        ;; it. Reported, that is noise on every single call, which is how a
+        ;; check stops being read. So an agent's own liveness is normalised
+        ;; out and everything else about every client is still compared.
+        settle (fn [clients]
+                 (into {} (for [[id c] clients]
+                            [id (if (= :agent (:kind c)) (dissoc c :status :via) c)])))
+        normalise (fn [k v] (if (= k :clients) (settle v) v))]
+    {:drifted (vec (for [k (sort interesting)
+                         :let [a (normalise k (get fresh k))
+                               b (normalise k (get live k))]
+                         :when (not= a b)]
+                     {:key (str k)
+                      :projected (pr-str a)
+                      :drawn (pr-str b)}))}))
+
 (defn handle
   "Dispatch `op` with `arg`, both plain data. Returns plain data.
 
@@ -438,9 +513,12 @@
     "value" (editor-value (:editor arg))
     "job" (or (job (:job arg)) {:error (str "No job " (:job arg))})
     "cancel" (cancel! (:job arg))
+    "screen" (screen)
+    "drift" (drift)
     {:error (str "No operation " (pr-str op))
      :operations ["snapshot" "editors" "clients" "errors" "clear-errors"
-                  "prompts" "answer" "eval" "open" "value" "job" "cancel"]}))
+                  "prompts" "answer" "eval" "open" "value" "job" "cancel"
+                  "screen" "drift"]}))
 
 (defn ^:export request
   "[[handle]] over JSON, for a caller that speaks JavaScript.

@@ -26,6 +26,7 @@
             [lt.objs.session]
             [lt.objs.sidebar.navigate]
             [lt.objs.sidebar.workspace]
+            [lt.objs.trace]
             [lt.objs.version]
             [lt.plugins.auto-complete]
             [lt.plugins.auto-paren]
