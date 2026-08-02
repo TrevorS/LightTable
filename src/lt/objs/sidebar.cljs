@@ -5,22 +5,23 @@
             [lt.objs.command :as cmd]
             [lt.objs.animations :as anim]
             [lt.objs.canvas :as canvas]
+            [lt.ui :as ui]
             [lt.util.dom :as dom]
             [lt.util.cljs]
             [singultus.binding :refer [bound subatom]])
-  (:require-macros [lt.macros :refer [behavior defui]]))
+  (:require-macros [lt.macros :refer [behavior]]))
 
 (def default-width 200)
 
-(defui vertical-grip [this]
-  [:div.vertical-grip {:draggable "true"}]
-  :dragstart (fn [e]
-               (object/raise this :start-drag))
-  :dragend (fn [e]
-             (object/raise this :end-drag))
-  :drag (fn [e]
-          (object/raise this :width! e)
-          ))
+(defn- vertical-grip
+  "The handle you drag to resize a sidebar. See [[lt.objs.bottombar]]: the
+  panel's width is bound and stays that way, the grip is a node."
+  [this]
+  (ui/element [:div.vertical-grip
+               {:draggable "true"
+                :on {:dragstart (fn [_] (object/raise this :start-drag))
+                     :dragend (fn [_] (object/raise this :end-drag))
+                     :drag (fn [e] (object/raise this :width! e))}}]))
 
 (behavior ::no-anim-on-drag
           :triggers #{:start-drag}

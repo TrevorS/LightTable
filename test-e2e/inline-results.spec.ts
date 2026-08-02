@@ -102,3 +102,44 @@ test(`an inline result appears beside the line, on ${engine}`, async ({ window }
 
     await close(window, file);
 });
+
+test(`a long result is truncated until you click it, on ${engine}`, async ({ window }) => {
+    // The class on the *root* is the whole of this: both halves are always
+    // drawn and `.result-mark.open` decides which one displays. That is the one
+    // thing a view cannot reach — Replicant renders inside the element the
+    // object hands out, never the element itself — so it goes through
+    // `lt.ui/node`'s `attrs`, and it is worth asserting rather than assuming.
+    const file = await open(window, engine, `long${engine.slice(1)}.txt`,
+        'alpha\nbeta\ngamma\n');
+
+    const long = 'x'.repeat(120);
+    await evalClj(window, `
+        (let [ed (first (pool/by-path "${file}"))]
+          (object/raise ed :editor.result "${long}" {:line 0 :ch 5})
+          :shown)`);
+
+    const mark = async () => await insideEditor<{ classes: string, shown: string }>(window, file, `
+        (when-let [^js el (.querySelector root ".result-mark")]
+          {:classes (.-className el)
+           ;; innerText is what is visible, so this is the CSS answering rather
+           ;; than the markup: both spans are in the DOM either way.
+           :shown (.-innerText el)})`);
+
+    await expect.poll(async () => (await mark())?.classes).not.toContain('open');
+    expect((await mark())!.shown).toContain('…');
+    expect((await mark())!.shown.length).toBeLessThan(long.length);
+
+    // Clicking is `::expand-on-click`, which sets `:open` on the object. The
+    // root's class follows it, and the full text is what displays.
+    await window.locator('.result-mark .truncated').first().click();
+    await expect.poll(async () => (await mark())?.classes).toContain('open');
+    expect((await mark())!.shown).toBe(long);
+
+    // And double-clicking shrinks it back, which is the same class going the
+    // other way rather than a second mechanism.
+    await window.locator('.result-mark .full').first().dblclick();
+    await expect.poll(async () => (await mark())?.classes).not.toContain('open');
+    expect((await mark())!.shown).toContain('…');
+
+    await close(window, file);
+});

@@ -820,3 +820,37 @@ test('a data handler works from the very first render', async ({ window }) => {
            (boolean (seq (js/document.querySelectorAll "#statusbar .statusbar__pos")))])`);
     expect(wired).toBe('[true true]');
 });
+
+test('the grips that resize the chrome are where the layout puts them', async ({ window }) => {
+    // Three copies of the same drag handle — the bottombar's, a sidebar's and a
+    // tabset's — and all three moved from `defui` to `lt.ui/element`, spliced
+    // into singultus hiccup that still owns the geometry around them. A grip
+    // that stopped being built would not throw: the panel would simply stop
+    // being resizable, which nothing else notices.
+    //
+    // What can be asserted without synthesising an HTML5 drag — which
+    // Playwright does not do — is that each one is in the document, in the
+    // right parent, and carries the `draggable` the browser needs before it
+    // will start a drag at all.
+    for (const [what, selector] of [['a tabset', '#multi .tabset > .vertical-grip'],
+                                    ['the bottombar', '#bottombar > .horizontal-grip'],
+                                    ['a sidebar', '#side > .vertical-grip']] as const) {
+        const grip = window.locator(selector).first();
+        await expect(grip, what).toHaveCount(1);
+        expect(await grip.getAttribute('draggable'), what).toBe('true');
+    }
+
+    // And the handlers are on the nodes rather than lost with the macro: a
+    // grip raises `:width!` on its own object, which is what moves the panel.
+    // Dispatched rather than dragged, because the event is what the handler
+    // receives either way.
+    const width = async () => await evalClj(window, '(:left @lt.objs.tabs/multi)');
+    const before = await width();
+    await evalClj(window, `
+        (do (object/raise lt.objs.sidebar/sidebar :width! (js-obj "clientX" 321))
+            :dragged)`);
+    await expect.poll(width).toBe('321');
+    await evalClj(window, `
+        (do (object/raise lt.objs.sidebar/sidebar :width! (js-obj "clientX" ${before}))
+            :restored)`);
+});

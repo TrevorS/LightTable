@@ -12,20 +12,13 @@
             [lt.objs.sidebar.command :as cmd]
             [lt.objs.notifos :as notifos]
             [lt.objs.popup :as popup]
-            [singultus.core :as crate]
-            [singultus.binding :refer [bound]]
             [lt.objs.console :as console]
             [lt.util.dom :as dom]
             [clojure.string :as string]
             [cljs.reader :as reader]
-            [lt.objs.platform :as platform])
+            [lt.objs.platform :as platform]
+            [lt.ui :as ui])
   (:require-macros [lt.macros :refer [behavior defui]]))
-
-(defui button [label & [cb]]
-  [:div.button.right label]
-  :click (fn []
-           (when cb
-             (cb))))
 
 (defn unescape-unicode [s]
   (string/replace s
@@ -187,24 +180,34 @@
          (str (subs r 0 len)  " …")
          r)))))
 
-(defui ->inline-res [this info]
-  (let [r (:result info)
-        truncated (truncate-result r info)]
-    [:span {:class (bound this #(->result-class % truncated))}
-     (when truncated
-       [:span.truncated truncated])
-     [:span.full r]])
-  :mousewheel (fn [e]
-                (dom/stop-propagation e))
-  :click (fn [e]
-           (dom/prevent e)
-           (object/raise this :click))
-  :contextmenu (fn [e]
-                 (dom/prevent e)
-                 (object/raise this :menu! e))
-  :dblclick (fn [e]
-              (dom/prevent e)
-              (object/raise this :double-click)))
+(defn- inline-res-ui
+  "What is inside an inline result.
+
+  Both halves are always drawn and the class on the root decides which one you
+  see — that is what `open` means here, and it is why the class is the root's
+  rather than something inside it. See [[lt.ui/node]]'s `attrs`."
+  [this]
+  (let [{:keys [result] :as info} @this
+        truncated (truncate-result result info)]
+    ;; A seq rather than a vector: Replicant renders either one node or a list
+    ;; of them, and a vector of two would be read as a tag and its children.
+    (remove nil? (list (when truncated [:span.truncated truncated])
+                       [:span.full result]))))
+
+(defn- ->inline-res
+  "The node for an inline result.
+
+  Handlers go on with `dom/on` rather than in the root's hiccup, because the
+  root is built by singultus — it is the element the object hands out, and
+  Replicant owns only what is inside it. So it does not read `:on`."
+  [this]
+  (doto (ui/node this [:span] inline-res-ui
+                 (fn [obj]
+                   {:class (->result-class @obj (truncate-result (:result @obj) @obj))}))
+    (dom/on :mousewheel (fn [e] (dom/stop-propagation e)))
+    (dom/on :click (fn [e] (dom/prevent e) (object/raise this :click)))
+    (dom/on :contextmenu (fn [e] (dom/prevent e) (object/raise this :menu! e)))
+    (dom/on :dblclick (fn [e] (dom/prevent e) (object/raise this :double-click)))))
 
 (behavior ::result-menu+
           :triggers #{:menu+}
@@ -296,7 +299,13 @@
                 :tags #{:inline :inline.result}
                 :init (fn [this info]
                         (when-let [ed (ed/->cm-ed (:ed info))]
-                          (let [content (->inline-res this info)
+                          ;; Before the node, and that is the change: the view
+                          ;; is a function of the object, so `:result` and
+                          ;; `:class` have to be on it before the first draw.
+                          ;; They used to arrive in the same `merge!` as the
+                          ;; mark, which is after.
+                          (object/merge! this info)
+                          (let [content (->inline-res this)
                                 ;; The editor, not a handle to one line.
                                 ;; CodeMirror 5 could tell you when a particular
                                 ;; line changed or went away; a line is not an
@@ -305,12 +314,12 @@
                                 listener (fn [_ change]
                                            (object/raise this :move! change))]
                             (ed/on (:ed info) :change listener)
-                            (object/merge! this (assoc info
-                                                  :listener listener
-                                                  :mark (ed/bookmark ed
-                                                                     {:line (-> info :loc :line)}
-                                                                     {:widget content
-                                                                      :insertLeft true})))
+                            (object/merge! this
+                                           {:listener listener
+                                            :mark (ed/bookmark ed
+                                                               {:line (-> info :loc :line)}
+                                                               {:widget content
+                                                                :insertLeft true})})
                             content))))
 
 
@@ -419,16 +428,17 @@
                              "open"
                              )))
 
-(defui ->inline-exception [this info]
-  [:div {:class (bound this ->exception-class)}
-   [:span.spacer (->spacing (ed/line (:ed info) (-> info :loc :line)))]
-   [:pre (str (:ex info))]]
-  :click (fn []
-           (object/raise this :click))
-  :contextmenu (fn [e]
-                 (object/raise this :menu! e))
-  :dblclick (fn []
-              (object/raise this :double-click)))
+(defn- inline-exception-ui [this]
+  (let [{:keys [ed ex loc]} @this]
+    (list [:span.spacer (->spacing (ed/line ed (:line loc)))]
+          [:pre (str ex)])))
+
+(defn- ->inline-exception [this]
+  (doto (ui/node this [:div] inline-exception-ui
+                 (fn [obj] {:class (->exception-class @obj)}))
+    (dom/on :click (fn [] (object/raise this :click)))
+    (dom/on :contextmenu (fn [e] (object/raise this :menu! e)))
+    (dom/on :dblclick (fn [] (object/raise this :double-click)))))
 
 (behavior ::ex-shrink-on-double-click
           :triggers #{:double-click :shrink!}
@@ -467,13 +477,15 @@
                 :init (fn [this info]
                         (if-not (-> info :loc :line)
                           (notifos/set-msg! (str (:ex info)) {:class "error"})
-                          (let [content (->inline-exception this info)]
-                            (object/merge! this (assoc info
-                                                  :widget (ed/line-widget (ed/->cm-ed (:ed info))
-                                                                          (-> info :loc :line)
-                                                                          content
-                                                                          {:coverGutter false})))
-                            content))))
+                          (do
+                            (object/merge! this info)
+                            (let [content (->inline-exception this)]
+                              (object/merge! this
+                                             {:widget (ed/line-widget (ed/->cm-ed (:ed info))
+                                                                      (-> info :loc :line)
+                                                                      content
+                                                                      {:coverGutter false})})
+                              content)))))
 
 (behavior ::inline-exceptions
           :triggers #{:editor.exception}

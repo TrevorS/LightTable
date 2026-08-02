@@ -5,23 +5,29 @@
             [lt.objs.animations :as anim]
             [lt.objs.canvas :as canvas]
             [lt.util.cljs]
+            [lt.ui :as ui]
             [lt.util.style :refer [->px]]
             [singultus.binding :refer [bound subatom]])
-  (:require-macros [lt.macros :refer [behavior defui]]))
+  (:require-macros [lt.macros :refer [behavior]]))
 
 
 (def min-height 30)
 (def default-height 130)
 
-(defui horizontal-grip [this]
-  [:div.horizontal-grip {:draggable "true"}]
-  :dragstart (fn [e]
-               (object/raise this :start-drag))
-  :dragend (fn [e]
-             (object/raise this :end-drag))
-  :drag (fn [e]
-          (object/raise this :height! e)
-          ))
+(defn- horizontal-grip
+  "The handle you drag to resize the bottombar.
+
+  A node rather than a view, and spliced into the singultus hiccup below —
+  which is what the `:init` around it stays. The bar's geometry is bound to
+  atoms (`#multi`'s insets, its own height) and that is layout the object model
+  owns; the grip inside it is three handlers on an empty div, and nothing
+  redraws it."
+  [this]
+  (ui/element [:div.horizontal-grip
+               {:draggable "true"
+                :on {:dragstart (fn [_] (object/raise this :start-drag))
+                     :dragend (fn [_] (object/raise this :end-drag))
+                     :drag (fn [e] (object/raise this :height! e))}}]))
 
 (defn active-content [active]
   (when active

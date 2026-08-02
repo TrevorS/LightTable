@@ -123,19 +123,22 @@
                                                       "hidden"))}}
    (bound item #(when % (object/->content %)))])
 
-(defui vertical-grip [this]
-  [:div.vertical-grip {:draggable "true"}]
-  :dragstart (fn [^js e]
-               (set! (.-dataTransfer.dropEffect e) "move")
-               (.dataTransfer.setData e "text/plain" nil)
-               (object/raise this :start-drag e)
-               )
-  :dragend (fn [e]
-             (object/raise this :end-drag e)
-             )
-  :drag (fn [^js e]
-          (set! (.-dataTransfer.dropEffect e) "move")
-          (object/raise this :width! e)))
+(defn- vertical-grip
+  "The handle you drag to resize a tabset. See [[lt.objs.bottombar]].
+
+  This one also has to tell the browser it is a move: without `setData` a drag
+  never starts in Chromium, and without `dropEffect` the cursor says copy."
+  [this]
+  (ui/element [:div.vertical-grip
+               {:draggable "true"
+                :on {:dragstart (fn [^js e]
+                                  (set! (.-dataTransfer.dropEffect e) "move")
+                                  (.dataTransfer.setData e "text/plain" nil)
+                                  (object/raise this :start-drag e))
+                     :dragend (fn [e] (object/raise this :end-drag e))
+                     :drag (fn [^js e]
+                             (set! (.-dataTransfer.dropEffect e) "move")
+                             (object/raise this :width! e))}}]))
 
 (defn ->perc [x]
   (if x

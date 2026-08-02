@@ -28,7 +28,9 @@
   (object/object* ::probe
                   :init (fn [this] (ui/node this [:div.probe] probe-ui)))
   ```"
-  (:require [lt.object :as object]
+  (:require [clojure.string :as string]
+            [lt.object :as object]
+            [lt.util.dom :as dom]
             [replicant.dom :as r]
             [singultus.core :as crate]))
 
@@ -141,6 +143,27 @@
           redraw (get @redraws obj)]
     (redraw)))
 
+(defn- apply-attrs!
+  "Write `attrs` onto `el`. The root's own class and style, and nothing else.
+
+  Replicant renders *into* the root and so never owns the root's attributes,
+  which is the one thing `bound` did that no view can: `[:span {:class (bound
+  this ->result-class)}]` is a class on the element the object hands out. It
+  comes up wherever the root is the styled thing — an inline result that opens
+  when you click it, the bottombar's height, a tabset's width — so it is here
+  rather than a watch written out again in each of them.
+
+  Only `:class` and `:style`, because that is what the roots use and because a
+  general attribute writer here would be a second renderer beside the one this
+  namespace exists to use."
+  [^js el {:keys [class style]}]
+  (when class
+    (set! (.-className el) (if (coll? class)
+                             (string/join " " (remove nil? class))
+                             (str class))))
+  (when style
+    (dom/css el style)))
+
 (defn node
   "A DOM node for `obj`, whose contents Replicant renders from `view`.
 
@@ -163,22 +186,31 @@
 
   The watch is on the object's own atom, so it is collected with the object and
   there is nothing to unsubscribe. Watching another object's atom does need
-  unsubscribing — [[watch]] is for that."
-  [obj root view]
-  (swap! rendered conj obj)
-  (let [el (crate/html root)
-        draw! (fn []
-                ;; A destroyed object is nil, and the watch fires on the way
-                ;; there. Rendering nothing is right: the node is about to go.
-                (when @obj
-                  (render-safely! el (::object/type @obj) #(view obj))))]
-    (draw!)
-    (add-watch obj ::render (fn [_ _ _ _] (draw!)))
-    (swap! redraws update obj (fnil conj []) (fn []
-                                               (when @obj
-                                                 (r/unmount el)
-                                                 (draw!))))
-    el))
+  unsubscribing — [[watch]] is for that.
+
+  `attrs` is for the root's own class and style, which the view cannot reach
+  because Replicant renders inside the root rather than rendering it. It is a
+  function of the object returning `{:class … :style …}`, re-run with the view,
+  and it is what `bound` on a root element becomes. Only reach for it when the
+  root really is the styled thing: an inline result that opens when you click
+  it is one, a panel whose class never changes is not."
+  ([obj root view] (node obj root view nil))
+  ([obj root view attrs]
+   (swap! rendered conj obj)
+   (let [el (crate/html root)
+         draw! (fn []
+                 ;; A destroyed object is nil, and the watch fires on the way
+                 ;; there. Rendering nothing is right: the node is about to go.
+                 (when @obj
+                   (when attrs (apply-attrs! el (attrs obj)))
+                   (render-safely! el (::object/type @obj) #(view obj))))]
+     (draw!)
+     (add-watch obj ::render (fn [_ _ _ _] (draw!)))
+     (swap! redraws update obj (fnil conj []) (fn []
+                                                (when @obj
+                                                  (r/unmount el)
+                                                  (draw!))))
+     el)))
 
 (defn state-node
   "A DOM node for `obj`, rendered from `atoms` rather than from the object.
