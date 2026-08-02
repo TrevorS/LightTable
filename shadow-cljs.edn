@@ -14,7 +14,8 @@
 
  ;; Replicant renders the UI that is being written now: hiccup in, DOM out, by
  ;; diffing rather than by binding into a node. See doc/rendering.md for how it
- ;; sits beside singultus, which stays because `defui` is plugin API.
+ ;; sits beside singultus, which is on its way out rather than staying — the
+ ;; last file to stop using it is the commit that deletes it.
  :dependencies [[no.cjohansen/replicant "2026.07.1"]]
 
  ;; Closure Compiler bundles a protobuf that reads memory through

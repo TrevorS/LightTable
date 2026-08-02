@@ -61,9 +61,11 @@
 (defn- prompt-choices
   "The clickable choices in a popup, as text.
 
-  Read out of the DOM because that is where they are: a popup's body is
-  markup, and the buttons a caller has to pick between are `li` elements in
-  it. Everything else here is data; this one is honest about not being."
+  Read out of the DOM, and still the right answer even though `(:buttons @p)`
+  now exists: a popup's choices are not all buttons. Picking a client or an
+  LSP code action is a list in the *body*, which is markup a caller passed in,
+  and a reader that trusted `:buttons` would offer \"cancel\" and nothing else
+  for exactly the prompts where the choice matters."
   [p]
   (let [content (object/->content p)]
     (->> (array-seq (dom/$$ :li.button content))
@@ -72,14 +74,9 @@
          vec)))
 
 (defn- prompt-header
-  "What the popup is asking.
-
-  Out of the rendered `h2` rather than the object: a popup is created with its
-  options and draws from them, and does not keep them, so `(:header @p)` is
-  empty for every popup there is."
+  "What the popup is asking."
   [p]
-  (let [^js h (dom/$ :h2 (object/->content p))]
-    (string/trim (or (and h (.-textContent h)) ""))))
+  (string/trim (str (:header @p))))
 
 (defn prompts
   "Anything open and waiting for an answer, newest last.

@@ -9,13 +9,13 @@
   (:require [lt.object :as object]
             [lt.objs.popup :as popup]
             [lt.objs.eval :as eval])
-  (:require-macros [lt.macros :refer [behavior defui]]))
+  (:require-macros [lt.macros :refer [behavior]]))
 
-(defui client-button [popup client cb]
-  [:li.button (:name @client)]
-  :click (fn []
-           (cb client)
-           (when-let [p @popup] (object/raise p :close!))))
+(defn- client-button [popup client cb]
+  [:li.button {:on {:click (fn []
+                             (cb client)
+                             (when-let [p @popup] (object/raise p :close!)))}}
+   (:name @client)])
 
 (defn- select-client!
   "Ask which of `clients` to use, and hand the answer to `cb`.

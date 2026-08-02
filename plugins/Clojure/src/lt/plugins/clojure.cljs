@@ -27,7 +27,7 @@
             [cljs.reader :as reader]
             [lt.objs.command :as cmd]
             [lt.objs.plugins :as plugins])
-  (:require-macros [lt.macros :refer [behavior defui]]))
+  (:require-macros [lt.macros :refer [behavior]]))
 
 (def ^js shell (load/node-module "shelljs"))
 (def cur-path (.pwd shell))
@@ -629,12 +629,17 @@
                     :connect (fn []
                                (dialogs/file clj-lang :connect))})
 
-(defui server-input []
-  [:input {:type "text" :placeholder "host:port" :value "localhost:"}]
-  :focus (fn []
-           (ctx/in! :popup.input))
-  :blur (fn []
-          (ctx/out! :popup.input)))
+(defn- server-input
+  "The one popup that asks for text rather than a choice.
+
+  No `:value` in the hiccup, deliberately. The popup redraws when its active
+  button moves, and an attribute Replicant is told about is one it will write
+  back — so a controlled value here would put \"localhost:\" back in the box
+  under whoever was typing. The initial text is set once, on the node, below."
+  []
+  [:input.nrepl-server {:type "text" :placeholder "host:port"
+                        :on {:focus (fn [] (ctx/in! :popup.input))
+                             :blur (fn [] (ctx/out! :popup.input))}}])
 
 (defn connect-to-remote [server]
   (let [[host port] (string/split server ":")]
@@ -646,21 +651,24 @@
         (object/raise client :connect!)))))
 
 (defn remote-connect []
-  (let [input (server-input)
+  (let [input (atom nil)
         p (popup/popup! {:header "Connect to a remote nREPL server."
                          :body [:div
                                 [:p "In order to connect to an nrepl server, make sure the server is started (e.g. lein repl :headless)
                                  and that you have included the lighttable.nrepl.handler/lighttable-ops middleware."]
                                 [:label "Server: "]
-                                input
-                                ]
+                                (server-input)]
                          :buttons [{:label "cancel"}
                                    {:label "connect"
                                     :action (fn []
-                                              (connect-to-remote (dom/val input)))}]})]
-    (dom/focus input)
-    (.setSelectionRange input 1000 1000)
-    ))
+                                              (connect-to-remote (dom/val @input)))}]})
+        ^js el (dom/$ :input.nrepl-server (object/->content p))]
+    (reset! input el)
+    ;; After the popup is in the document, because focusing a detached node
+    ;; does nothing.
+    (set! (.-value el) "localhost:")
+    (dom/focus el)
+    (.setSelectionRange el 1000 1000)))
 
 (scl/add-connector {:name "Clojure (remote nREPL)"
                     :desc "Enter in the host:port address of an nREPL server to connect to"

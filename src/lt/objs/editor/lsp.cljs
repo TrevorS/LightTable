@@ -49,8 +49,9 @@
             [lt.objs.workspace-edit :as we]
             [lt.objs.workspace-edit.text :as we-text]
             [lt.plugins.auto-complete :as auto-complete]
+            [lt.ui :as ui]
             [lt.util.bridge :as bridge])
-  (:require-macros [lt.macros :refer [behavior defui]]))
+  (:require-macros [lt.macros :refer [behavior]]))
 
 (declare lsp-client capability-tags)
 
@@ -210,12 +211,12 @@
 (def ^:private severity-class
   {1 "error" 2 "warning" 3 "info" 4 "hint"})
 
-(defui ->diagnostic [{:keys [message severity source]}]
+(defn- ->diagnostic [{:keys [message severity source]}]
   [:div {:class (str "inline-diagnostic " (get severity-class severity "error"))}
    [:span.source (or source "lsp")]
    [:span.message message]])
 
-(defui ->diagnostics
+(defn- ->diagnostics
   "Everything a line has to say about itself, as one element.
 
   One element and not a document fragment, which is the obvious way to hand
@@ -224,10 +225,13 @@
   children out and leaves the fragment itself parentless. The throw comes from
   inside `addLineWidget`, after the nodes are already in the measuring
   container — so they are visible on screen while the widget that was supposed
-  to own them does not exist."
+  to own them does not exist.
+
+  A node rather than hiccup, because CodeMirror takes it and owns it from
+  there: nothing changes a widget, it is replaced."
   [ds]
-  [:div.inline-diagnostics
-   (for [d ds] (->diagnostic d))])
+  (ui/element [:div.inline-diagnostics
+               (for [d ds] (->diagnostic d))]))
 
 (defn- erase-widgets! [ed]
   (doseq [widget (::widgets @ed)]
@@ -894,12 +898,12 @@
 (defn- action-title [action]
   (or (:title action) "(untitled action)"))
 
-(defui action-button [popup action cb]
+(defn- action-button [popup action cb]
   ;; Its own class, because the popup's cancel is an `li.button` too.
-  [:li.button.lsp-action (action-title action)]
-  :click (fn []
-           (cb action)
-           (when-let [p @popup] (object/raise p :close!))))
+  [:li.button.lsp-action {:on {:click (fn []
+                                        (cb action)
+                                        (when-let [p @popup] (object/raise p :close!)))}}
+   (action-title action)])
 
 (defn- offer-actions!
   "Ask which action, then run it.

@@ -11,7 +11,7 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { test, expect, evalClj, scratchDir } from './fixtures';
+import { test, expect, control, evalClj, scratchDir } from './fixtures';
 
 /**
  * The editor's own element, on whichever engine built it.
@@ -675,6 +675,77 @@ test('the actions the views emit are all handled', async ({ window }) => {
             .errors.map((e: { message: string }) => e.message).join(' ')) as string;
     expect(said.length).toBeGreaterThan(0);
     await evalClj(window, '(do (object/clear-errors!) :cleared)');
+});
+
+test('a modal is what it was created with, and selecting is arithmetic', async ({ window }) => {
+    // The popup keeps its options now, which is what lets `lt.ui/node` draw it
+    // — and the four nested divs are not decoration. `structure.css` centres a
+    // modal by making them a table, a cell, an inline-block and the card, so a
+    // wrapper or a missing level is a modal in the corner of the screen.
+    await evalClj(window, `
+        (do (def answered (atom nil))
+            (def p (lt.objs.popup/popup! {:header "Pick one"
+                                  :body [:p "or do not"]
+                                  :buttons [{:label "first" :action #(reset! answered :first)}
+                                            {:label "second" :action #(reset! answered :second)}
+                                            lt.objs.popup/cancel-button]}))
+            :open)`);
+
+    const card = window.locator('.popup > div > div > div');
+    await expect(card).toHaveCount(1);
+    expect(await card.locator('h2').textContent()).toBe('Pick one');
+    // Floated right, so the row reads in the reverse of the declared order and
+    // `:button` counts along what you are looking at.
+    expect(await card.locator('ul.buttons li.button').allTextContents())
+        .toEqual(['cancel', 'second', 'first']);
+
+    // Moving the selection used to be two `dom/add-class` calls against a
+    // NodeList. It is a number on the object, and the class is drawn from it.
+    expect(await evalClj(window, '(:button @p)')).toBe('0');
+    await expect(card.locator('li.button.active')).toHaveText('cancel');
+
+    await evalClj(window, '(do (cmd/exec! :popup.move-active 1) :moved)');
+    expect(await evalClj(window, '(:button @p)')).toBe('1');
+    await expect(card.locator('li.button.active')).toHaveText('second');
+
+    // And it wraps, which is the reason it was a `mod` in the first place.
+    await evalClj(window, '(do (cmd/exec! :popup.move-active -2) :wrapped)');
+    await expect(card.locator('li.button.active')).toHaveText('first');
+
+    // Executing the active one runs that button's action rather than
+    // synthesising a click on whichever node happened to be at that index.
+    await evalClj(window, '(do (cmd/exec! :popup.exec-active) :ran)');
+    expect(await evalClj(window, '@answered')).toBe(':first');
+    await expect(window.locator('.popup')).toHaveCount(0);
+});
+
+test('and a choice in a modal body is still a choice', async ({ window }) => {
+    // Three callers put their options in the body rather than in `:buttons` —
+    // which client should evaluate this, which LSP code action to run — because
+    // there can be many and they are the question rather than a confirmation.
+    // Those were DOM nodes spliced into hiccup, which Replicant cannot render,
+    // so they moved with the popup.
+    await evalClj(window, `
+        (do (def chosen (atom nil))
+            (def q (atom nil))
+            (reset! q (lt.objs.popup/popup!
+                       {:header "Which client?"
+                        :body [:ul [:li.button {:on {:click (fn []
+                                                              (reset! chosen "the one")
+                                                              (object/raise @q :close!))}}
+                                    "the one"]]
+                        :buttons [lt.objs.popup/cancel-button]}))
+            :open)`);
+
+    // The automation surface reads both kinds, which is why it stays a DOM
+    // read: a reader that trusted `:buttons` would offer only "cancel" here.
+    const prompt = (await control(window, 'prompts')).prompts[0];
+    expect(prompt.choices).toEqual(['the one', 'cancel']);
+    expect(prompt.header).toBe('Which client?');
+
+    await window.locator('.popup li.button', { hasText: 'the one' }).click();
+    expect(await evalClj(window, '@chosen')).toBe('"the one"');
+    await expect(window.locator('.popup')).toHaveCount(0);
 });
 
 test('a node can be rendered once and handed away', async ({ window }) => {

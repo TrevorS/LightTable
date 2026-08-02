@@ -5,9 +5,10 @@ in, DOM out, plus a fine-grained binding layer (`bound`, `bound-coll`,
 `map-bound`, `subatom`) that writes into a node when an atom changes. 560 lines,
 in `src/singultus/`, unmaintained upstream. 116 `defui`, 67 `bound` and 27
 `subatom` across 37 namespaces in core, and a further 11 and 3 in the bundled
-plugins. 62, 30 and 36 across 21 today; `subatom` went *up* because what is
-left of it is layout — `#multi`'s insets, the sidebar widths, the bottombar
-height — which is the part that stays object-owned.
+plugins. 55, 29 and 27 across 18 today — so `defui` has more than halved,
+`bound` has, and `subatom` has not moved at all. That is not a stall: what is
+left of it is layout, `#multi`'s insets and the sidebar widths and the
+bottombar height, which is the part that stays object-owned.
 
 It was also the plugin API — `lt.macros/defui` and `defpartial` compile to
 singultus calls — and for most of this migration that meant singultus stays in
@@ -17,7 +18,7 @@ plugin that draws.
 **That is no longer a constraint.** This fork is one person's editor. The only
 plugins that matter are the ones in this repository, and those are ported as
 first-class citizens rather than supported as guests. So singultus is not a
-permanent tenant; it is the thing 22 remaining files still use, and the last
+permanent tenant; it is the thing 18 remaining files still use, and the last
 one to stop using it is the commit that deletes it.
 
 What that changes in practice: a file being touched for another reason should
@@ -30,8 +31,8 @@ worth converting because they are the last twelve.
 
 | | |
 |---|---|
-| singultus | everything, minus the list below. 62 `defui` across 21 files, from 116 across 37 |
-| Replicant | the tab strip, the statusbar, the workspace tree, the connect panel, the welcome screen, the component kit, and the window as a view |
+| singultus | everything, minus the list below. 55 `defui` across 18 files, from 116 across 37 |
+| Replicant | the tab strip, the statusbar, the workspace tree, the connect panel, the modal, the welcome screen, the component kit, and the window as a view |
 
 The swap is one object at a time and the two render side by side in the same
 document, which is what makes it safe to do gradually rather than as one
@@ -121,7 +122,7 @@ it is not replaced at all.
 ```
 
 Which is `defui` with handlers as data instead of `addEventListener` closures,
-and it is why the eight decoration `defui` can be converted at all. Replicant
+and it is why the nine decoration `defui` can be converted at all. Replicant
 attaches handlers to the nodes themselves rather than delegating from the
 container, so moving the node into the document later takes them with it.
 
@@ -140,27 +141,27 @@ if a thing should follow a redefinition, it wants a root of its own.
 
 `defui` expands to exactly two things — `singultus.core/html` and one
 `lt.util.dom/on` per event — so converting one is always the same question,
-*what re-renders this?*, and the 62 sort into four answers.
+*what re-renders this?*, and the 59 left sort into four answers.
 
 | kind | n | answer |
 |---|---|---|
-| buttons | 15 | nothing does. One `[:div.button label]` and a click; not views, node factories |
-| decorations | 8 | nothing does, and there is no object to watch — CodeMirror or a `<ul>` owns the node |
+| buttons | 12 | nothing does. One `[:div.button label]` and a click; not views, node factories |
+| decorations | 9 | nothing does, and there is no object to watch — CodeMirror or a `<ul>` owns the node |
 | grips | 3 | nothing does. The same HTML5 drag handle three times, over layout that stays object-owned |
-| panels | 36 | an object or the state does — `node` or `state-node` |
+| panels | 35 | an object or the state does — `node` or `state-node` |
 
-The buttons are `connector/client-button`, `deploy/button`, `document/button`,
-`version/check-button`, `eval/button`, `find/replace-all-button`,
-`search/replace-all-button`, `lsp/action-button`, four in `plugins`,
-`doc/connect-button`, `command/header-button` and `popup/->button`. The
-decorations are `eval/{->inline-res,->underline-result,->inline-exception}`,
-`lsp/{->diagnostic,->diagnostics}`, the two `->helper` in `langs`, and
-`console/->item`. Both kinds are [[lt.ui/element]].
+The buttons are `deploy/button`, `document/button`, `version/check-button`,
+`eval/button`, `find/replace-all-button`, `search/replace-all-button`, four in
+`plugins`, `doc/connect-button` and `command/header-button`. The decorations
+are `eval/{->inline-res,->underline-result,->inline-exception}`, the two
+`->helper` in `langs`, `console/->item`, Python's `image` and `canvas`, and the
+Clojure plugin's `collapsible-exception-UI`. Both kinds are
+[[lt.ui/element]].
 
 The panels are the work: `plugins` 12, `doc` 7, `search` 6, `browser` 5,
-`devtools` 3, `popup` 2, `find` 2, and singletons elsewhere. Everything past
-`popup`, `find`, `console` and `bottombar` is tab *contents* rather than
-chrome — whole panels that want their own design pass, not a translation.
+`devtools` 3, `find` 2, `console` 1, and singletons elsewhere. Everything past
+`find`, `console` and `bottombar` is tab *contents* rather than chrome — whole
+panels that want their own design pass, not a translation.
 
 **Deleting `defui` and deleting singultus are different finish lines.**
 `lt.ui/node`, `lt.ui/state-node`, `lt.ui.window`, `lt.ui.pane`,
