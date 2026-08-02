@@ -239,6 +239,35 @@ would create the second source of truth it exists to avoid.
 
 ## Closed
 
+**Toggle docs did nothing when no editor was active** — the fifth distinct
+cause, and the one that survived four fixes aimed at the silence.
+`:editor.doc.toggle` was `(when-let [ed (pool/last-active)] …)`, and
+`last-active` is set by the `:active` trigger — so an editor that has not been
+made active since it opened leaves it nil and the command returns having done
+and said nothing. It happened *before* the guard that exists to notice exactly
+that, which is why the guard never fired.
+
+Reported with a screenshot of the right-click menu, which is where it is most
+obviously wrong: a menu is opened *on* an editor, so it is holding the answer
+the command went looking for. `::doc-menu+` passes it now, and the command says
+"No active editor to document" when it has none rather than returning.
+
+Found with the tracer, on its second real outing: `:editor.doc` was not in the
+trace at all, which is what "the command returned before raising anything"
+looks like from outside.
+
+**One diagnostic was drawn twice.** `lt.state.objects/results` projected LSP
+diagnostics to show that the `[path line]` address in `lt.state` was not
+hypothetical. `lt.ui.bands` is installed on real editors by `lt.core` and draws
+a band per `:results` entry, while `lt.objs.editor.lsp/draw-diagnostics!` draws
+its own line widget for the same diagnostic — so one diagnostic put two things
+under the line, saying the same sentence in two styles.
+
+Latent until `::sync-from-language-servers` made the projection keep up, and
+then visible on every diagnostic, which is a demonstration turning into a
+feature. `results` returns `{}` now: a diagnostic is what the file says rather
+than what running it produced, and the two want different addresses.
+
 **A command registered after startup never reached the projection.**
 `lt.state.objects/commands` projects `lt.objs.command/manager` so the command
 bar can be a view over it, and nothing listened for `:added` — so every

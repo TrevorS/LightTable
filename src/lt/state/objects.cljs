@@ -115,22 +115,27 @@
                       (select-keys (agent/state) [:status :via])))]))))
 
 (defn results
-  "Diagnostics, as results keyed the way the design keys them.
+  "Evaluation results, keyed `[path line]`. Empty for now.
 
-  A diagnostic is the one thing the editor already puts between two lines, so
-  it is the one thing there is real data for — and keying it `[path line]` here
-  is what says the address in [[lt.state]] is not hypothetical."
+  This projected LSP diagnostics, to show that the address in [[lt.state]] was
+  not hypothetical — a diagnostic being the one thing there was real data for.
+  It was a demonstration and it became a duplicate: `lt.ui.bands` is installed
+  on real editors and draws a band per `:results` entry, while
+  `lt.objs.editor.lsp/draw-diagnostics!` draws its own line widget for the same
+  diagnostic. One diagnostic, two things under the line, saying the same
+  sentence in two styles.
+
+  Latent until `::sync-from-language-servers` made the projection keep up, and
+  then visible on every diagnostic — which is what a demonstration turning into
+  a feature looks like. A diagnostic is also not a result: it is what the file
+  says, not what running it produced, and the two want different addresses in
+  the end.
+
+  Kept as a function returning nothing rather than deleted, because the shape
+  is what `:results` will hold when evaluation is projected, and `lt.ui.bands`
+  is already the thing that will draw it."
   []
-  (into {} (for [ed (object/by-tag :editor)
-                 :let [path (path-of ed)]
-                 :when path
-                 d (lsp/diagnostics ed)
-                 :let [line (get-in d [:range :start :line])]
-                 :when line]
-             [[path line] {:status :finished
-                           :value (:message d)
-                           :mime "text/plain"
-                           :from (:source d)}])))
+  {})
 
 (defn commands
   "Every command, for the command bar, as `{:label :action}` pairs.

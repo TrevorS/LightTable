@@ -529,3 +529,105 @@ test('and the bar follows the server without being nudged', async ({ window }) =
         (do (doseq [ed (pool/by-path "${file}")] (object/raise ed :close)) :closed)`);
     fs.rmSync(path.dirname(path.dirname(file)), { recursive: true, force: true });
 });
+
+test('and the menu acts on the editor it was opened on', async ({ window }) => {
+    // The fifth distinct cause of "toggle docs does nothing", and the one that
+    // survived four fixes aimed at the silence: `:editor.doc.toggle` was
+    // `(when-let [ed (pool/last-active)] …)`, and `last-active` is set by the
+    // `:active` trigger — so an editor that has not been made active since it
+    // opened leaves it nil and the command returns having done and said
+    // nothing. It happened *before* the guard that exists to notice that.
+    //
+    // Reported with a screenshot of the right-click menu, which is the case
+    // where it is most obviously wrong: a menu is opened *on* an editor, so it
+    // is holding the answer the command went looking for.
+    const file = project('lspmenudoc');
+
+    await evalClj(window, `
+        (do (lt.object/call-behavior-reaction
+              :lt.objs.editor.lsp/language-servers
+              lt.objs.editor.lsp/lsp-client
+              [{:tags [:editor.typescript]
+                :language-id "typescript"
+                :root ["tsconfig.json"]
+                :id "vtsls"
+                :command "node"
+                :args ["${FAKE_SERVER}"]}])
+            (cmd/exec! :open-path "${file}")
+            :opened)`);
+    await expect.poll(async () => await evalClj(window, `
+        (boolean (object/has-tag? (first (pool/by-path "${file}")) :docable))`),
+    { timeout: 30000 }).toBe('true');
+
+    // No active editor, and the command run bare. It used to do nothing at all.
+    await evalClj(window, `
+        (do (doseq [p (object/by-tag :editor.pool)] (object/merge! p {:last nil}))
+            (lt.objs.notifos/set-msg! "")
+            (cmd/exec! :editor.doc.toggle)
+            :ran)`);
+    expect(await evalClj(window, '(:text (:message @lt.state/app))'))
+        .toContain('No active editor');
+    expect(await insideEditor<number>(window, file,
+        '(.-length (.querySelectorAll root ".inline-doc"))')).toBe(0);
+
+    // And handed the editor, the way `::doc-menu+` hands it now.
+    await evalClj(window, `
+        (let [ed (first (pool/by-path "${file}"))]
+          (lt.objs.editor/move-cursor ed {:line 1 :ch 13})
+          (cmd/exec! :editor.doc.toggle ed)
+          :ran)`);
+    await expect.poll(async () => await insideEditor<number>(window, file,
+        '(.-length (.querySelectorAll root ".inline-doc"))'), { timeout: 20000 }).toBe(1);
+
+    // What the menu item actually dispatches, so this cannot drift back to
+    // reaching for the pool.
+    expect(await evalData<boolean>(window, `
+        (let [ed (first (pool/by-path "${file}"))
+              items (object/raise-reduce ed :menu+ [])]
+          (boolean (some #(= "Toggle docs" (:label %)) items)))`)).toBe(true);
+
+    await evalClj(window, `
+        (do (doseq [ed (pool/by-path "${file}")] (object/raise ed :close)) :closed)`);
+    fs.rmSync(path.dirname(path.dirname(file)), { recursive: true, force: true });
+});
+
+test('and a diagnostic is drawn once, not twice', async ({ window }) => {
+    // `lt.state.objects/results` projected LSP diagnostics to show that the
+    // `[path line]` address in `lt.state` was not hypothetical. `lt.ui.bands`
+    // is installed on real editors and draws a band per `:results` entry,
+    // while `lt.objs.editor.lsp` draws its own line widget for the same
+    // diagnostic — so one diagnostic put two things under the line, saying the
+    // same sentence in two styles.
+    //
+    // Latent until `::sync-from-language-servers` made the projection keep up,
+    // and then visible on every diagnostic. Reported with a screenshot.
+    const file = project('lspdiagonce');
+
+    await evalClj(window, `
+        (do (lt.object/call-behavior-reaction
+              :lt.objs.editor.lsp/language-servers
+              lt.objs.editor.lsp/lsp-client
+              [{:tags [:editor.typescript]
+                :language-id "typescript"
+                :root ["tsconfig.json"]
+                :id "vtsls"
+                :command "node"
+                :args ["${FAKE_SERVER}"]}])
+            (cmd/exec! :open-path "${file}")
+            :opened)`);
+    await expect.poll(async () => await evalData<number>(window, `
+        (:diagnostics (lt.objs.editor.lsp/status (first (pool/by-path "${file}"))))`),
+    { timeout: 30000 }).toBeGreaterThan(0);
+
+    const drawn = await insideEditor<{ widgets: number, bands: number }>(window, file, `
+        {:widgets (.-length (.querySelectorAll root ".inline-diagnostic"))
+         :bands (.-length (.querySelectorAll root ".band"))}`);
+    expect(drawn!.widgets).toBeGreaterThan(0);
+    expect(drawn!.bands, 'a diagnostic is not also a band').toBe(0);
+    expect(await evalData<number>(window, '(count (:results @lt.state/app))'),
+           'and it is not projected as an evaluation result').toBe(0);
+
+    await evalClj(window, `
+        (do (doseq [ed (pool/by-path "${file}")] (object/raise ed :close)) :closed)`);
+    fs.rmSync(path.dirname(path.dirname(file)), { recursive: true, force: true });
+});

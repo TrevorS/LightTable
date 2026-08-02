@@ -51,8 +51,15 @@
                             {:label "Toggle docs"
                              :order 0.1
                              :enabled (not (editor/selection? this))
+                             ;; `this`, not whatever the pool thinks was last
+                             ;; active. A menu is opened *on* an editor, so it
+                             ;; is holding the answer the command would
+                             ;; otherwise go looking for — and `last-active` is
+                             ;; set by the `:active` trigger, so an editor that
+                             ;; has not been made active since it opened leaves
+                             ;; it nil and the command a silent no-op.
                              :click (fn []
-                                      (cmd/exec! :editor.doc.toggle))}
+                                      (cmd/exec! :editor.doc.toggle this))}
                             {:type "separator"
                              :order 0.2}
                             )))
@@ -93,14 +100,28 @@
 
 (cmd/command {:command :editor.doc.toggle
               :desc "Docs: Toggle documentation at cursor"
-              :exec (fn []
-                      (when-let [ed (pool/last-active)]
+              :doc "Takes the editor to act on, and falls back to whichever was
+                    last active. The argument is what the right-click menu
+                    passes, because it knows.
+
+                    The fallback is the fifth distinct cause of \"toggle docs
+                    does nothing\": this was `(when-let [ed (pool/last-active)]
+                    …)`, and `last-active` is set by the `:active` trigger —
+                    so an editor that has not been made active since it opened
+                    leaves it nil, and the whole command returned having done
+                    and said nothing. It happened *before* the guard that
+                    exists to notice exactly that, which is why four fixes
+                    aimed at the silence never reached it."
+              :exec (fn [& [given]]
+                      (if-let [ed (or given (pool/last-active))]
                         (let [loc (editor/->cursor ed)]
                           (if-let [cur (doc-on-line? ed (:line loc))]
                             (remove! ed cur)
                             (let [said (:text (:message @state/app))]
                               (object/raise ed :editor.doc)
-                              (unanswered! ed (:line loc) said))))))})
+                              (unanswered! ed (:line loc) said))))
+                        (notifos/set-msg!
+                         "No active editor to document — click into one first.")))})
 
 (defn- doc-ui
   "What a language said about the thing under the cursor, as hiccup.
