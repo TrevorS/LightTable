@@ -16,8 +16,7 @@
             [lt.objs.files :as files]
             [lt.util.dom :as dom]
             [lt.util.cljs])
-  (:use-macros [singultus.def-macros :only [defpartial]]
-               [lt.macros :only [behavior defui]]))
+  (:use-macros [lt.macros :only [behavior]]))
 
 ;;**********************************************************
 ;; transient docs

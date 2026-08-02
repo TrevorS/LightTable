@@ -109,7 +109,7 @@
            ""
            (:stackTrace e))))
 
-(defui frame [f]
+(defn- frame [f]
   [:tr [:td.url (->file-name (:url f)) " [" (:lineNumber f) "]"] [:td (if (empty? (:functionName f))
                                                                            "anonymous"
                                                                            (:functionName f))]])

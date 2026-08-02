@@ -11,9 +11,9 @@
             [clojure.string :as string]
             [lt.util.dom :refer [append] :as dom]
             [lt.objs.platform :as platform]
+            [lt.ui :as ui]
             [lt.util.bridge :as bridge])
-  (:require-macros [singultus.def-macros :refer [defpartial]]
-                   [lt.macros :refer [behavior defui]]))
+  (:require-macros [lt.macros :refer [behavior]]))
 
 (def console-limit 50)
 (def logs-dir (files/lt-user-dir "logs"))
@@ -49,8 +49,15 @@
   (when core-log
     (.appendFileSync bridge/files core-log thing)))
 
-(defpartial ^js ->item [l & [class]]
-  [:li {:class class} l])
+(defn- ^js ->item
+  "One console line, as a node.
+
+  A node and not hiccup, because the console is genuinely append-only: [[write]]
+  puts this at the end, drops the first child when there are too many, and
+  [[try-update]] appends text into one that is already there as a process keeps
+  talking. Nothing redraws a line, so nothing needs to be able to."
+  [l & [class]]
+  (ui/element [:li {:class class} l]))
 
 (defn log
   ([l] (log l nil))
@@ -86,10 +93,11 @@
 (.addEventListener js/window "error" #(error (or (.-error %) (.-message %))))
 (.addEventListener js/window "unhandledrejection" #(error (.-reason %)))
 
-(defui console-ui [this]
-  [:ul.console]
-  :contextmenu (fn [e]
-                 (object/raise this :menu! e)))
+(defn- console-ui
+  "The empty list every line is appended to. Two objects have one: the console
+  in the bottombar and the console in a tab."
+  [this]
+  (ui/element [:ul.console {:on {:contextmenu (fn [e] (object/raise this :menu! e))}}]))
 
 (behavior ::on-close
           :triggers #{:close}
