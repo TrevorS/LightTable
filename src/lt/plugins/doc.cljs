@@ -1,6 +1,6 @@
 (ns lt.plugins.doc
   "Provide documentation sidebar for searching docs. Used by language plugins"
-  (:require [clojure.string]
+  (:require [clojure.string :as string]
             [lt.object :as object]
             [lt.objs.context :as ctx]
             [lt.objs.clients :as clients]
@@ -105,9 +105,18 @@
   (@object/object-defs (keyword (str ns "/" (subs name 2)))))
 
 (defn- retrieve
+  "The behavior or object def `ns`/`name` names, or nil.
+
+  Guarded, because both of the above do `(subs name 2)` to take the `::` off
+  and `(subs nil 2)` throws. A language answering with no name at all is the
+  ordinary case rather than a strange one — cider-nrepl answers `info` with
+  every field nil for anything it has not loaded — and this used to throw from
+  inside a behavior, which is a line in a console nobody reads and a doc bar
+  that never appears."
   [ns name]
-  (or (retrieve-behavior ns name)
-      (retrieve-object-def ns name)))
+  (when (and (seq (str ns)) (string/starts-with? (str name) "::"))
+    (or (retrieve-behavior ns name)
+        (retrieve-object-def ns name))))
 
 (defn- retrieve-docstring
   "Helper method for behavior `editor.doc.show!` that returns the docstring for a matching
@@ -119,7 +128,7 @@
 (defn- retrieve-labels
   [ns name]
   (let [o (retrieve ns name)]
-    (clojure.string/join ", " (map #(get %1 :label) (:params o [])))))
+    (string/join ", " (map #(get %1 :label) (:params o [])))))
 
 (behavior ::editor.doc.show!
           :triggers #{:editor.doc.show!}

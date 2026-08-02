@@ -252,6 +252,32 @@ would create the second source of truth it exists to avoid.
 
 ## Closed
 
+**Toggle docs did nothing in ClojureScript files** — the fourth report, and
+the same two dead ends as the second, in the twin nobody looked at. `838f8446`
+fixed `::clj-doc` and `::print-clj-doc`; `::cljs-doc` and `::print-cljs-doc`
+are line-for-line the same behaviors for the other language and kept both:
+a `when token` that skipped silently, and `(if-not result …)` on a value whose
+key had just been read, so the branch could not fire.
+
+The test is why it survived. `lsp-doc.spec.ts` drives those behaviors *by name*
+— the plugin's behaviors hang off `:editor.clj.*` and the fixture file is
+TypeScript — and it named the two that had been fixed. It runs over both
+languages now, which is the fix that generalises.
+
+Reproduced before it was believed, and the reproduction found a third failure
+underneath: with a REPL claiming `:doc`, `widgets` was empty, nothing was
+drawn, and the error ring held `Cannot read properties of null (reading
+'substring')` from `lt.plugins.doc/retrieve-behavior`. An answer with every
+field nil reached `:editor.doc.show!`, which looks a doc with no `:file` and no
+`:doc` up as one of Light Table's own behaviors — `(subs nil 2)`. So the
+silence was a throw, inside a behavior, into a console nobody reads. `retrieve`
+is guarded, and a nameless doc has its own assertion.
+
+Meanwhile clojure-lsp was connected, ready and indexed, and stood down because
+a REPL had taken the surface. The statusbar said "Language server ready", which
+is the open entry above about that message being true of whichever connection
+finished first.
+
 **The collapsible exception was a whole feature nothing could reach** — wired
 on 2026-08-02. An object, a view and eight lines of `:collapsible.exception`
 tag config, all downstream of `::expandable-exceptions`, which listens for

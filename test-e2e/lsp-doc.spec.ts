@@ -231,24 +231,50 @@ test('and a REPL that takes the surface has to answer for it', async ({ window }
     //
     // Driven by name, because the plugin's behaviors hang off `:editor.clj.*`
     // and a TypeScript file never carries them.
-    await evalClj(window, `
-        (do (lt.objs.notifos/set-msg! "")
-            (lt.object/call-behavior-reaction :lt.plugins.clojure/print-clj-doc
-                                              (first (pool/by-path "${file}"))
-                                              {:result-type :doc :name "greet" :doc nil :args nil})
-            :handed-back)`);
-    await expect.poll(async () => await insideEditor<number>(window, file,
-        '(.-length (.querySelectorAll root ".inline-doc"))'), { timeout: 20000 }).toBe(1);
-    await evalClj(window, '(do (cmd/exec! :editor.doc.toggle) :away)');
+    //
+    // Both languages, and that is the point rather than thoroughness. This test
+    // named `print-clj-doc` and `clj-doc`, the two that had been fixed — so the
+    // ClojureScript twins kept the identical pair of dead ends and the identical
+    // silence, and it took a fourth report to find them. A third language would
+    // go in this list.
+    for (const lang of ['clj', 'cljs']) {
+        await evalClj(window, `
+            (do (lt.objs.notifos/set-msg! "")
+                (lt.object/call-behavior-reaction :lt.plugins.clojure/print-${lang}-doc
+                                                  (first (pool/by-path "${file}"))
+                                                  {:result-type :doc :name "greet" :doc nil :args nil})
+                :handed-back)`);
+        await expect.poll(async () => await insideEditor<number>(window, file,
+            '(.-length (.querySelectorAll root ".inline-doc"))'),
+        { timeout: 20000, message: `${lang}: an empty answer must go back to the server` }).toBe(1);
+        await evalClj(window, '(do (cmd/exec! :editor.doc.toggle) :away)');
 
-    expect(await evalClj(window, `
-        (do (lt.objs.notifos/set-msg! "")
-            (let [ed (first (pool/by-path "${file}"))]
-              ;; Column 0 of a blank line: no symbol to ask about.
-              (lt.objs.editor/move-cursor ed {:line 2 :ch 0})
-              (lt.object/call-behavior-reaction :lt.plugins.clojure/clj-doc ed))
-            (:text (:message @lt.state/app)))`))
-        .toContain('No symbol at the cursor');
+        expect(await evalClj(window, `
+            (do (lt.objs.notifos/set-msg! "")
+                (let [ed (first (pool/by-path "${file}"))]
+                  ;; Column 0 of a blank line: no symbol to ask about.
+                  (lt.objs.editor/move-cursor ed {:line 2 :ch 0})
+                  (lt.object/call-behavior-reaction :lt.plugins.clojure/${lang}-doc ed))
+                (:text (:message @lt.state/app)))`), lang)
+            .toContain('No symbol at the cursor');
+    }
+
+    // An answer with something to say and no name for it. `:editor.doc.show!`
+    // looks a doc with no `:file` and no `:doc` up as one of Light Table's own
+    // behaviors, which meant `(subs nil 2)` — a throw from inside a behavior,
+    // which is a line in a console nobody reads and no doc bar. It is what the
+    // silence above actually looked like from the inside.
+    await window.evaluate(() => (globalThis as any).lt.objs.control.request('clear-errors', {}));
+    await evalClj(window, `
+        (do (lt.object/call-behavior-reaction :lt.plugins.doc/editor.doc.show!
+                                              (first (pool/by-path "${file}"))
+                                              {:result-type :doc :ns nil :name nil
+                                               :args "[x]" :doc nil :file nil
+                                               :loc {:line 1 :ch 13}})
+            :shown)`);
+    expect(await evalClj(window, '(count @lt.object/errors)'),
+           'a nameless doc must not throw').toBe('0');
+    await evalClj(window, '(do (cmd/exec! :editor.doc.toggle) :away)');
 
     await evalClj(window, `
         (do (swap! lt.objs.clients/cs dissoc (lt.objs.clients/->id surface-taker))

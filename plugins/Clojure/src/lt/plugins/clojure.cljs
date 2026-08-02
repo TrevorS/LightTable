@@ -859,20 +859,39 @@
                                    :sym (:string token)
                                    :ns (buffer-ns editor)
                                    :print-length (object/raise-reduce editor :clojure.print-length+ nil))]
-                        (when token
+                        (if token
                           (clients/send (eval/get-client! {:command command
                                                            :info info
                                                            :origin editor
                                                            :create try-connect})
-                                        command info :only editor)))))
+                                        command info :only editor)
+                          ;; Said rather than skipped, for the same reason as
+                          ;; `::clj-doc` above: a connected REPL takes this
+                          ;; surface from the language server, so a `when` here
+                          ;; is the whole feature going quiet.
+                          (notifos/set-msg! "No symbol at the cursor to document.")))))
 
 (behavior ::print-cljs-doc
           :triggers #{:editor.cljs.doc}
           :reaction (fn [editor result]
                       (when (= :doc (:result-type result))
-                        (if-not result
-                          (notifos/set-msg! "No docs found." {:class "error"})
-                          (object/raise editor :editor.doc.show! result)))))
+                        ;; The same two dead ends `::print-clj-doc` had, in the
+                        ;; twin nobody fixed when that one was. `(if-not result
+                        ;; …)` could not fire — `result` has just been read for
+                        ;; `:result-type`, so it is a map and truthy every time
+                        ;; — and what actually happens is an answer whose every
+                        ;; field is nil, because a ClojureScript REPL answers
+                        ;; no-info for anything it has not loaded.
+                        ;;
+                        ;; That reached `:editor.doc.show!`, which called
+                        ;; `(subs nil 2)` looking for a behavior of that name
+                        ;; and threw into a console nobody reads. Nothing drawn,
+                        ;; nothing said, and clojure-lsp — connected, indexed,
+                        ;; and stood down because a REPL had taken the surface
+                        ;; — never asked.
+                        (if (or (seq (str (:doc result))) (seq (str (:args result))))
+                          (object/raise editor :editor.doc.show! result)
+                          (object/raise editor :editor.doc.fallback!)))))
 
 (behavior ::clj-doc-search
           :triggers #{:types+}
