@@ -12,14 +12,13 @@
             [lt.util.dom :as dom]
             [lt.objs.workspace :as workspace2]
             [lt.objs.workspace-edit :as workspace-edit]
-            [singultus.core :as crate]
-            [singultus.binding :refer [bound]]
+            [lt.ui :as ui]
             [lt.util.js]
             [lt.util.load :as load]
             [clojure.string :as string]
             [lt.objs.editor :as editor]
             [lt.objs.editor.pool :as pool])
-  (:require-macros [lt.macros :refer [behavior defui extract]]))
+  (:require-macros [lt.macros :refer [behavior extract]]))
 
 (def search! (thread/job :search))
 
@@ -36,52 +35,26 @@
 (defn string->loc [loc-str]
   (mapcat (comp location string/trim) (remove empty? (string/split loc-str ","))))
 
-(defn ->res [this]
-  (dom/$ :.res (object/->content this)))
+(defn- entry
+  "One matching line.
 
-(defui ->entry [r file]
-  ;; Built as nodes rather than a raw HTML string: crate/raw relies on
-  ;; goog.dom/htmlToDocumentFragment, which Closure deleted, and interpolating
-  ;; matched file content into markup let that content render as HTML.
-  [:p.entry [:span.line (.-line r)] [:pre (.-text r)]]
-  :click (fn []
-           (cmd/exec! :open-path file)
-           (cmd/exec! :go-to-line (.-line r))))
+  Hiccup, and never a string of markup: `crate/raw` relied on
+  `goog.dom/htmlToDocumentFragment`, which Closure deleted, and interpolating
+  matched file content into markup let that content render as HTML. What is
+  drawn here came out of somebody's file."
+  [file i ^js r]
+  [:p.entry {:replicant/key i
+             :on {:click (fn []
+                           (cmd/exec! :open-path file)
+                           (cmd/exec! :go-to-line (.-line r)))}}
+   [:span.line (.-line r)]
+   [:pre (.-text r)]])
 
-(defui ->result-item [r]
+(defn- result-item [^js r]
   (let [file (.-file r)]
-    [:li
+    [:li {:replicant/key file}
      [:p.path [:span.file (files/basename file)] "(" (files/parent file) ")"]
-     (for [r (.-results r)]
-       (->entry r file))]))
-
-(defui search-box [this]
-  [:input.search {:type "text" :placeholder "Search"}]
-  :focus (fn []
-           (ctx/in! :searcher.search this)
-           ; select the text automatically pasted to input line for some UI conveniece
-           (.select (dom/$ :input.search (object/->content this))))
-  :blur (fn []
-          (ctx/out! :searcher.search)))
-
-(defui replace-box [this]
-  [:input.replace {:type "text" :placeholder "Replace"}]
-  :focus (fn []
-           (ctx/in! :searcher.replace this))
-  :blur (fn []
-          (ctx/out! :searcher.replace)))
-
-(defui replace-all-button [this]
-  [:button.replace "Replace All"]
-  :click (fn [e]
-           (cmd/exec! :searcher.replace-all)))
-
-(defui location-box [this]
-  [:input.loc {:type "text" :placeholder "Locations" :value "<workspace>"}]
-  :focus (fn []
-           (ctx/in! :searcher.location this))
-  :blur (fn []
-          (ctx/out! :searcher.location)))
+     (map-indexed (partial entry file) (array-seq (.-results r)))]))
 
 (defn ->search-info [this]
   (extract (object/->content this)
@@ -100,8 +73,9 @@
 (behavior ::clear!
           :triggers #{:clear!}
           :reaction (fn [this]
-                      (object/merge! this {:timeout nil :results (array) :result-count 0 ::time nil ::filesSearched nil ::rewritten {} :position [0 -1]})
-                      (dom/empty (->res this))))
+                      ;; No `dom/empty`: the list is drawn from `:results`, so a
+                      ;; fresh array is what clears it.
+                      (object/merge! this {:timeout nil :results (array) :result-count 0 ::time nil ::filesSearched nil ::rewritten {} :position [0 -1]})))
 
 (behavior ::search!
           :triggers #{:search!}
@@ -145,7 +119,10 @@
                             (notifos/done-working
                              (str "Replaced " (:result-count @this) " results in "
                                   (:files res 0) " files in " (/ (:time info) 1000) "s.")))
-                          (dom/empty (->res this)))
+                          ;; The list goes, the count stays — which is what
+                          ;; emptying the `ul` did, and the line above has
+                          ;; already read the count it reports.
+                          (object/merge! this {:results (array)}))
                         (notifos/done-working (str "Found " (:result-count @this) " results searching " (:total info) " files in " (/ (:time info) 1000) "s." )))))
 
 (behavior ::next!
@@ -198,8 +175,10 @@
                                      (js-obj "file" (.-file result)
                                              "results" (.slice (.-results result) 0 (- result-threshold (:result-count @this))))
                                      result)]
-                        (when (< (:result-count @this) result-threshold)
-                          (dom/append (->res this) (->result-item result)))
+                        ;; Pushed in place, which does not swap the atom and so
+                        ;; does not draw. The `:result-count` update below is
+                        ;; what does — every result has one, and that is the
+                        ;; only reason this streams.
                         (.push (:results @this) result)
                         ;; A replace sends the rewritten text back instead of
                         ;; writing it. Held until the walk finishes so the
@@ -222,6 +201,43 @@
           )
         ))
 
+(defn- searcher-ui
+  "The whole panel, from the object.
+
+  The fields stay the browser's — `->search-info` reads them back with
+  `dom/val`, and `:default-value` seeds the location box by setting the
+  attribute rather than the property, so a redraw cannot type over you. See
+  [[lt.objs.find]] for the same rule and why it matters.
+
+  A file with no results left is not drawn. `::on-result` slices each result to
+  what is still under `result-threshold`, so once the threshold is reached the
+  entries it keeps pushing are empty — and an empty one would otherwise be a
+  path with nothing under it."
+  [this]
+  (let [{:keys [results] :as state} @this]
+    (list
+     [:ul.res
+      (for [^js r (array-seq results)
+            :when (pos? (.-length (.-results r)))]
+        (result-item r))]
+     [:div.searcher
+      [:p (result-count state)]
+      [:input.search {:type "text" :placeholder "Search"
+                      :on {:focus (fn []
+                                    (ctx/in! :searcher.search this)
+                                    ;; Selected so that a search filled in from
+                                    ;; the editor's selection can be typed over.
+                                    (.select ^js (dom/$ :input.search (object/->content this))))
+                           :blur (fn [] (ctx/out! :searcher.search))}}]
+      [:div
+       [:input.replace {:type "text" :placeholder "Replace"
+                        :on {:focus (fn [] (ctx/in! :searcher.replace this))
+                             :blur (fn [] (ctx/out! :searcher.replace))}}]
+       [:button.replace {:on {:click (fn [] (cmd/exec! :searcher.replace-all))}} "Replace All"]]
+      [:input.loc {:type "text" :placeholder "Locations" :default-value "<workspace>"
+                   :on {:focus (fn [] (ctx/in! :searcher.location this))
+                        :blur (fn [] (ctx/out! :searcher.location))}}]])))
+
 (object/object* ::workspace-search
                 :tags #{:searcher}
                 :results (array)
@@ -230,17 +246,7 @@
                         (object/add-tags this [(if (platform/win?)
                                                  :searcher.win
                                                  :searcher.unix)])
-                        [:div.search-results
-                         [:ul.res
-                          ]
-                         [:div.searcher
-                          [:p (bound this result-count)]
-                          (search-box this)
-                          [:div (replace-box this) (replace-all-button this)]
-                          (location-box this)
-                          ]
-                         ]
-                        ))
+                        (ui/node this [:div.search-results] searcher-ui)))
 
 (def searcher (object/create ::workspace-search))
 

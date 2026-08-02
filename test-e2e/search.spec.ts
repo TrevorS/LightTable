@@ -102,3 +102,60 @@ test('node_modules is not searched', async ({ window }) => {
 
     fs.rmSync(dir, { recursive: true, force: true });
 });
+
+test('the results are drawn, and clearing them takes them off screen', async ({ window }) => {
+    // The panel is a view of the object now, and nothing asserted that it draws
+    // at all: these tests read `:result-count` and `:results`, which are the
+    // worker's answer rather than what is on screen. A conversion that rendered
+    // nothing would have passed every one of them.
+    const dir = scratchDir('drawn');
+    fs.mkdirSync(path.join(dir, 'sub'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'one.txt'), 'NEEDLE here\nplain\nNEEDLE twice\n');
+    fs.writeFileSync(path.join(dir, 'sub', 'two.txt'), 'and NEEDLE there\n');
+
+    await evalClj(window, '(do (cmd/exec! :searcher.show) :shown)');
+    await runSearcher(window, dir, 'NEEDLE', '', 'search!');
+
+    // Two files, three matches, and the line numbers the worker reported.
+    const files = window.locator('.search-results .res > li');
+    await expect.poll(async () => await files.count()).toBe(2);
+    await expect.poll(async () => await window.locator('.search-results .res .entry').count()).toBe(3);
+    expect(await window.locator('.search-results .res .file').allInnerTexts())
+        .toEqual(expect.arrayContaining(['one.txt', 'two.txt']));
+    expect((await window.locator('.search-results .res .entry').first().innerText()))
+        .toContain('NEEDLE here');
+
+    // The count line is part of the same view.
+    expect(await window.textContent('.search-results .searcher p')).toContain('3 results');
+
+    // And clearing is the array being replaced rather than the `ul` being
+    // emptied, which is what the conversion changed.
+    await evalClj(window, '(do (object/raise lt.objs.search/searcher :clear!) :cleared)');
+    await expect.poll(async () => await files.count()).toBe(0);
+
+    fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('and a click on a result opens that file at that line', async ({ window }) => {
+    // The one thing you can do to a result. It was a `defui` handler and is a
+    // handler in the hiccup now; a click that stopped working would look
+    // exactly like a search that found the wrong thing.
+    const dir = scratchDir('clicked');
+    const file = path.join(dir, 'target.txt');
+    fs.writeFileSync(file, 'zero\none\nNEEDLE on line three\nthree\n');
+
+    await evalClj(window, '(do (cmd/exec! :searcher.show) :shown)');
+    await runSearcher(window, dir, 'NEEDLE', '', 'search!');
+    await expect.poll(async () => await window.locator('.search-results .res .entry').count()).toBe(1);
+
+    await window.locator('.search-results .res .entry').first().click();
+
+    await expect.poll(async () => await evalData(window,
+        `(count (pool/by-path "${file}"))`)).toBe(1);
+    await expect.poll(async () => await evalData(window,
+        `(:line (editor/->cursor (first (pool/by-path "${file}"))))`)).toBe(2);
+
+    await evalClj(window, `
+        (do (doseq [ed (pool/by-path "${file}")] (object/raise ed :close)) :closed)`);
+    fs.rmSync(dir, { recursive: true, force: true });
+});
