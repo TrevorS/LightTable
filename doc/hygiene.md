@@ -252,6 +252,30 @@ would create the second source of truth it exists to avoid.
 
 ## Closed
 
+**A right-click built two menus, and the second wiped the first's handlers.**
+An editor answers `:menu!` twice — `lt.objs.editor/menu!` from `:editor` and
+`lt.objs.menu/menu!` from `:tabset.tab` — so one right-click builds two menus.
+`lt.objs.menu/menu` did `(reset! popup-handlers {})` on every call, on the
+reasoning that only one context menu is on screen at a time, so the second
+build dropped the first's tokens before either was clicked.
+
+The symptom is exact, and it is the sixth reported cause of "toggle docs does
+nothing": the menu opens and looks right, `Copy`, `Cut`, `Paste` and `Select
+all` work because they are Electron *roles* and need no token at all, and every
+item backed by a handler — `Toggle docs`, `Close tab`, `Move tab to new
+tabset` — does nothing whatsoever, because `(when-let [handler …])` finds none
+and returns.
+
+Tokens are monotonic, so an old one can never be confused with a new one and
+keeping them costs the closures. Bounded at 400 rather than reset, which fixes
+any double-menu rather than this one.
+
+Found by driving the packaged application and noticing that every probe so far
+had called the `:click` closure directly — the token path, which is the only
+one a person uses, had never been exercised. Two menus is still one too many
+and `lt.objs.editor/menu!` and `lt.objs.menu/menu!` are near-duplicates; that
+is a separate tidy.
+
 **`status` described the last-declared server rather than the one answering.**
 On a TypeScript file in a project with no `biome.json`, the singular keys —
 `:command`, `:root`, `:found` — were biome's: `"biome"`, `nil`, `nil`, reported

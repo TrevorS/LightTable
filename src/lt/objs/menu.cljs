@@ -58,11 +58,39 @@
   [items]
   (mapv menu-item (remove nil? items)))
 
+(def ^:private popup-handler-limit
+  "How many context-menu tokens to keep.
+
+  This used to be `(reset! popup-handlers {})` on every `menu` call, on the
+  reasoning that only one context menu is on screen at a time. That is not
+  true: an editor answers `:menu!` twice — `lt.objs.editor/menu!` from
+  `:editor` and this namespace's from `:tabset.tab` — so one right-click builds
+  two menus, and the second build wiped the first's tokens before either was
+  clicked.
+
+  What that looks like is precise and was reported five times: the menu opens
+  and looks right, `Copy`, `Cut`, `Paste` and `Select all` work because they
+  are Electron *roles* and need no token at all, and every item backed by a
+  handler — `Toggle docs`, `Close tab`, `Move tab to new tabset` — does nothing
+  whatsoever. `(when-let [handler …])` finds none and returns.
+
+  Tokens are monotonic, so old ones can never be confused with new ones and
+  keeping them costs only the closures. Bounded because a long session
+  right-clicks a lot."
+  400)
+
+(defn- prune
+  "Drop all but the most recent `popup-handler-limit` tokens."
+  [handlers]
+  (if (<= (count handlers) popup-handler-limit)
+    handlers
+    (into {} (take-last popup-handler-limit (sort-by key handlers)))))
+
 (defn menu
   "Describe a context menu. Returns data; pass it to [[show-menu]] to display."
   [items]
   (binding [*handlers* popup-handlers]
-    (reset! popup-handlers {})
+    (swap! popup-handlers prune)
     (mapv menu-item (remove nil? items))))
 
 (defn show-menu [m]

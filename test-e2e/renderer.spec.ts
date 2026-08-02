@@ -11,7 +11,7 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { test, expect, control, evalClj, scratchDir } from './fixtures';
+import { test, expect, control, evalClj, evalData, scratchDir } from './fixtures';
 
 /**
  * The editor's own element, on whichever engine built it.
@@ -903,4 +903,46 @@ test('a DOM node left in a view is reported rather than silently dropped', async
             (object/destroy! plain)
             (object/clear-errors!)
             :gone)`);
+});
+
+test('a right-click builds two menus, and both their handlers still work', async ({ window }) => {
+    // An editor answers `:menu!` twice — `lt.objs.editor/menu!` from `:editor`
+    // and `lt.objs.menu/menu!` from `:tabset.tab` — so one right-click builds
+    // two menus. `lt.objs.menu/menu` used to `reset!` the token map on every
+    // call, on the reasoning that only one context menu is on screen, so the
+    // second build wiped the first's handlers before either was clicked.
+    //
+    // What that looks like is exact, and it is the sixth reported cause of
+    // "toggle docs does nothing": the menu opens and looks right, `Copy`,
+    // `Cut`, `Paste` and `Select all` work because they are Electron *roles*
+    // and need no token, and every item backed by a handler — `Toggle docs`,
+    // `Close tab`, `Move tab to new tabset` — does nothing at all, because
+    // `(when-let [handler …])` finds none and returns.
+    const dir = scratchDir('menu-tokens');
+    const file = path.join(dir, 'right-click.txt');
+    fs.writeFileSync(file, 'alpha\nbeta\n');
+    await evalClj(window, `(do (cmd/exec! :open-path "${file}") :opened)`);
+    await expect.poll(async () => await evalClj(window,
+        `(count (pool/by-path "${file}"))`)).toBe('1');
+
+    // Both behaviors are on the editor, which is what makes one click two menus.
+    expect(await evalData<string[]>(window, `
+        (mapv str (get (:listeners @(first (pool/by-path "${file}"))) :menu!))`))
+        .toEqual([':lt.objs.editor/menu!', ':lt.objs.menu/menu!']);
+
+    const survives = await evalData<{ token: number, survives: boolean }>(window, `
+        (let [ed (first (pool/by-path "${file}"))
+              items (fn [] (sort-by :order (object/raise-reduce ed :menu+ [])))
+              built (lt.objs.menu/menu (items))
+              tok (:token (first (filter :token built)))]
+          ;; The second menu, as the second behavior builds it on the same click.
+          (lt.objs.menu/menu (items))
+          {:token tok
+           :survives (boolean (get @lt.objs.menu/popup-handlers tok))})`);
+    expect(survives.token).toBeGreaterThan(0);
+    expect(survives.survives, "the first menu's handler must outlive the second build").toBe(true);
+
+    await evalClj(window, `
+        (do (doseq [ed (pool/by-path "${file}")] (object/raise ed :close)) :closed)`);
+    fs.rmSync(dir, { recursive: true, force: true });
 });
