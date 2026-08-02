@@ -8,6 +8,7 @@
 // second and a one-liner.
 //
 //   script/lt-repl.sh start                  boot it, wait until it answers
+//   script/lt-repl.sh start --release        boot the packaged app in builds/
 //   script/lt-repl.sh eval '1 + 1'           evaluate in the window
 //   script/lt-repl.sh eval -f probe.js       evaluate a file
 //   script/lt-repl.sh eval -t 60000 '...'    give it longer than the default 15s
@@ -31,7 +32,7 @@ import * as path from 'node:path';
 import { spawn } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
-import { CORE, electronBinary } from './lib/paths.mts';
+import { CORE, ROOT, electronBinary, packagedApp } from './lib/paths.mts';
 
 const ELECTRON = await electronBinary();
 // main.js appends --remote-debugging-port=8315 itself.
@@ -286,29 +287,58 @@ async function bootLog(seconds: number): Promise<void> {
     fs.rmSync(STATE, { force: true });
 }
 
+/**
+ * What to boot: the tree, or the packaged application in `builds/`.
+ *
+ * `--release` exists because "does it work in the real thing" was a question
+ * nothing here could answer. The tree and the package differ in ways that have
+ * mattered — the package has its own Electron, its own `node_modules`, its own
+ * copy of every plugin, and a resources layout `deploy/core` does not have —
+ * so a bug that only appears in one of them is the kind nobody can reproduce.
+ *
+ * Both run against your real user directory, because `spawn` inherits the
+ * environment and `LT_USER_DIR` is unset: your settings, your workspace, your
+ * plugins, your connections. That is the difference from `test-e2e`, which
+ * gives every run a scratch home on purpose — and it is why a failure you can
+ * see and this could not is worth checking here first.
+ */
+function target(release: boolean): { binary: string; args: string[]; what: string } {
+    if (!release) return { binary: ELECTRON, args: [CORE, '--no-sandbox'], what: 'deploy/core' };
+    const app = packagedApp();
+    if (!app) fail('No packaged build in builds/. Run `make build` first.');
+    return { binary: app.binary, args: [...app.args, '--no-sandbox'],
+             what: path.relative(ROOT, app.binary) };
+}
+
 /** Starts the application detached, and records its pid for stop(). */
-function spawnApp(): ReturnType<typeof spawn> {
+function spawnApp(release = false): ReturnType<typeof spawn> {
+    const { binary, args, what } = target(release);
     // macOS has no DISPLAY and does not want one: Electron talks to the window
     // server directly, so asking for xvfb there fails on a machine that works
     // perfectly. script/smoke-test.sh already draws this line; this did not,
     // and `lt-repl.sh start` on a Mac spawned xvfb-run and reported ENOENT.
     const useXvfb = !process.env.DISPLAY && process.platform !== 'darwin';
-    const cmd = useXvfb ? 'xvfb-run' : ELECTRON;
-    const args = useXvfb ? ['-a', '--server-args=-screen 0 1280x820x24', ELECTRON, CORE, '--no-sandbox']
-                         : [CORE, '--no-sandbox'];
-    const child = spawn(cmd, args, { detached: true, stdio: 'ignore' });
+    const cmd = useXvfb ? 'xvfb-run' : binary;
+    const spawnArgs = useXvfb
+        ? ['-a', '--server-args=-screen 0 1280x820x24', binary, ...args]
+        : args;
+    console.error(`booting ${what}`);
+    const child = spawn(cmd, spawnArgs, { detached: true, stdio: 'ignore' });
     child.unref();
-    fs.writeFileSync(STATE, JSON.stringify({ pid: child.pid }));
+    fs.writeFileSync(STATE, JSON.stringify({ pid: child.pid, what }));
     return child;
 }
 
-async function start(): Promise<void> {
-    if (!fs.existsSync(ELECTRON)) fail('Electron is missing. Run script/build.sh first.');
-    if (!fs.existsSync(path.join(CORE, 'lighttable', 'bootstrap.js'))) fail('No bundle. Run npm run build:cljs.');
+async function start(release = false): Promise<void> {
+    if (!release) {
+        if (!fs.existsSync(ELECTRON)) fail('Electron is missing. Run script/build.sh first.');
+        if (!fs.existsSync(path.join(CORE, 'lighttable', 'bootstrap.js')))
+            fail('No bundle. Run npm run build:cljs.');
+    }
 
     try { await window_(0); console.log('already running'); return; } catch { /* not up */ }
 
-    spawnApp();
+    spawnApp(release);
     await window_(60000);
     // The window answers before Light Table has finished starting; wait for the
     // object graph rather than for the page.
@@ -387,8 +417,13 @@ async function control(op: string, arg: unknown, poll = false): Promise<void> {
 }
 
 async function main(): Promise<void> {
-    const [command, ...rest] = process.argv.slice(2);
-    if (command === 'start') return await start();
+    const argv = process.argv.slice(2);
+    // `--release` anywhere, because it belongs to the session rather than to
+    // the subcommand, and `start --release` and `--release start` should not
+    // be different things to remember.
+    const release = argv.includes('--release');
+    const [command, ...rest] = argv.filter((a) => a !== '--release');
+    if (command === 'start') return await start(release);
     if (command === 'stop') return stop();
     if (command === 'boot-log') return await bootLog(Number(rest[0]) || 20);
     if (command === 'shot') return await shot(rest[0], Number(rest[1]) || 0);
@@ -410,7 +445,8 @@ async function main(): Promise<void> {
              '  answer <prompt-id> [choice]\n' +
              '  open <file>\n' +
              '  eval [-t ms] <js> | eval -f <file> | cljs <expr>\n' +
-             '  shot <out.png> [settle-seconds] | boot-log [seconds]');
+             '  shot <out.png> [settle-seconds] | boot-log [seconds]\n' +
+             '  --release             boot the packaged app in builds/ rather than the tree');
     }
     let args = rest;
     let timeout = 0;

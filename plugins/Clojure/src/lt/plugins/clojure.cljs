@@ -16,6 +16,7 @@
             [lt.objs.tabs :as tabs]
             [lt.plugins.auto-complete :as auto-complete]
             [lt.objs.proc :as proc]
+            [lt.objs.providers :as providers]
             [lt.objs.eval :as eval]
             [lt.objs.notifos :as notifos]
             [lt.plugins.watches :as watches]
@@ -784,30 +785,50 @@
   [editor]
   (second (re-find #"\(ns\s+([\w\.\-\*\+\!\?<>=]+)" (ed/->val editor))))
 
+(defn- doc-client
+  "A client this editor is *already* connected to that answers documentation.
+
+  Nil is the common case and a real answer: it means nothing has taken this
+  surface, so `lt.objs.editor.lsp/doc-at-cursor` answers instead — which is the
+  same question `answered-elsewhere?` asks from the other side, so the two
+  cannot disagree.
+
+  The behaviors below reached for `lt.objs.eval/get-client!` with
+  `:create try-connect`, which answers a third question nobody asked: is there
+  a REPL we *could* start. So pressing Ctrl-d booted a JVM. Driven against the
+  packaged application it said \"Failed to connect\" on every press and left a
+  placeholder on `:default` — no name, no commands, `available?` nil — which is
+  a client for the purposes of every later `(:client @ed)` read and answers
+  nothing. Asking what a symbol means should not start a process."
+  [editor]
+  (->> (vals (:client @editor))
+       (filter #(and % (clients/available? %)))
+       (filter #(providers/provides? @% :doc))
+       first))
+
+(defn- ask-repl-for-doc!
+  "Send `command` to a connected REPL, or stand aside so the server answers."
+  [editor command]
+  (when-let [client (doc-client editor)]
+    (let [token (find-symbol-at-cursor editor)
+          info (assoc (@editor :info)
+                      :result-type :doc
+                      :loc (:loc token)
+                      :sym (:string token)
+                      :ns (buffer-ns editor)
+                      :print-length (object/raise-reduce editor :clojure.print-length+ nil))]
+      (if token
+        (clients/send client command info :only editor)
+        ;; Said rather than skipped: this REPL has taken the surface, so a
+        ;; `when` here is the whole feature going quiet, and the cursor being
+        ;; on a paren or on whitespace is the ordinary case.
+        (notifos/set-msg! "No symbol at the cursor to document.")))
+    true))
+
 (behavior ::clj-doc
           :triggers #{:editor.doc}
           :reaction (fn [editor]
-                      (let [token (find-symbol-at-cursor editor)
-                            command :editor.clj.doc
-                            info (assoc (@editor :info)
-                                   :result-type :doc
-                                   :loc (:loc token)
-                                   :sym (:string token)
-                                   :ns (buffer-ns editor)
-                                   :print-length (object/raise-reduce editor :clojure.print-length+ nil))]
-                        (if token
-                          (clients/send (eval/get-client! {:command command
-                                                           :info info
-                                                           :origin editor
-                                                           :create try-connect})
-                                        command info :only editor)
-                          ;; Said rather than skipped. A REPL that is connected
-                          ;; takes this surface from the language server — see
-                          ;; lt.objs.providers — so a `when` here is the whole
-                          ;; feature going quiet, and the cursor being on a
-                          ;; paren or on whitespace is the ordinary case rather
-                          ;; than a rare one.
-                          (notifos/set-msg! "No symbol at the cursor to document.")))))
+                      (ask-repl-for-doc! editor :editor.clj.doc)))
 
 (behavior ::print-clj-doc
           :triggers #{:editor.clj.doc}
@@ -851,25 +872,7 @@
 (behavior ::cljs-doc
           :triggers #{:editor.doc}
           :reaction (fn [editor]
-                      (let [token (find-symbol-at-cursor editor)
-                            command :editor.cljs.doc
-                            info (assoc (@editor :info)
-                                   :result-type :doc
-                                   :loc (:loc token)
-                                   :sym (:string token)
-                                   :ns (buffer-ns editor)
-                                   :print-length (object/raise-reduce editor :clojure.print-length+ nil))]
-                        (if token
-                          (clients/send (eval/get-client! {:command command
-                                                           :info info
-                                                           :origin editor
-                                                           :create try-connect})
-                                        command info :only editor)
-                          ;; Said rather than skipped, for the same reason as
-                          ;; `::clj-doc` above: a connected REPL takes this
-                          ;; surface from the language server, so a `when` here
-                          ;; is the whole feature going quiet.
-                          (notifos/set-msg! "No symbol at the cursor to document.")))))
+                      (ask-repl-for-doc! editor :editor.cljs.doc)))
 
 (behavior ::print-cljs-doc
           :triggers #{:editor.cljs.doc}

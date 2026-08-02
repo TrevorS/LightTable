@@ -239,6 +239,36 @@ would create the second source of truth it exists to avoid.
 
 ## Closed
 
+**Asking for a docstring started a REPL, and put a modal over the editor.**
+`::clj-doc` and `::cljs-doc` reached for `lt.objs.eval/get-client!` with
+`:create try-connect`, which answers a question nobody asked — is there a REPL
+we *could* start — and starts one. On this repository that runs `shadow-cljs`,
+which reports "server already running" and exits, which Light Table reads as a
+failed connection: **"We couldn't connect."** over the whole window, on every
+press of Ctrl-d. That is the fifth report of "toggle docs isn't working" and
+the only one where the answer was drawn correctly and covered up.
+
+Without `:create` it is no better: `find-client` raises `:no-client` and
+returns a placeholder, which then sits on `(:client @ed)` under `:default` with
+no name, no commands and `available?` nil — a client for the purposes of every
+later read, answering nothing.
+
+They ask a client that is *already* connected and provides `:doc` now, and
+stand aside otherwise so `lt.objs.editor.lsp/doc-at-cursor` answers. That is
+the same question `answered-elsewhere?` asks from the other side, so the two
+cannot disagree about who is answering.
+
+Found by driving the packaged application rather than the tree — see below.
+
+**Nothing could drive the release build.** `test-e2e` and `smoke-test` launch
+`deploy/core` with the development Electron and a scratch `LT_USER_DIR`, which
+is right for a test and wrong for "does it work in the real thing": the package
+has its own Electron, its own `node_modules`, its own copy of every plugin, and
+a resources layout the tree does not have. `script/lt-repl.sh start --release`
+boots what a person double-clicks, against the real user directory, and
+everything else about the REPL is unchanged. The modal above was found within
+minutes of it existing, and confirmed fixed in the same window.
+
 **A window could not say what it was built from.** The bundle is an artifact
 with no identity and `version.json` carries the release number, which is the
 same string across every build between two releases — so telling a stale window
