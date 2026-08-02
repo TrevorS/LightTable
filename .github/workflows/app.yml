@@ -95,18 +95,14 @@ jobs:
       - name: Lint, type-check, and check the generated API docs
         run: npm run check
 
-      - name: Type-check and build the main process
-        run: npm run build:main
-
-      # The window's own TypeScript, required by lt.objs.sidebar.command and
-      # lt.objs.tabs, so it has to exist before the smoke test boots. The
-      # worker's is bundled into worker.js, and the browser client is served to
-      # connecting pages; both are wanted before anything runs too.
-      - name: Type-check and build the window, worker and browser modules
-        run: |
-          npm run build:window
-          npm run build:worker
-          npm run build:browser
+      # Every TypeScript tree, at once. The main process and the preload; the
+      # window's own modules, required by lt.objs.sidebar.command and
+      # lt.objs.tabs and so wanted before the smoke test boots; the worker's,
+      # bundled into worker.js; and the browser client served to connecting
+      # pages. This step named three of them by hand and is a script now, so
+      # the list cannot drift from the one the build uses.
+      - name: Build every TypeScript project
+        run: npm run build:ts
 
       # ClojureScript under node, and the main process under plain node.
       # Both are seconds and need nothing assembled, so a failure here
@@ -123,17 +119,14 @@ jobs:
       # shadow-cljs exits non-zero when compilation fails, but warnings alone do
       # not fail it, so the job has to read the output. The build is warning
       # free, so the bar is simply zero — no allowance, no classes to exempt.
-      # -a because shadow colours its output, so the log is not plain text.
+      # The reading is script/check-build-warnings.mts, which also asserts that
+      # all three builds reported at all: a grep for a banner that shadow has
+      # stopped printing finds nothing and passes.
       - name: Compile
         run: |
           set -o pipefail
           npm run build:cljs 2>&1 | tee build.log
-          count=$(grep -ac 'WARNING #' build.log || true)
-          if [ "$count" -ne 0 ]; then
-            echo "::error::$count ClojureScript warning(s)"
-            grep -a -A6 'WARNING #' build.log
-            exit 1
-          fi
+          node script/check-build-warnings.mts build.log 3
 
       # Plugins that live in this repository. Built against the editor, so a
       # rename here fails the build rather than a user's session.

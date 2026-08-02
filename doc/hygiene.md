@@ -204,12 +204,6 @@ where the editor is going. Recorded because a reader who greps for what creates
 a run will not find it, and should not have to conclude the projection is
 broken.
 
-### The ClojureScript warning gate is a grep
-
-`.github/workflows/app.yml` greps `build.log` for `WARNING #`. If shadow-cljs
-ever changes that line's format — a plausible thing for a minor version to do —
-the grep finds nothing and the step passes green with warnings present.
-
 ---
 
 ## Open — coverage
@@ -287,6 +281,41 @@ would create the second source of truth it exists to avoid.
 ---
 
 ## Closed
+
+**`make clean` removed none of the nine modules on Linux.** It had been fixed
+once already — the list named five of nine — and the fix was written
+`rm -f deploy/core/lighttable/{bootstrap,user,…}.js`. make runs recipes with
+`/bin/sh`, which is bash on macOS and dash on Linux, and **dash does not expand
+braces**. So on every Linux machine, including the one CI runs on, that was
+`rm -f` against a single file named `{bootstrap,user,…}.js`, which does not
+exist, and `-f` made it silent. The same bug as the missing four, in the form
+that only appears on the machines nobody develops on. make expands the list
+now, via `$(addprefix)`, so no shell is involved.
+
+**`make clean` also deleted the compiler cache, and `clean` is not `clean-all`.**
+`.shadow-cljs` is content-keyed — shadow invalidates on source hash and
+compiler version — so it is a cache, not an artifact, and removing it forced a
+cold compile of 305 and then 426 files on every single `make clean build`.
+`clean` keeps it and `clean-all` drops it, which is the conventional split and
+the honest one. `make clean build` went from 37s to 22s; `make clean-all build`
+is still 35s, which is what it is for.
+
+**The ClojureScript warning gate was a grep.** `grep -c 'WARNING #' build.log`
+inline in the workflow, with the failure mode every grep-as-a-gate has: if
+shadow ever stopped printing that banner the grep would find nothing and the
+step would pass green. `script/check-build-warnings.mts` reads the banner *and*
+shadow's own per-build warning count, and requires all three builds to have
+reported at all — so a changed format fails as "expected 3 builds, read 0"
+rather than passing. Tested against a clean log, a warning log, and a log whose
+format moved.
+
+**Five `tsc` runs and five `npm run` chains, all sequential.** The five
+TypeScript trees are siblings rather than a stack — `doc/hygiene.md` already
+said so under *Decided against: project references* — so `build:ts` runs them
+at once, the same shape as `script/typecheck.mts`. `npm run check` and
+`npm test` likewise: independent checks over disjoint inputs, chained with
+`&&`, so a type error hid a stale `doc/api` and fixing one showed you the next.
+Both report every failure now. `check` is 3s.
 
 **Four editor event wrappers listened for names the engine never emits.**
 `on-change`, `on-move`, `on-update` and `on-scroll` subscribed to `onChange`,

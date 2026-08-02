@@ -39,7 +39,7 @@
             [lt.objs.command :as cmd]
             [lt.objs.editor :as editor]
             [lt.objs.editor.lsp.registry :as registry]
-            [lt.objs.editor.lsp.status :as status]
+            [lt.objs.editor.lsp.situation :as situation]
             [lt.objs.editor.pool :as pool]
             [lt.objs.jump-stack :as jump-stack]
             [lt.objs.notifos :as notifos]
@@ -1268,10 +1268,10 @@
 (def status-line
   "One sentence saying which of the ways this can be quiet is the one in play.
 
-  [[lt.objs.editor.lsp.status/line]], which is where it lives so that it can be
+  [[lt.objs.editor.lsp.situation/line]], which is where it lives so that it can be
   called with a map instead of an editor. This name is what the command below
   and doc/lsp-architecture.md have always called it."
-  status/line)
+  situation/line)
 
 (cmd/command {:command :lsp.status
               :desc "Language server: Status for this editor"

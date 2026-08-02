@@ -77,9 +77,11 @@ code runs, because each has a different set of globals:
 | `src-worker/` | the worker thread | `npm run build:worker` |
 | `src-browser/` | a page Light Table has connected to | `npm run build:browser` |
 
-`build:cljs` runs the last three itself, since the window and worker bundles
-need them. See [doc/javascript-remaining.md](doc/javascript-remaining.md) for
-why they are separate.
+`npm run build:ts` builds all four at once — they are siblings, none imports
+another — plus the TypeScript plugin, and `build:cljs` runs it first because
+shadow-cljs consumes what `src-window/` emits. See
+[doc/javascript-remaining.md](doc/javascript-remaining.md) for why the roots
+are separate.
 
 Plugins are built separately:
 

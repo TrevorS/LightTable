@@ -16,7 +16,7 @@
 .DEFAULT_GOAL := run
 .PHONY: help deps build build-cljs build-main build-plugins run check test \
         test-cljs test-electron test-e2e smoke lint typecheck docs repl clean \
-        dist screenshot
+        clean-all dist screenshot
 
 help: ## Show this list
 	@grep -hE '^[a-z-]+:.*##' $(MAKEFILE_LIST) \
@@ -87,14 +87,23 @@ docs: ## Regenerate doc/api from the source docstrings
 
 ## ── Housekeeping ──────────────────────────────────────────────────────────
 
-clean: ## Remove build output. Leaves node_modules and the Electron download.
-	rm -rf builds target src-gen .shadow-cljs
-	# Every module in shadow-cljs.edn's :modules, and its map. This listed five
-	# of the nine, so `clean` left clojure.js, javascript.js, css.js, html.js
-	# and python.js behind — and a stale compiled artifact surviving a rebuild
-	# is a failure this project has already had once.
-	rm -f deploy/core/lighttable/{bootstrap,user,paredit,clojure,javascript,css,html,python}.js
-	rm -f deploy/core/lighttable/{bootstrap,user,paredit,clojure,javascript,css,html,python}.js.map
+# Every module in shadow-cljs.edn's :modules. `clean` listed five of the nine
+# once, so it left clojure.js, javascript.js, css.js, html.js and python.js
+# behind — and a stale compiled artifact surviving a rebuild is a failure this
+# project has already had.
+#
+# Expanded by make rather than by the shell. It was written
+# `{bootstrap,user,…}.js` and make runs recipes with `/bin/sh`, which is bash
+# on macOS and dash on Linux — and dash does not expand braces. So on every
+# Linux machine this was `rm -f` against one file named `{bootstrap,user,…}.js`,
+# which does not exist, and `-f` made that silent. The same bug as the missing
+# four, in a form that only showed up on the machines CI runs on.
+CLJS_MODULES := bootstrap user paredit clojure javascript css html python
+MODULE_JS := $(addprefix deploy/core/lighttable/,$(addsuffix .js,$(CLJS_MODULES)))
+
+clean: ## Remove build output. Keeps node_modules, the Electron download, and the compiler caches.
+	rm -rf builds target src-gen
+	rm -f $(MODULE_JS) $(addsuffix .map,$(MODULE_JS))
 	rm -rf deploy/core/lighttable/ws.js deploy/core/lighttable/background/worker.js \
 	       deploy/core/lighttable/cljs deploy/core/lighttable/shadow \
 	       deploy/core/lighttable/cljs-cache \
@@ -102,3 +111,6 @@ clean: ## Remove build output. Leaves node_modules and the Electron download.
 	       deploy/core/config.js deploy/core/config.js.map \
 	       deploy/core/preload.js deploy/core/preload.js.map \
 	       deploy/core/browserInjection.js deploy/core/browserInjection.js.map
+
+clean-all: clean ## Also drop the ClojureScript compiler cache, forcing a cold rebuild
+	rm -rf .shadow-cljs

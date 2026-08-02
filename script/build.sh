@@ -34,10 +34,11 @@ popd
 # Build tooling lives at the repo root
 npm install
 
-# The main process. The window's own TypeScript modules are build:cljs's first
-# step, because shadow-cljs consumes their output — running them here as well
-# compiled src-window twice per build for identical output.
-npm run build:main
+# Every TypeScript tree, including the main process, is build:cljs's first step
+# — `build:ts`, which runs the five of them at once because none imports
+# another. It is in there rather than here because shadow-cljs consumes
+# `src-window/`'s output, and that ordering is the one thing about this that
+# actually matters.
 
 # The window bundle, the default user plugin, the worker thread that backs
 # lt.objs.thread, and the plugins. The worker is a separate target because it

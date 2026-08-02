@@ -1,4 +1,4 @@
-(ns lt.objs.editor.lsp.status
+(ns lt.objs.editor.lsp.situation
   "What the language server situation *is*, as a function of the facts.
 
   `lt.objs.editor.lsp/status` gathers the facts by reading the editor and the

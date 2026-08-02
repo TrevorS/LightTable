@@ -20,7 +20,7 @@
             [lt.objs.context :as ctx]
             [lt.objs.editor :as editor]
             [lt.objs.editor.lsp :as lsp]
-            [lt.objs.editor.lsp.status :as status]
+            [lt.objs.editor.lsp.situation :as situation]
             [lt.objs.editor.pool :as pool]
             [lt.objs.tabs :as tabs]
             [lt.state :as state]))
@@ -160,12 +160,12 @@
   knowing that `:lsp.status` exists.
 
   `lt.objs.editor.lsp/status` gathers the facts and
-  [[lt.objs.editor.lsp.status/indicator]] decides what they mean — the same
+  [[lt.objs.editor.lsp.situation/indicator]] decides what they mean — the same
   decision the `:lsp.status` sentence makes, which is why it is made once. This
   had its own copy of that `cond` and its own copy of the bug in it."
   []
   (when-let [ed (pool/last-active)]
-    (status/indicator (lsp/status ed))))
+    (situation/indicator (lsp/status ed))))
 
 (defn snapshot
   "The whole projection, as one value."
