@@ -79,6 +79,19 @@ splits has exactly one — but both are silent about it.
 
 ## Open — claims the code does not keep
 
+### Syntax highlighting is reported to go, and has not been caught
+
+"Sometimes we start to lose syntax highlighting", and three attempts to force
+it failed: opening five files of three languages, forty inserts into one, and
+replacing a whole buffer all kept it. The apparent loss in the first attempt
+was an artifact of the measurement — CodeMirror 6 renders only the viewport, so
+a raw span count halves when you scroll to a shorter region and says nothing.
+
+So the measurement exists now rather than the fix: `lt.objs.control/screen`
+reports spans per *rendered* line per editor, which is stable across scrolling.
+A file with highlighting runs several a line. `script/lt-repl.sh screen` when
+it next happens is what turns this into something with a cause.
+
 ### The hinter's rendering cost is unmeasured
 
 `lt.ui.filter` replaced the `<li>` pool with ordinary diffing, which is right
@@ -238,6 +251,22 @@ would create the second source of truth it exists to avoid.
 ---
 
 ## Closed
+
+**`status` described the last-declared server rather than the one answering.**
+On a TypeScript file in a project with no `biome.json`, the singular keys —
+`:command`, `:root`, `:found` — were biome's: `"biome"`, `nil`, `nil`, reported
+about an editor vtsls had indexed and was answering. Two true facts about a
+server that is not involved, in the three fields anything short reads first.
+`situation/phase` already asked what was connected before what was declared;
+this is the same correction one level down, in the map that feeds it. Matched
+on the command's leaf, because a declaration carries the bare name and a
+connection carries the resolved path.
+
+**Line numbers were off by default.** `[:editor :lt.objs.editor/hide-line-numbers]`
+in `default.behaviors` — a choice rather than an absence, and the wrong one for
+an editor whose diagnostics are reported by line. The pair is `:exclusive` and
+`:type :user`, so naming either in `user.behaviors` replaces the default
+without removing it; the user template offers the opposite one now.
 
 **Toggle docs did nothing when no editor was active** — the fifth distinct
 cause, and the one that survived four fixes aimed at the silence.

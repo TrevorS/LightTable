@@ -443,7 +443,27 @@
      ;; an answer rather than replacing it.
      :overlays (vec (concat (mapv (constantly "popup") ($$ ".popup"))
                             (mapv (constantly "commandbar") ($$ ".commandbar"))))
-     :inline (count ($$ ".inline-doc, .inline-exception, .result-mark, .underline-result"))}))
+     :inline (count ($$ ".inline-doc, .inline-exception, .result-mark, .underline-result"))
+     ;; Highlighting, as a number rather than an impression. "Sometimes we
+     ;; start to lose syntax highlighting" is a real report and was not
+     ;; reproducible from outside — opening many files, typing into one and
+     ;; replacing a whole buffer all kept it. So this is what to read when it
+     ;; happens next.
+     ;;
+     ;; Spans per *rendered* line, because CodeMirror 6 draws only the
+     ;; viewport: a raw span count halves when you scroll to a shorter region
+     ;; and says nothing. A file with highlighting runs several spans a line; a
+     ;; file that has lost it runs at or near zero, whatever its length.
+     :highlighting (vec (for [ed (object/by-tag :editor)
+                              :let [^js el (try (editor/->elem ed) (catch :default _ nil))]
+                              :when el
+                              :let [lines (.-length (.querySelectorAll el ".cm-line"))
+                                    spans (.-length (.querySelectorAll el ".cm-line span"))]]
+                          {:file (some-> (tabs/->path ed) files/basename)
+                           :mode (str (try (editor/option ed "mode") (catch :default _ nil)))
+                           :lines lines
+                           :per-line (when (pos? lines)
+                                       (/ (js/Math.round (* 10 (/ spans lines))) 10))}))}))
 
 (defn drift
   "Where the state atom disagrees with the objects it is projected from.

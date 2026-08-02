@@ -8,7 +8,9 @@
 //
 // So each assertion is about the editor, not about the option map.
 
-import { test, expect } from './fixtures';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import { test, expect, evalClj, evalData, insideEditor, scratchDir } from './fixtures';
 import type { Page } from '@playwright/test';
 
 /** Build an editor, set options on it, and read something back from the DOM. */
@@ -148,4 +150,41 @@ test('an option with no equivalent is named rather than silently ignored', async
         ed.setOption('undoDepth', 42);
         return ed.getOption('undoDepth');
     })()`)).toBe(42);
+});
+
+test('line numbers are on by default, and turning them off is one line', async ({ window }) => {
+    // A user behavior with an `:exclusive` pair, so naming either one in
+    // user.behaviors replaces the default without removing it. The default was
+    // `hide-line-numbers`, which is a choice rather than an absence — and the
+    // wrong one for an editor whose diagnostics report line numbers.
+    const file = path.join(scratchDir('linenums'), 'numbered.txt');
+    fs.writeFileSync(file, 'one\ntwo\nthree\n');
+    await evalClj(window, `(do (cmd/exec! :open-path "${file}") :opened)`);
+    await expect.poll(async () => await evalClj(window,
+        `(count (pool/by-path "${file}"))`)).toBe('1');
+
+    await expect.poll(async () => await insideEditor<number>(window, file,
+        '(.-length (.querySelectorAll root ".cm-lineNumbers"))')).toBe(1);
+    expect(await evalData<boolean>(window, `
+        (boolean (lt.objs.editor/option (first (pool/by-path "${file}")) "lineNumbers"))`))
+        .toBe(true);
+
+    // And the pair that makes it configurable, both ways, without editing the
+    // default file.
+    await evalClj(window, `
+        (do (lt.object/call-behavior-reaction :lt.objs.editor/hide-line-numbers
+                                              (first (pool/by-path "${file}")))
+            :hidden)`);
+    await expect.poll(async () => await insideEditor<number>(window, file,
+        '(.-length (.querySelectorAll root ".cm-lineNumbers"))')).toBe(0);
+    await evalClj(window, `
+        (do (lt.object/call-behavior-reaction :lt.objs.editor/line-numbers
+                                              (first (pool/by-path "${file}")))
+            :shown)`);
+    await expect.poll(async () => await insideEditor<number>(window, file,
+        '(.-length (.querySelectorAll root ".cm-lineNumbers"))')).toBe(1);
+
+    await evalClj(window, `
+        (do (doseq [ed (pool/by-path "${file}")] (object/raise ed :close)) :closed)`);
+    fs.rmSync(path.dirname(file), { recursive: true, force: true });
 });

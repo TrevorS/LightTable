@@ -1278,12 +1278,25 @@
   [ed]
   (let [path (-> @ed :info :path)
         declared (servers-for (:tags @ed))
-        ;; The singular keys describe the last-declared server, which is the
-        ;; one a single-server language has and the one every surface both
-        ;; offer falls to. `:servers` is the whole list.
-        server (last declared)
-        root (when (and path server) (project-root path (:root server)))
-        connected (conns ed)]
+        connected (conns ed)
+        ;; The singular keys describe *the server answering this editor*, and
+        ;; only fall back to the last declared one when nothing is.
+        ;;
+        ;; They used to be the last declared one always, and on a TypeScript
+        ;; file in a project with no biome.json that is biome: `:command
+        ;; "biome"`, `:root nil`, `:found nil`, reported about an editor vtsls
+        ;; had indexed and was answering. Two true facts about a server that is
+        ;; not involved, in the three fields anything short reads first.
+        ;;
+        ;; Matched on the command's leaf because a declaration carries the bare
+        ;; name and a connection carries the resolved path.
+        answering (first (for [c connected
+                              :let [cmd (leaf (:command @c))]
+                              s declared
+                              :when (= cmd (leaf (:command s)))]
+                          s))
+        server (or answering (last declared))
+        root (when (and path server) (project-root path (:root server)))]
     {:path path
      :language-id (:language-id server)
      :command (:command server)

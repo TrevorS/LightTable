@@ -40,8 +40,8 @@
 
  ;; Common behaviors to consider
  ;; ============================
- ;; Show line numbers
- ;; [:editor :lt.objs.editor/line-numbers]
+ ;; Hide line numbers — they are on by default
+ ;; [:editor :lt.objs.editor/hide-line-numbers]
  ;; Customize font
  ;; [:app :lt.objs.style/font-settings "Courier New" "11"]
  ;; Auto-close characters e.g. '{[("'

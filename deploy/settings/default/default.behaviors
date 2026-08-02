@@ -260,7 +260,10 @@
  [:editor :lt.objs.editor/not-read-only]
  [:editor :lt.objs.opener/untrack-closed]
  [:editor :lt.objs.opener/unwatch-closed]
- [:editor :lt.objs.editor/hide-line-numbers]
+ ; On by default, and `lt.objs.editor/hide-line-numbers` in user.behaviors
+ ; turns them off — the two are `:exclusive` of each other, so naming
+ ; either one in your own file replaces this without removing it.
+ [:editor :lt.objs.editor/line-numbers]
  [:editor :lt.objs.editor/hide-fold-gutter]
  [:editor :lt.objs.editor/no-wrap]
  [:editor :lt.objs.settings/default-keymap-diffs]
