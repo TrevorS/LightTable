@@ -6,6 +6,8 @@
 
 (def ^:private required-keys #{:command :desc :exec})
 
+(declare by-id)
+
 (defn command
   "Define a command given a map with the following keys:
 
@@ -16,6 +18,23 @@
   [cmd]
   (assert (every? cmd required-keys)
           (str "Command doesn't have required keys: " required-keys))
+  ;; "Unique" is what the docstring above has always claimed and nothing
+  ;; checked. A second namespace registering a key that is taken replaced the
+  ;; first silently, and what you got was a command that ran something else —
+  ;; which is worse than one that does not exist, because the command bar still
+  ;; lists it and it still does a thing.
+  ;;
+  ;; Compared by `:desc` rather than by identity so that live editing stays
+  ;; quiet: re-evaluating a namespace in this editor re-runs every `command`
+  ;; form in it, and that is the feature rather than a mistake. Two genuinely
+  ;; different commands sharing both a key and a description is not a case
+  ;; worth keeping this silent for.
+  (when-let [taken (by-id (:command cmd))]
+    (when (not= (:desc taken) (:desc cmd))
+      (object/safe-report-error
+       (str "Two commands are registered as " (:command cmd) ": \""
+            (:desc taken) "\" and \"" (:desc cmd)
+            "\". The second wins, so the first is now unreachable."))))
   (object/update! manager [:commands] assoc (:command cmd) cmd)
   (when (:options cmd)
     (object/add-tags (:options cmd) [:command.options]))

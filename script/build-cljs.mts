@@ -53,7 +53,11 @@ const STEPS: Array<[string, () => Promise<void>]> = [
     ['user plugin', async () => {
         fs.copyFileSync(path.join(ROOT, 'deploy/core/lighttable/user.js'),
                         path.join(ROOT, 'deploy/core/User/user_compiled.js'));
-    }]
+    }],
+
+    // Last, so it describes a build that finished. `:version` reads it, which
+    // is how a window answers "am I the code you just wrote".
+    ['stamp', () => node('stamp-build.mts')]
 ];
 
 for (const [name, step] of STEPS) {

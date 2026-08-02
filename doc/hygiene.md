@@ -239,6 +239,33 @@ would create the second source of truth it exists to avoid.
 
 ## Closed
 
+**A window could not say what it was built from.** The bundle is an artifact
+with no identity and `version.json` carries the release number, which is the
+same string across every build between two releases — so telling a stale window
+from a fresh one meant grepping the compiled JavaScript for a string you had
+just typed. That is what actually happened, twice, and each cost a round of
+"it still doesn't work" about code that was fixed and not loaded.
+`script/stamp-build.mts` writes a stamp beside the bundle at the end of
+`build:cljs`; `App: What build is this?` and the version pane read it, and
+`dirty` is the part that matters while you are working. `doc/workflow.md` now
+says which of the three build targets to reach for, and that `make build` is
+not the iteration loop.
+
+**Two commands could claim the same key in silence.** `lt.objs.command/command`
+has always documented `:command` as unique and never checked, so a second
+namespace registering a taken key replaced the first without a word — a command
+that runs something else, which is worse than one that does not exist, because
+the command bar still lists it. Found by walking into it: `:build.info` was
+first written as `:version`, which `lt.objs.version` already owns, and it
+silently did nothing.
+
+Reported by `:desc` rather than by identity, so live editing stays quiet —
+evaluating a namespace re-runs every `command` form in it, which is the feature.
+That misses two copies of one command, so the repository was scanned as well:
+one pair in 217, `:editor.select-all` registered twice in
+`lt.objs.editor.pool` with different implementations, the second winning. The
+dead one is gone.
+
 **A doc press that nothing answers now says so.** The guard that does not need
 to know what went wrong. Five reports of "toggle docs isn't working" with four
 different causes — a server declining pre-handshake, a REPL taking the surface

@@ -39,6 +39,12 @@
                             [:dl
                              [:dt "Light Table version"] [:dd (:version deploy/version)]
                              [:dt "Binary version"] [:dd (deploy/binary-version)]
+                             ;; What this window was actually compiled from,
+                             ;; which the release number cannot say: it is the
+                             ;; same string for every build between two
+                             ;; releases, and the question people have is "is
+                             ;; my change in here".
+                             [:dt "Build"] [:dd (deploy/build-line (deploy/build-stamp))]
                              [:dt "Plugins directory" [:dd (files/lt-user-dir "plugins")]]
                              ]
                             (check-button)

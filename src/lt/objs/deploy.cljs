@@ -236,4 +236,48 @@
           :reaction (fn [this]
                       (set! strict-ssl? false)))
 
+(defn build-stamp
+  "What this window was built from, or nil.
+
+  `script/stamp-build.mts` writes it beside the bundle at the end of
+  `build:cljs`. Nil for a build made before that existed, or one made without
+  git — which is a real answer rather than a failure, and says so below."
+  []
+  (when-let [raw (:content (files/open-sync
+                            (files/lt-home "core/lighttable/build.json")))]
+    (try
+      (js->clj (.parse js/JSON raw) :keywordize-keys true)
+      (catch :default _ nil))))
+
+(defn build-line
+  "One sentence naming the build, for [[build-stamp]]'s map."
+  [{:keys [commit branch dirty built]}]
+  (if-not commit
+    (str "Light Table " (:version version)
+         " — this build carries no stamp, so it was made before one was"
+         " written or outside a git checkout.")
+    (str "Light Table " (:version version) " — " commit
+         (when dirty " with uncommitted changes")
+         " on " branch
+         (when built (str ", built " built)))))
+
+(cmd/command {:command :build.info
+              :desc "App: What build is this?"
+              :doc "Says which commit the running window was compiled from.
+
+                    It exists because \"is my change in the window I am looking
+                    at\" had no answer: the bundle is an artifact with no
+                    identity, `version.json` is the same string across every
+                    build between two releases, and so telling a stale window
+                    from a fresh one meant grepping the compiled JavaScript for
+                    a string you had just typed. Twice that is what happened,
+                    and each time it cost a round of \"it still does not work\"
+                    about code that was fixed and not loaded.
+
+                    `make build-cljs && make run` is the loop this reports on."
+              :exec (fn []
+                      (let [line (build-line (build-stamp))]
+                        (notifos/set-msg! line {:timeout 20000})
+                        (js/lt.objs.console.log line)))})
+
 (object/tag-behaviors :app [::check-deploy])

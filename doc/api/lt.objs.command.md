@@ -8,7 +8,7 @@ Source: [`src/lt/objs/command.cljs`](https://github.com/TrevorS/LightTable/blob/
 
 | | |
 |---|---|
-| [`by-id`](#var-by-id) | Return the command registered under key `k`. |
+| [`by-id`](#var-by-id) | — |
 | [`command`](#var-command) | Define a command given a map with the following keys… |
 | [`completions`](#var-completions) | Return command completions for `token`, for use in the command bar. |
 | [`exec!`](#var-exec) | Execute a Light Table command with the given args |
@@ -20,13 +20,9 @@ Source: [`src/lt/objs/command.cljs`](https://github.com/TrevorS/LightTable/blob/
 
 ### `by-id`
 
-```clojure
-(by-id k)
-```
+*Undocumented.*
 
-Return the command registered under key `k`.
-
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/command.cljs#L24)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/command.cljs#L9)
 
 <a id="var-command"></a>
 
@@ -43,7 +39,7 @@ Define a command given a map with the following keys:
 * :exec (required)  - Function to invoke when command is called
 * :hidden - When true, command is hidden from command bar. Not set by default
 
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/command.cljs#L9)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/command.cljs#L11)
 
 <a id="var-completions"></a>
 
@@ -55,7 +51,7 @@ Define a command given a map with the following keys:
 
 Return command completions for `token`, for use in the command bar.
 
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/command.cljs#L31)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/command.cljs#L50)
 
 <a id="var-exec"></a>
 
@@ -67,7 +63,7 @@ Return command completions for `token`, for use in the command bar.
 
 Execute a Light Table command with the given args
 
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/command.cljs#L42)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/command.cljs#L61)
 
 <a id="var-manager"></a>
 

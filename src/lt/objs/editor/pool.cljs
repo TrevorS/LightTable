@@ -286,12 +286,16 @@
                       (when-let [cur (last-active)]
                         (editor/move-cursor cur (editor/->cursor cur))))})
 
-(cmd/command {:command :editor.select-all
-              :desc "Editor: Select all"
-              :hidden true
-              :exec (fn []
-                      (when-let [ed (last-active)]
-                        (editor/exec-command! ed "selectAll")))})
+;; `:editor.select-all` was registered here as well, going through
+;; `exec-command! "selectAll"`. It is registered again 250 lines below with a
+;; different implementation, and the second won — so this one has never run.
+;; Both work; the survivor calls `editor/select-all` directly, which is one
+;; fewer table to look a name up in.
+;;
+;; Found by scanning every `cmd/command` for a repeated key: it is the only
+;; one in 217. The runtime guard in `lt.objs.command/command` reports a clash
+;; whose descriptions differ, and these two agreed, which is what a pair of
+;; copies looks like as opposed to two different commands colliding.
 
 (cmd/command {:command :editor.kill-line
               :desc "Editor: Kill line"

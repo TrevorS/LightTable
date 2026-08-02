@@ -32,6 +32,7 @@
 /deploy/core/lighttable/bootstrap.js
 /deploy/core/lighttable/manifest.edn
 /deploy/core/lighttable/user.js
+/deploy/core/lighttable/build.json
 /deploy/core/User/user_compiled.js
 /deploy/core/lighttable/bootstrap.js.map
 /deploy/core/lighttable/cljs/

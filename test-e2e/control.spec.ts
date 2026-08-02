@@ -199,3 +199,88 @@ test('and Light Table\'s own TypeScript is reachable from the ClojureScript', as
     expect(await evalData(window, '(boolean (.-commands modules/cm6-commands))')).toBe(true);
     expect(await evalData(window, '(boolean (.-treeHighlighting modules/cm6-treesitter))')).toBe(true);
 });
+
+test('the window can say what it was built from', async ({ window }) => {
+    // "Is my change in the window I am looking at?" had no answer. The bundle
+    // is an artifact with no identity and `version.json` is the same string
+    // across every build between two releases, so telling a stale window from a
+    // fresh one meant grepping the compiled JavaScript for a string you had
+    // just typed. That happened twice, and each time it cost a round of "it
+    // still doesn't work" about code that was fixed and not loaded.
+    //
+    // `script/stamp-build.mts` writes the stamp at the end of `build:cljs`, so
+    // reaching it here also says the build wrote it.
+    const stamp = await evalData<{ commit: string, branch: string, built: string }>(
+        window, '(lt.objs.deploy/build-stamp)');
+    expect(stamp, 'build:cljs must leave a stamp beside the bundle').toBeTruthy();
+    expect(stamp.commit).toMatch(/^[0-9a-f]{7,}$/);
+    expect(stamp.built).toMatch(/^\d{4}-\d\d-\d\dT/);
+
+    // And there is a command a person can run to see it, with a description
+    // they could find it by.
+    expect(await evalData<boolean>(window,
+        '(boolean (get-in @lt.objs.command/manager [:commands :build.info]))')).toBe(true);
+    expect(await evalData<string>(window,
+        '(:desc (get-in @lt.objs.command/manager [:commands :build.info]))'))
+        .toContain('build');
+
+    // What it says, asserted where it is decided rather than off the status
+    // bar: `eval` writes the bar itself — "Starting the ClojureScript
+    // compiler" — so reading it back after an evaluation is a race with the
+    // thing doing the reading.
+    const said = await evalData<string>(window,
+        '(lt.objs.deploy/build-line (lt.objs.deploy/build-stamp))');
+    expect(said).toContain(stamp.commit);
+    expect(said).toContain(stamp.branch);
+
+    // The sentence is a function of the stamp, which is what makes the two
+    // cases below assertable at all — neither depends on the tree this ran in.
+    expect(await evalData<string>(window, `
+        (lt.objs.deploy/build-line {:commit "abc1234" :branch "develop"
+                                    :dirty true :built "2026-08-02T18:24:26.601Z"})`))
+        .toContain('uncommitted changes');
+    expect(await evalData<string>(window, `
+        (lt.objs.deploy/build-line {:commit "abc1234" :branch "develop"
+                                    :dirty false :built "2026-08-02T18:24:26.601Z"})`))
+        .not.toContain('uncommitted');
+
+    // A build made before the stamp existed, or outside a git checkout. Saying
+    // "unknown" is an answer; saying nothing is what the command is for.
+    expect(await evalData<string>(window, '(lt.objs.deploy/build-line nil)'))
+        .toContain('no stamp');
+});
+
+test('and two commands cannot claim the same key in silence', async ({ window }) => {
+    // `command`'s docstring has always said the key is unique and nothing
+    // checked it, so a second namespace registering a taken key replaced the
+    // first without a word. What you got was a command that ran something
+    // else — worse than one that does not exist, because the command bar still
+    // lists it and it still does a thing. It happened while adding
+    // `:build.info`, which was first written as `:version` and quietly did
+    // nothing at all.
+    await window.evaluate(() => (globalThis as any).lt.objs.control.request('clear-errors', {}));
+
+    // Re-registering the same command must stay quiet: evaluating a namespace
+    // in this editor re-runs every `command` form in it, and that is the
+    // feature rather than a mistake.
+    await evalData(window, `
+        (do (cmd/command {:command :lt.probe/twice :desc "Probe: once"
+                          :exec (fn [] nil)})
+            (cmd/command {:command :lt.probe/twice :desc "Probe: once"
+                          :exec (fn [] nil)})
+            :re-evaluated)`);
+    expect((await control(window, 'errors')).errors,
+           'live editing re-registers commands constantly').toEqual([]);
+
+    await evalData(window, `
+        (do (cmd/command {:command :lt.probe/twice :desc "Probe: something else"
+                          :exec (fn [] nil)})
+            :clashed)`);
+    const errors = (await control(window, 'errors')).errors;
+    expect(errors.length).toBe(1);
+    expect(errors[0].message).toContain(':lt.probe/twice');
+    expect(errors[0].message).toContain('Probe: once');
+    expect(errors[0].message).toContain('unreachable');
+
+    await window.evaluate(() => (globalThis as any).lt.objs.control.request('clear-errors', {}));
+});
