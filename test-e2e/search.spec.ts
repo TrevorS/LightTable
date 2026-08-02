@@ -7,20 +7,9 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { test, expect, scratchDir } from './fixtures';
+import { test, expect, scratchDir, openFile } from './fixtures';
 import type { Page } from '@playwright/test';
 
-async function open(window: Page, file: string): Promise<void> {
-    await window.evaluate(
-        ([f]) => (globalThis as any).lt.objs.command.exec_BANG_(
-            (globalThis as any).cljs.core.keyword.call(null, 'open-path'), f),
-        [file]);
-    await window.waitForFunction(
-        ([f]) => {
-            const lt = (globalThis as any).lt, cljs = (globalThis as any).cljs;
-            return !!cljs.core.first.call(null, lt.objs.editor.pool.by_path(f));
-        }, [file], { timeout: 30_000 });
-}
 
 /**
  * Fill the searcher's own inputs and run it.
@@ -49,12 +38,12 @@ const replaceAll = (window: Page, dir: string, search: string, replace: string) 
 
 test('a replace reaches the tab as well as the disk', async ({ window, ltErrors }) => {
     const dir = scratchDir('replace');
-    const openFile = path.join(dir, 'open.txt');
+    const shown = path.join(dir, 'open.txt');
     const closedFile = path.join(dir, 'closed.txt');
-    fs.writeFileSync(openFile, 'NEEDLE here\nand nothing else\n');
+    fs.writeFileSync(shown, 'NEEDLE here\nand nothing else\n');
     fs.writeFileSync(closedFile, 'NEEDLE there\n');
 
-    await open(window, openFile);
+    await openFile(window, shown);
     await replaceAll(window, dir, 'NEEDLE', 'THREAD');
 
     // The closed file is rewritten on disk...
@@ -65,11 +54,11 @@ test('a replace reaches the tab as well as the disk', async ({ window, ltErrors 
         const lt = (globalThis as any).lt, cljs = (globalThis as any).cljs;
         const ed = cljs.core.first.call(null, lt.objs.editor.pool.by_path(f));
         return lt.objs.editor.__GT_val(ed);
-    }, [openFile]) as string;
+    }, [shown]) as string;
     expect(buffer).toBe('THREAD here\nand nothing else\n');
 
     // Which is the whole point: what the tab shows is what is on disk.
-    expect(fs.readFileSync(openFile, 'utf8')).toBe(buffer);
+    expect(fs.readFileSync(shown, 'utf8')).toBe(buffer);
     expect(await ltErrors()).toEqual([]);
 
     fs.rmSync(dir, { recursive: true, force: true });
@@ -82,7 +71,7 @@ test('and the whole replace is one undo', async ({ window }) => {
     fs.writeFileSync(a, 'NEEDLE one\n');
     fs.writeFileSync(b, 'NEEDLE two\n');
 
-    await open(window, a);
+    await openFile(window, a);
     await replaceAll(window, dir, 'NEEDLE', 'THREAD');
     await expect.poll(() => fs.readFileSync(b, 'utf8')).toBe('THREAD two\n');
 

@@ -15,30 +15,11 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { test, expect, scratchDir } from './fixtures';
-import type { Page } from '@playwright/test';
+import { test, expect, evalClj, scratchDir } from './fixtures';
 
-async function evalClj(window: Page, source: string): Promise<any> {
-    let job = await window.evaluate(
-        ([s]) => (globalThis as any).lt.objs.control.request('eval', { source: s }), [source]);
-    for (let i = 0; i < 100 && job.status === 'working'; i++) {
-        await window.waitForTimeout(50);
-        job = await window.evaluate(
-            ([id]) => (globalThis as any).lt.objs.control.request('job', { job: id }), [job.id]);
-    }
-    if (job.status !== 'completed') throw new Error(`${job.status}: ${job.error}\n${source}`);
-    return job.result;
-}
 
-/** Whatever the editor's own console has been told about. */
-const consoleErrors = (window: Page) => window.evaluate(() => {
-    const w = globalThis as any;
-    const el = w.lt.object.__GT_content(w.lt.objs.console.console) as HTMLElement;
-    return Array.from(el.querySelectorAll('li.error')).map(
-        (n) => ((n as HTMLElement).innerText || '').slice(0, 300));
-});
 
-test('a folder can be taken out of the workspace again', async ({ window }) => {
+test('a folder can be taken out of the workspace again', async ({ window, ltErrors }) => {
     const dir = scratchDir('ws');
     fs.writeFileSync(path.join(dir, 'a.txt'), 'a\n');
 
@@ -51,14 +32,14 @@ test('a folder can be taken out of the workspace again', async ({ window }) => {
         (do (object/raise lt.objs.workspace/current-ws :add.folder! "${dir}") :added)`);
     await expect.poll(async () => Number(await roots())).toBe(started + 1);
 
-    const before = (await consoleErrors(window)).length;
+    const before = (await ltErrors()).length;
 
     await evalClj(window, `
         (do (object/raise lt.objs.workspace/current-ws :remove.folder! "${dir}") :removed)`);
     await expect.poll(async () => await evalClj(window,
         `(count (:folders @lt.objs.workspace/current-ws))`)).toBe(String(started));
 
-    const after = await consoleErrors(window);
+    const after = await ltErrors();
     expect(after.length, after.slice(before).join('\n')).toBe(before);
     expect(after.join(' ')).not.toContain('must be of type string');
 
@@ -142,7 +123,7 @@ test('the right-click menu is built from the path, not from an object', async ({
     fs.rmSync(dir, { recursive: true, force: true });
 });
 
-test('and what a menu item does is the action it dispatches', async ({ window }) => {
+test('and what a menu item does is the action it dispatches', async ({ window, ltErrors }) => {
     // The other half of the menu, and the half that was broken: every item
     // dispatches an action, and those actions were registered only as effects
     // — so each one reported `:error/unknown-action` and did nothing. The
@@ -154,7 +135,7 @@ test('and what a menu item does is the action it dispatches', async ({ window })
         (do (object/raise lt.objs.workspace/current-ws :add.folder! "${dir}") :added)`);
     await window.locator('#side .wstree .row', { hasText: path.basename(dir) }).first().click();
 
-    const before = (await consoleErrors(window)).length;
+    const before = (await ltErrors()).length;
     await evalClj(window, `(do (lt.actions/dispatch! [[:tree/new-file "${dir}"]]) :new)`);
 
     // On disk, in the tree, open in the editor, and ready to be named — which
@@ -168,7 +149,7 @@ test('and what a menu item does is the action it dispatches', async ({ window })
     await expect.poll(async () => await window.locator('#side .wstree .tree__name').allInnerTexts())
         .toContain('untitled.txt');
 
-    const after = await consoleErrors(window);
+    const after = await ltErrors();
     expect(after.length, after.slice(before).join('\n')).toBe(before);
 
     await evalClj(window, `

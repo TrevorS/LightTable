@@ -186,7 +186,39 @@ test that genuinely needs a fresh process still calls `launch()` itself:
 
 The failure mode to know about is a test that leaves state `reset` does not
 clear, which shows up as a test that passes alone and fails after another one.
-Add it to `reset` rather than working around it in the test.
+Add it to `reset` rather than working around it in the test. Two already
+happened and are worth knowing as shapes: `windows.spec.ts` opens second
+`BrowserWindow`s and never closes them, so `reset` destroys every window but
+the first; and `bands.spec.ts` puts an editor straight into `document.body`
+rather than into a tabset, where `reset` cannot see it, so that file destroys
+its own probe in an `afterEach` rather than on the last line of each test —
+where a failing assertion above would skip it.
+
+`npx playwright test --workers=1` puts every file in one application, which is
+the worst case for leaks and the fastest way to find one.
+
+### What `fixtures.ts` gives you
+
+Reach for these rather than writing them again — each was a helper copied into
+half the specs before it moved here.
+
+| | |
+|---|---|
+| `evalClj(window, src, opts?)` | ClojureScript through the control surface. `tries`/`every` for something slow, `raw` to inspect a failed job rather than throw |
+| `control(window, op, arg?)` | the control surface itself, for `snapshot`/`job`/`errors` |
+| `openFile(window, path)` | open it and wait until the pool has an editor for it |
+| `ltErrors()` | what the editor reported into its own console |
+| `scratchDir(name)` | a directory of this test's own |
+| `connectLocalClient(window)` | the "Light Table UI" client, as the connect panel makes it |
+| `launch()` / `teardown()` / `ready()` | a whole application of your own, for the tests that need a second boot |
+
+Write ClojureScript through `evalClj` rather than munged names in
+`window.evaluate` — `(pool/by-path "x")` is what a person would type, where
+`lt.objs.editor.pool.by_path` is a name a reviewer has to demangle, and a form
+that throws comes back as the ClojureScript exception instead of a generic JS
+error. The exceptions are real but few: driving a second window before its
+control surface exists, and reading the DOM, which has no ClojureScript
+equivalent.
 
 ## The scripts are TypeScript
 

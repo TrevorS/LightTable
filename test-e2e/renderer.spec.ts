@@ -11,8 +11,7 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { test, expect, scratchDir } from './fixtures';
-import type { Page } from '@playwright/test';
+import { test, expect, evalClj, scratchDir } from './fixtures';
 
 /**
  * The editor's own element, on whichever engine built it.
@@ -25,17 +24,6 @@ import type { Page } from '@playwright/test';
  */
 const EDITOR = ':is(.CodeMirror, .cm-editor)';
 
-async function evalClj(window: Page, source: string): Promise<any> {
-    let job = await window.evaluate(
-        ([s]) => (globalThis as any).lt.objs.control.request('eval', { source: s }), [source]);
-    for (let i = 0; i < 100 && job.status === 'working'; i++) {
-        await window.waitForTimeout(50);
-        job = await window.evaluate(
-            ([id]) => (globalThis as any).lt.objs.control.request('job', { job: id }), [job.id]);
-    }
-    if (job.status !== 'completed') throw new Error(`${job.status}: ${job.error}\n${source}`);
-    return job.result;
-}
 
 test('an object can be rendered by something that is not singultus', async ({ window }) => {
     // No hiccup anywhere: the node is built the way any other renderer would

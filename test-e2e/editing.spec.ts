@@ -7,20 +7,8 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { test, expect, scratchDir } from './fixtures';
-import type { Page } from '@playwright/test';
+import { test, expect, scratchDir, openFile } from './fixtures';
 
-async function openFile(window: Page, file: string): Promise<void> {
-    await window.evaluate(
-        ([f]) => (globalThis as any).lt.objs.command.exec_BANG_(
-            (globalThis as any).cljs.core.keyword.call(null, 'open-path'), f),
-        [file]);
-    await window.waitForFunction(
-        ([f]) => {
-            const lt = (globalThis as any).lt, cljs = (globalThis as any).cljs;
-            return !!cljs.core.first.call(null, lt.objs.editor.pool.by_path(f));
-        }, [file], { timeout: 30_000 });
-}
 
 /** One engine now. The constant stays so the file reads as it did. */
 const engine = ':cm6';

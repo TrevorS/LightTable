@@ -7,21 +7,10 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { test, expect, launch, editorWindow, scratchDir } from './fixtures';
+import { test, expect, launch, editorWindow, scratchDir, openFile } from './fixtures';
 import type { ElectronApplication, Page } from '@playwright/test';
 
 /** Open a file and wait for its editor. */
-async function open(window: Page, file: string): Promise<void> {
-    await window.evaluate(
-        ([f]) => (globalThis as any).lt.objs.command.exec_BANG_(
-            (globalThis as any).cljs.core.keyword.call(null, 'open-path'), f),
-        [file]);
-    await window.waitForFunction(
-        ([f]) => {
-            const lt = (globalThis as any).lt, cljs = (globalThis as any).cljs;
-            return !!cljs.core.first.call(null, lt.objs.editor.pool.by_path(f));
-        }, [file], { timeout: 30_000 });
-}
 
 /** The paths currently open, in tab order. */
 async function openPaths(window: Page): Promise<string[]> {
@@ -58,8 +47,8 @@ test('the files that were open come back, with the cursor where it was', async (
     // second, and shut down.
     const first = await launch({ LT_USER_DIR: home });
     const firstWindow = await editorWindow(first);
-    await open(firstWindow, path.join(work, 'a.txt'));
-    await open(firstWindow, path.join(work, 'b.txt'));
+    await openFile(firstWindow, path.join(work, 'a.txt'));
+    await openFile(firstWindow, path.join(work, 'b.txt'));
     await firstWindow.evaluate(([f]) => {
         const lt = (globalThis as any).lt, cljs = (globalThis as any).cljs;
         const ed = cljs.core.first.call(null, lt.objs.editor.pool.by_path(f));
@@ -109,8 +98,8 @@ test('a file deleted since last time is skipped rather than fatal', async () => 
 
     const first = await launch({ LT_USER_DIR: home });
     const firstWindow = await editorWindow(first);
-    await open(firstWindow, path.join(work, 'stays.txt'));
-    await open(firstWindow, path.join(work, 'goes.txt'));
+    await openFile(firstWindow, path.join(work, 'stays.txt'));
+    await openFile(firstWindow, path.join(work, 'goes.txt'));
     await shutDown(first);
 
     fs.rmSync(path.join(work, 'goes.txt'));
@@ -157,7 +146,7 @@ test('and the folders that were expanded are expanded again', async () => {
         (globalThis as any).lt.objs.sidebar.workspace.expand_BANG_.call(null, d);
     }, [work]);
     await firstWindow.waitForTimeout(500);
-    await open(firstWindow, path.join(work, 'nested', 'deep.txt'));
+    await openFile(firstWindow, path.join(work, 'nested', 'deep.txt'));
     expect(await expandedIn(firstWindow)).toContain(work);
     await shutDown(first);
 

@@ -11,23 +11,15 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { test, expect, scratchDir } from './fixtures';
+import { test, expect, evalClj as evalWith, scratchDir } from './fixtures';
 import type { Page } from '@playwright/test';
+
+/** Longer than the default, because a real language server has to start. */
+const evalClj = (window: Page, source: string) => evalWith(window, source, { tries: 300 });
 
 const FAKE_SERVER = path.join(__dirname, '..', 'script', 'fixtures',
                               'fake-language-server.mts');
 
-async function evalClj(window: Page, source: string): Promise<any> {
-    let job = await window.evaluate(
-        ([s]) => (globalThis as any).lt.objs.control.request('eval', { source: s }), [source]);
-    for (let i = 0; i < 300 && job.status === 'working'; i++) {
-        await window.waitForTimeout(50);
-        job = await window.evaluate(
-            ([id]) => (globalThis as any).lt.objs.control.request('job', { job: id }), [job.id]);
-    }
-    if (job.status !== 'completed') throw new Error(`${job.status}: ${job.error}\n${source}`);
-    return job.result;
-}
 
 /** A project the server will accept a root for, and a file in it. */
 function project(name: string): string {

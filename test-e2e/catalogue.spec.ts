@@ -13,28 +13,9 @@
 // failure here rather than a note somebody reads later — which is how this
 // found the pane in the first place.
 
-import { test, expect } from './fixtures';
-import type { Page } from '@playwright/test';
+import { test, expect, evalClj } from './fixtures';
 
-async function evalClj(window: Page, source: string): Promise<any> {
-    let job = await window.evaluate(
-        ([s]) => (globalThis as any).lt.objs.control.request('eval', { source: s }), [source]);
-    for (let i = 0; i < 100 && job.status === 'working'; i++) {
-        await window.waitForTimeout(50);
-        job = await window.evaluate(
-            ([id]) => (globalThis as any).lt.objs.control.request('job', { job: id }), [job.id]);
-    }
-    if (job.status !== 'completed') throw new Error(`${job.status}: ${job.error}\n${source}`);
-    return job.result;
-}
 
-/** Whatever the editor's own console has been told about. */
-const consoleErrors = (window: Page) => window.evaluate(() => {
-    const w = globalThis as any;
-    const el = w.lt.object.__GT_content(w.lt.objs.console.console) as HTMLElement;
-    return Array.from(el.querySelectorAll('li.error')).map(
-        (n) => ((n as HTMLElement).innerText || '').slice(0, 300));
-});
 
 test.describe('the component kit', () => {
     test.beforeEach(async ({ window }) => {
@@ -115,8 +96,8 @@ test.describe('the component kit', () => {
         await expect(props).toBeVisible();
     });
 
-    test('and drawing all of it raises nothing', async ({ window }) => {
-        const errors = await consoleErrors(window);
+    test('and drawing all of it raises nothing', async ({ window, ltErrors }) => {
+        const errors = await ltErrors();
         expect(errors.join('\n')).toBe('');
     });
 });

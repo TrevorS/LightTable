@@ -134,6 +134,67 @@ export async function ready(window: Page): Promise<void> {
     throw new Error(`plugins never finished loading (${previous} behaviors)`);
 }
 
+/** Call the control surface the way `script/lt-repl.sh` and MCP do. */
+export async function control<T = any>(window: Page, op: string, arg: unknown = {}): Promise<T> {
+    return await window.evaluate(
+        ([o, a]) => (globalThis as any).lt.objs.control.request(o, a),
+        [op, arg] as [string, unknown]) as T;
+}
+
+interface EvalOptions {
+    /** How many times to ask whether the job is done. Default 100. */
+    tries?: number;
+    /** How long to wait between asking, in ms. Default 50. */
+    every?: number;
+    /** Return the job instead of its result, and do not throw on failure. */
+    raw?: boolean;
+}
+
+/**
+ * Evaluate ClojureScript in the window, through the control surface.
+ *
+ * Real source rather than munged names: `(pool/by-path "x")` reads as what a
+ * person would type, where `lt.objs.editor.pool.by_path` is a name a reviewer
+ * has to demangle. It also fails legibly — the job carries the ClojureScript
+ * exception, where `window.evaluate` on a throwing form gives a generic JS
+ * error with the interesting part missing.
+ *
+ * It costs a round trip per call, so a test asserting on the DOM should still
+ * use a locator, and the two specs that only exercise a JavaScript adapter are
+ * right not to use this at all.
+ *
+ * There were eleven copies of this, differing only in how long they were
+ * willing to wait — hence `tries`. `raw` is for `control.spec.ts`, which exists
+ * to assert that a failure is a status rather than a silence.
+ */
+export async function evalClj(window: Page, source: string,
+                              { tries = 100, every = 50, raw = false }: EvalOptions = {}): Promise<any> {
+    let job = await control(window, 'eval', { source });
+    for (let i = 0; i < tries && job.status === 'working'; i++) {
+        await window.waitForTimeout(every);
+        job = await control(window, 'job', { job: job.id });
+    }
+    if (raw) return job;
+    if (job.status !== 'completed') throw new Error(`${job.status}: ${job.error}\n${source}`);
+    return job.result;
+}
+
+/**
+ * Open `path` and wait until there is an editor for it.
+ *
+ * Six specs had a near-copy of this under three different names. Waiting for
+ * the editor rather than for the command is the whole of it: `:open-path`
+ * returns long before a file is read, parsed and in the pool, and every probe
+ * that raced it failed in a way that read as a missing feature.
+ */
+export async function openFile(window: Page, path: string): Promise<void> {
+    await evalClj(window, `(do (lt.objs.command/exec! :open-path "${path}") :opening)`);
+    await window.waitForFunction(
+        ([p]) => !!(globalThis as any).cljs.core.first.call(
+            null, (globalThis as any).lt.objs.editor.pool.by_path(p)),
+        [path], { timeout: 30_000 });
+}
+
 /** Evaluate a ClojureScript expression the way script/lt-repl.sh `cljs` does. */
 export async function cljs<T = unknown>(window: Page, expression: string): Promise<T> {
     return await window.evaluate(expression) as T;
@@ -195,7 +256,7 @@ interface Fixtures {
  * `:dirty false` before closing, because Light Table asks before losing
  * changes and nothing here is going to answer it.
  */
-export async function reset(window: Page): Promise<void> {
+export async function reset(app: ElectronApplication, window: Page): Promise<void> {
     await window.evaluate(`(function () {
         try {
             return lt.objs.control.request('eval', { source: \`
@@ -212,6 +273,26 @@ export async function reset(window: Page): Promise<void> {
                     :reset)\` });
         } catch (e) { return 'reset failed: ' + e.message; }
     })()`);
+
+    // Every window but the first. `windows.spec.ts` opens second windows on
+    // purpose and does not close them, which was fine when each test had its
+    // own application and is a leak now that a worker shares one: the extras
+    // would stay alive for every file scheduled after it.
+    //
+    // `destroy` rather than `close`, for the reason `teardown` gives — a close
+    // is a question the editor asks about unsaved changes, and nothing here is
+    // going to answer it.
+    try {
+        await app.evaluate(({ BrowserWindow }) => {
+            // The lowest id is the first window — Electron hands them out in
+            // order — which is the one the `window` fixture is holding. Not
+            // `getAllWindows()[0]`: that array is in no promised order, and
+            // destroying the wrong one closes the page every later test uses.
+            const all = BrowserWindow.getAllWindows();
+            const first = Math.min(...all.map((w) => w.id));
+            for (const w of all) if (w.id !== first) w.destroy();
+        });
+    } catch { /* the application is going away anyway */ }
 }
 
 export const test = base.extend<Fixtures, WorkerFixtures>({
@@ -232,9 +313,9 @@ export const test = base.extend<Fixtures, WorkerFixtures>({
 
     // Automatic, and after the test rather than before: a failure leaves the
     // window as it was for the trace, and the next test still starts clean.
-    cleanEditor: [async ({ window }, use) => {
+    cleanEditor: [async ({ app, window }, use) => {
         await use(undefined);
-        await reset(window);
+        await reset(app, window);
     }, { auto: true }],
 
     // lt.object catches exceptions thrown inside behavior reactions and

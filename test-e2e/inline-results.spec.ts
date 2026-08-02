@@ -7,20 +7,12 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { test, expect, scratchDir } from './fixtures';
+import { test, expect, evalClj as evalWith, scratchDir } from './fixtures';
 import type { Page } from '@playwright/test';
 
-async function evalClj(window: Page, source: string): Promise<any> {
-    let job = await window.evaluate(
-        ([s]) => (globalThis as any).lt.objs.control.request('eval', { source: s }), [source]);
-    for (let i = 0; i < 200 && job.status === 'working'; i++) {
-        await window.waitForTimeout(50);
-        job = await window.evaluate(
-            ([id]) => (globalThis as any).lt.objs.control.request('job', { job: id }), [job.id]);
-    }
-    if (job.status !== 'completed') throw new Error(`${job.status}: ${job.error}\n${source}`);
-    return job.result;
-}
+/** Longer than the default, because an evaluation round-trips through a client. */
+const evalClj = (window: Page, source: string) => evalWith(window, source, { tries: 200 });
+
 
 async function open(window: Page, engine: string, name: string,
                     contents: string): Promise<string> {
