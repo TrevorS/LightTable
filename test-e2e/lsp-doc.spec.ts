@@ -156,3 +156,98 @@ test('and a server that has not finished starting says so', async ({ window }) =
         (do (doseq [ed (pool/by-path "${file}")] (object/raise ed :close)) :closed)`);
     fs.rmSync(path.dirname(path.dirname(file)), { recursive: true, force: true });
 });
+
+test('and a REPL that takes the surface has to answer for it', async ({ window }) => {
+    // The second report of "toggle docs isn't working", and a different cause
+    // from the first. `lt.objs.providers` lets a connected REPL take a surface
+    // from the language server — deliberately: a REPL knows what is actually
+    // loaded, and there is one doc bar. So the language server stands down.
+    //
+    // Which is fine right up until the REPL has nothing to say. `::clj-doc`
+    // skipped silently when the cursor was not on a symbol, and
+    // `::print-clj-doc` guarded with `(if-not result …)` on a value it had just
+    // read a key from — so that branch could not fire, and cider-nrepl
+    // answering `info` with no-info drew an empty box or nothing.
+    //
+    // Measured before it was believed: with no client the doc appears, and with
+    // a client claiming `:doc` the widget count was 0, the message nil and the
+    // error list empty. Complete silence.
+    const file = project('lspreplsurface');
+
+    await evalClj(window, `
+        (do (lt.object/call-behavior-reaction
+              :lt.objs.editor.lsp/language-servers
+              lt.objs.editor.lsp/lsp-client
+              [{:tags [:editor.typescript]
+                :language-id "typescript"
+                :root ["tsconfig.json"]
+                :id "vtsls"
+                :command "node"
+                :args ["${FAKE_SERVER}"]}])
+            (cmd/exec! :open-path "${file}")
+            :opened)`);
+    await expect.poll(async () => await evalClj(window, `
+        (boolean (object/has-tag? (first (pool/by-path "${file}")) :docable))`),
+    { timeout: 30000 }).toBe('true');
+    await evalClj(window, `
+        (let [ed (first (pool/by-path "${file}"))]
+          (lt.objs.editor/focus ed)
+          (lt.objs.editor/move-cursor ed {:line 1 :ch 13})
+          :ready)`);
+
+    // The language server answers, because nothing else claims the surface.
+    await evalClj(window, '(do (cmd/exec! :editor.doc.toggle) :toggled)');
+    await expect.poll(async () => await insideEditor<number>(window, file,
+        '(.-length (.querySelectorAll root ".inline-doc"))'), { timeout: 20000 }).toBe(1);
+    await evalClj(window, '(do (cmd/exec! :editor.doc.toggle) :away)');
+
+    // Now a client that says it provides :doc, the way the nREPL client does.
+    // Nothing else about the editor changes.
+    await evalClj(window, `
+        (do (def surface-taker
+              (object/create (object/object* :lt.probe/repl :tags #{:client} :init (fn [_] nil))))
+            (object/merge! surface-taker {:name "probe-repl" :provides #{:doc}})
+            (swap! lt.objs.clients/cs assoc (lt.objs.clients/->id surface-taker) surface-taker)
+            (object/update! (first (pool/by-path "${file}")) [:client] assoc :default surface-taker)
+            :connected)`);
+
+    expect(await evalClj(window, `
+        (let [ed (first (pool/by-path "${file}"))]
+          (lt.objs.providers/provided?
+            (->> (vals (:client @ed)) (filter #(and % (lt.objs.clients/available? %))) (map deref))
+            :doc))`), 'the client should have taken the surface').toBe('true');
+
+    // And the server stands down, which is the design. What must not happen is
+    // that it stands down into nothing.
+    await evalClj(window, '(do (lt.objs.notifos/set-msg! "") (cmd/exec! :editor.doc.toggle) :toggled)');
+    await window.waitForTimeout(1500);
+    expect(await insideEditor<number>(window, file,
+        '(.-length (.querySelectorAll root ".inline-doc"))')).toBe(0);
+
+    // The two ways the Clojure path goes quiet, driven directly — the plugin's
+    // behaviors hang off `:editor.clj.*`, so a TypeScript file never carries
+    // them and the reactions are called by name.
+    expect(await evalClj(window, `
+        (do (lt.objs.notifos/set-msg! "")
+            (lt.object/call-behavior-reaction :lt.plugins.clojure/print-clj-doc
+                                              (first (pool/by-path "${file}"))
+                                              {:result-type :doc :name "greet" :doc nil :args nil})
+            (:text (:message @lt.state/app)))`))
+        .toContain('No documentation for greet');
+
+    expect(await evalClj(window, `
+        (do (lt.objs.notifos/set-msg! "")
+            (let [ed (first (pool/by-path "${file}"))]
+              ;; Column 0 of a blank line: no symbol to ask about.
+              (lt.objs.editor/move-cursor ed {:line 2 :ch 0})
+              (lt.object/call-behavior-reaction :lt.plugins.clojure/clj-doc ed))
+            (:text (:message @lt.state/app)))`))
+        .toContain('No symbol at the cursor');
+
+    await evalClj(window, `
+        (do (swap! lt.objs.clients/cs dissoc (lt.objs.clients/->id surface-taker))
+            (object/merge! (first (pool/by-path "${file}")) {:client {}})
+            (doseq [ed (pool/by-path "${file}")] (object/raise ed :close))
+            :closed)`);
+    fs.rmSync(path.dirname(path.dirname(file)), { recursive: true, force: true });
+});

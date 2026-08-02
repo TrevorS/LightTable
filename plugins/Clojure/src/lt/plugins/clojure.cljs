@@ -789,21 +789,36 @@
                                    :sym (:string token)
                                    :ns (buffer-ns editor)
                                    :print-length (object/raise-reduce editor :clojure.print-length+ nil))]
-                        (when token
+                        (if token
                           (clients/send (eval/get-client! {:command command
                                                            :info info
                                                            :origin editor
                                                            :create try-connect})
-                                        command info :only editor)))
-                      ))
+                                        command info :only editor)
+                          ;; Said rather than skipped. A REPL that is connected
+                          ;; takes this surface from the language server — see
+                          ;; lt.objs.providers — so a `when` here is the whole
+                          ;; feature going quiet, and the cursor being on a
+                          ;; paren or on whitespace is the ordinary case rather
+                          ;; than a rare one.
+                          (notifos/set-msg! "No symbol at the cursor to document.")))))
 
 (behavior ::print-clj-doc
           :triggers #{:editor.clj.doc}
           :reaction (fn [editor result]
                       (when (= :doc (:result-type result))
-                        (if-not result
-                          (notifos/set-msg! "No docs found." {:class "error"})
-                          (object/raise editor :editor.doc.show! result)))))
+                        ;; `(if-not result …)` was here and could not fire:
+                        ;; `result` has just been read for `:result-type`, so it
+                        ;; is a map and truthy every time. What actually happens
+                        ;; is that cider-nrepl answers `info` with no-info — for
+                        ;; a local, a keyword, anything it cannot resolve — and
+                        ;; every field comes back nil. That drew an empty box or
+                        ;; nothing at all, and said nothing either way.
+                        (if (or (seq (str (:doc result))) (seq (str (:args result))))
+                          (object/raise editor :editor.doc.show! result)
+                          (notifos/set-msg! (str "No documentation for "
+                                                 (or (:name result) "that")
+                                                 "."))))))
 
 (defn symbol-token? [s]
   ;; `(:string token)` is nil for a position CodeMirror has no token at, and
