@@ -11,8 +11,10 @@ Entries move to **Closed** with the commit that closed them rather than being
 deleted, because the useful part of most of these is the reason they existed.
 
 Found by a survey of the whole repository in seven parts — the chrome
-migration's remaining surfaces, the two test layers, dead code, and the build.
-Where a finding says "not worth doing", that is a decision, not an omission.
+migration's remaining surfaces, the two test layers, dead code, and the build —
+and added to since, mostly by conversions turning up what the code they touched
+was actually doing. Where a finding says "not worth doing", that is a decision,
+not an omission.
 
 ---
 
@@ -53,6 +55,31 @@ remote debugging port on, so a devtools client forwards the window's own
 console into Light Table's. `page.addInitScript` with a `console.error` wrapper
 is what found it.
 
+### "Language server ready" is about whichever one finished first
+
+`::on-ready` says it on every `:lsp.ready`, and nothing ties the message to the
+editor you are looking at. On this repository a probe found the statusbar
+already reporting it while the connection attached to the open editor had
+`initialized? false` and no capabilities at all.
+
+Found chasing "toggle docs isn't working", which `063aa943` fixed at the other
+end: the commands that a person runs on purpose now say when the server is
+still starting. That makes the truth visible where it matters and leaves this
+message still capable of lying. Closing it means naming the server, or saying
+it per editor rather than per connection.
+
+### A doc over an existing underline result orphans the old node
+
+`lt.plugins.doc/inline-doc` does `object/update! this [:widgets] assoc [line
+:underline]` without raising `:clear!` on whatever was already at that line —
+where `lt.objs.eval/::underline-results`, the other writer of that key, does.
+So a Python plot followed by a doc on the same line leaves the plot on screen
+with nothing holding it.
+
+Found writing the copy test in `test-e2e/inline-results.spec.ts`, which is why
+that test opens a file per case. Narrow: it needs two different producers on
+one line.
+
 ### Splits are half-projected
 
 Each tabset draws its own strip and the actions carry the tabset id, so the
@@ -75,23 +102,22 @@ character. Nothing has measured the new one under a large buffer with a
 language server attached, and `cm6-hint.spec.ts` asserts state rather than
 render time.
 
-### The popup's automation surface is its DOM
+### The popup's choices are still read out of its DOM
 
-`lt.objs.control` — what MCP and `script/lt-repl.sh` talk to — reads pending
-popups by scraping them: `dom/$$ :h2` for the header, `li.button` for the
-choices, matched by `textContent`, answered with a synthetic `.click()`. It
-uses none of the popup object's state.
+Half closed by `560d49bc`. The popup keeps its options now, so
+`lt.objs.control` reads the header from the object — the comment saying
+`(:header @p)` is empty for every popup there is has gone with it.
 
-So the popup's rendered shape is an interface, not a presentation choice. Any
-conversion has to keep yielding an `h2` with the header, `li.button` elements
-in order with matching text, and elements that respond to a real click by doing
-what the button does.
+The *choices* are still a DOM read, and now for a reason rather than by
+default: three callers put their options in the body rather than in `:buttons`
+— which client should evaluate this, which code action to run — because there
+can be many and they are the question rather than a confirmation. A reader that
+trusted `:buttons` would offer "cancel" and nothing else for exactly the
+prompts where the choice matters.
 
-Two call sites also compose *other objects'* DOM into a popup body
-(`lt.objs.connector`, `lt.objs.editor.lsp/offer-actions!`) with a
-closure-over-atom shape adopted deliberately after an object leaked. One more
-embeds a live `<input>` and reaches into it after creation
-(`lt.plugins.clojure`'s remote-connect).
+What that leaves as an interface is narrower but real: `li.button` elements in
+order, with matching `textContent`, that respond to a real `.click()`. Asserted
+in `test-e2e/renderer.spec.ts`.
 
 ### The bottombar is general for one consumer
 
@@ -105,8 +131,13 @@ Deleting the generality is probably cheaper than solving it.
 `console/try-update` finds an existing `<pre id="console<id>">` and appends a
 text node to it, so nREPL stdout arriving in chunks under one id accumulates in
 one row instead of producing a row per chunk. That is the one genuinely
-imperative-for-a-reason piece; `log`, `error` and `verbatim` are a list of
-lines with a 50-item cap and convert like any other list.
+imperative-for-a-reason piece.
+
+`baae8ffe` took the rest as far as it goes without answering this: every line is
+built by `lt.ui/element` and the list is still appended to, dropped from and
+scrolled imperatively, because that is what append-only means. Making the
+console a view of a value means holding the last fifty lines *as* a value, and
+the streaming append is the thing that would have to change.
 
 ### Windows packaging has no coverage
 
@@ -134,6 +165,7 @@ Ranked by what a failure would cost.
 | The settings and keymap UI | nothing, at any layer |
 | `contextIsolation` / no Node in the renderer | smoke only — a security-relevant invariant that would be cheap to pin as an e2e one-liner |
 | The background search worker round-trip | smoke proves the worker answers; the e2e search tests go through the UI and might not exercise it |
+| Dragging a grip to resize a panel | `renderer.spec.ts` asserts each grip exists, is in the right parent and is `draggable`, and drives `:width!` directly — Playwright does not synthesise HTML5 drag, so the browser's half is unproven |
 
 `doc/testing.md` says checks move down from smoke to e2e as they are written.
 For the webview, the menu and the worker that has not happened, and those are
@@ -173,10 +205,21 @@ than erase. The two check-only configs already rely on it.
 **Keeping `defui` as a stable plugin API.** Decided the other way, 2026-08-01:
 this fork is one person's editor, the only plugins that matter are the ones in
 this repository, and those get ported rather than supported. So singultus is
-not permanent — 63 `defui` across 22 files remain, from 116 across 37 when
-doc/rendering.md was written, and the file that stops using the last one
-deletes `src/singultus`. A `defui` reimplemented on Replicant to keep the
-signature is no longer worth the trouble it would take to get right.
+not permanent — 35 `defui` across 7 files remain in `src` and none at all in
+the bundled plugins, from 116 across 37 when doc/rendering.md was written, and
+the file that stops using the last one deletes `src/singultus`. A `defui`
+reimplemented on Replicant to keep the signature is no longer worth the trouble
+it would take to get right.
+
+**A `host` alias for splicing another object's DOM into hiccup.** Decided
+against, 2026-08-02, after measuring rather than before. It was the planned
+next step and it has no caller: the three files it was for — bottombar,
+sidebar, tabset — keep their bound roots either way, because a panel's width
+and height are object-owned geometry. What those files and `lt.objs.eval`
+actually shared was the opposite gap, the root's *own* class and style, which
+is `lt.ui/node`'s `attrs` now. If a tabset ever becomes a view the alias
+becomes worth having; until then it would be a mechanism with nothing behind
+it.
 
 **A `make`-based build system.** The `Makefile` is explicitly a wrapper, one
 line deep, deferring to `package.json` and `script/`. Reimplementing logic in it
@@ -185,6 +228,40 @@ would create the second source of truth it exists to avoid.
 ---
 
 ## Closed
+
+**Every chrome panel silently lost its first paint** — `0a3fe468`'s successor.
+A view with a data handler renders when its namespace loads, which was before
+`lt.core` reached the bottom of its own file and installed `r/set-dispatch!`.
+Replicant threw, caught it itself, logged `[object Object]` and skipped that
+render. Nothing looked wrong because the second render is one state change
+away. `lt.actions` installs the dispatch when it loads now.
+
+**Toggle docs did nothing, silently** — `063aa943`. `request-at-cursor!`
+declined before the language server's handshake and said nothing at all, and a
+server takes seconds to minutes to index a project. It returns `:sent`,
+`:not-ready` or `:no-server` now, and the two commands a person runs on purpose
+report which.
+
+**Printing a Light Table object never finished** — `e7466806`. An object is an
+atom whose state holds other objects and the graph has cycles, so
+`(first (pool/by-path f))` — the most ordinary thing there is to evaluate in
+this editor — printed until the stack ran out, and the RangeError came out of
+whoever had called in rather than out of the job. `cljs-result-format` binds
+`*print-level*` now.
+
+**The e2e tests spelled ClojureScript names by hand** — `9f5c146f`. 81 places
+went round the control surface into `window.evaluate` because `evalClj` was not
+available there and answered printed text anyway. One left, the readiness
+probe, which cannot use the surface it is waiting for.
+
+**`defpartial` had no callers and a file to itself** — `baae8ffe`. The last
+reference was an unused require in `lt.objs.opener`, beside an unused `defui`.
+`src/singultus/def_macros.clj` is gone.
+
+**Three copies of a dead button** — `98a4b0a3` and its parent. `eval/button`,
+`document/button` and `deploy/button` were the same eight lines with no caller
+anywhere, left behind when the connect panel became a view. `python/canvas` and
+`canvas/canvas-elem` went with them.
 
 **`allowScripts` claimed a protection that was not happening** — `abe6ea3b`'s
 parent. Both `package.json` files carried an `allowScripts` map; npm has no such
