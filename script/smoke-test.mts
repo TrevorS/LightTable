@@ -611,10 +611,13 @@ app.on('ready', function () {
                     // scoring is what fuzzy.ts is for, and it replaced a
                     // String.prototype patch, so a wrong port would rank
                     // results wrongly rather than throw.
+                    //
+                    // dragdrop.js was checked here too. It is gone: the tab
+                    // strip is a view now, and reordering a tab is a change to
+                    // the tab order rather than a library moving list items.
                     windowModules: (function () {
                         var f = lt.window.modules.fuzzy;
-                        var d = lt.window.modules.dragdrop;
-                        if (!f || !d || typeof d.sortable !== 'function') return 'missing';
+                        if (!f) return 'missing';
                         if (String.prototype.score) return 'String.prototype still patched';
                         var exact = f.stringScore('platform.cljs', 'platform.cljs');
                         var partial = f.stringScore('platform.cljs', 'plat');

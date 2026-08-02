@@ -32,34 +32,75 @@
 ;; 1 · titlebar
 ;;*********************************************************
 
+(defn- as-run
+  "What a tab looks like when the thing behind it is a run."
+  [id run]
+  {:id id
+   :label (:label run)
+   :origin :run
+   :count (count (remove :applied? (:edits run)))})
+
+(defn- with-runs
+  "`tabs`, with any that are runs drawn as runs, plus the runs that are not
+  tabs at all.
+
+  A run is a tab like any other, and that is not a flourish: a run has a buffer
+  of proposed edits behind it, so it is the same kind of thing as a file, and
+  giving it a different chrome would be claiming otherwise.
+
+  Both halves are here because the tabs are a projection of objects that know
+  nothing about runs — so a run that *is* open has a tab with no idea what it
+  is, and a run that is not open has no tab at all. In the design's state a run
+  is simply one of `:tabs`, and when tabs are state rather than a projection
+  this function goes away."
+  [tabs runs]
+  (let [open (set (map :id tabs))]
+    (concat (for [{:keys [id] :as tab} tabs]
+              (if-let [run (get runs id)] (merge tab (as-run id run)) tab))
+            (for [[id run] runs
+                  :when (not (open id))]
+              (as-run id run)))))
+
 (defn titlebar
-  "The tabs of the active tabset. A run is a tab like any other.
+  "One tabset's strip of tabs.
 
-  Which is not a flourish: a run has a buffer of proposed edits behind it, so
-  it is the same kind of thing as a file, and giving it a different chrome
-  would be claiming otherwise.
+  Two arities and the second is the real one: there is a strip per tabset,
+  because a tabset is a column of the window and its tabs are its own. The
+  window as a whole draws the first, which is what a window with no splits has.
 
-  A run that is not already in the tab list is appended to it. In the design's
-  state the run is simply one of `:tabs`, because the list is authoritative;
-  here it is projected from the objects that own the real tabs, and those know
-  nothing about runs. When tabs are state rather than a projection this line
-  goes away and the run is just an id like the others."
-  [{:keys [tabsets runs editors]}]
-  (let [{:keys [tabs active]} (first tabsets)
-        tabs (concat tabs (remove (set tabs) (keys runs)))]
-    [:div.titlebar
-     (map-indexed
-      (fn [i id]
-        (let [run (get runs id)]
-          [::chrome/tab
-           {:replicant/key id
-            :active? (= i active)
-            :origin (when run :run)
-            :dirty? (boolean (get-in editors [id :dirty?]))
-            :count (when run (count (remove :applied? (:edits run))))
-            :on-select [[:tab/activate i]]}
-           (if run (:label run) (leaf id))]))
-      tabs)]))
+  A tab carries what it needs to be drawn — its label, whether it is modified,
+  whether it can be closed — because most tabs are not files. The console, the
+  plugin manager and the component kit have a name and no path, and a strip
+  that took the leaf of a path would draw `obj-42`."
+  ([state] (titlebar state (:id (first (:tabsets state)))))
+  ([{:keys [tabsets runs]} tabset-id]
+   (let [{:keys [tabs active] :as tabset} (or (first (filter #(= tabset-id (:id %)) tabsets))
+                                              (first tabsets))
+         ;; A run that is not open anywhere is appended to the first strip and
+         ;; only the first: it has to be somewhere, and "wherever you happen to
+         ;; be looking" would put one in every column of a split window.
+         tabs (with-runs tabs (when (= tabset (first tabsets)) runs))
+         ts (:id tabset)]
+     [:div.titlebar
+      (map-indexed
+       (fn [i {:keys [id label dirty? origin count closable?]}]
+         [::chrome/tab
+          {:replicant/key id
+           :active? (= i active)
+           :origin origin
+           :dirty? dirty?
+           :count count
+           :draggable? true
+           :on-select [[:tab/activate ts i]]
+           :on-menu [[:tab/menu ts i]]
+           ;; Picking a tab up and putting it down are two state changes and
+           ;; nothing else: what is being dragged is `:dragging`, and dropping
+           ;; is a list that changed order. No library touches the DOM.
+           :on-drag-start [[:tab/drag-start ts i]]
+           :on-drop [[:tab/drop ts i]]
+           :on-close (when closable? [[:tab/close ts i]])}
+          label])
+       tabs)])))
 
 ;;*********************************************************
 ;; 2 · review queue
@@ -238,7 +279,7 @@
   reason to show the tree."
   [{ws :workspace :keys [tabsets] :as state}]
   (let [{:keys [tabs active]} (first tabsets)
-        current (get (vec tabs) (or active 0))]
+        current (:path (get (vec tabs) (or active 0)))]
     [:div.wstree
      [::chrome/action-cluster {}
       [::chrome/action {:weight :tertiary :on-select [[:workspace/add-folder]]} "folder"]
@@ -373,7 +414,7 @@
   be tested without a DOM."
   [{:keys [tabsets editors]}]
   (let [{:keys [tabs active]} (first tabsets)
-        path (get (vec tabs) (or active 0))]
+        path (:path (get (vec tabs) (or active 0)))]
     (when (contains? editors path)
       [:lt.ui.pane/pane {:path path}])))
 

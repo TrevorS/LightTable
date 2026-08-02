@@ -13,7 +13,6 @@
   ;; itself rather than to the module, and the failure is a null dereference
   ;; somewhere else entirely.
   (:require ["./fuzzy.js" :as fuzzy-js]
-            ["./dragdrop.js" :as dragdrop-js]
             ["./treesitter.js" :as treesitter-js]
             ["./cm-hint.js" :as cm-hint-js]
             ;; The editor. `lt.objs.editor` builds one of these; the rest
@@ -30,10 +29,6 @@
   "Fuzzy matching for the command bar and the file navigator: stringScore,
   score, fastScore, wrapMatch."
   fuzzy-js)
-
-(def ^js dragdrop
-  "Drag-and-drop reordering for the tab bar: sortable."
-  dragdrop-js)
 
 (def ^js treesitter
   "Tree-sitter highlighting: initRuntime, highlighterFor, captureClasses,

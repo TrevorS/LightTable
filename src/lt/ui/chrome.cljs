@@ -82,15 +82,30 @@
 
 ;; Lives in the titlebar. Active is the editor ground pulled up into the
 ;; chrome. A run is a tab like any other.
-(defalias tab [{:keys [active? origin dirty? count on-select]} body]
+;;
+;; Everything you can do to a tab is a handler it is given: choose it, close it,
+;; ask what else there is, or pick it up. Dragging is `:draggable?` plus two
+;; handlers rather than a library reaching into the DOM — a tab that moves is a
+;; list that changed order, and that is a fact about state.
+(defalias tab [{:keys [active? origin dirty? count draggable?
+                       on-select on-close on-menu on-drag-start on-drop]} body]
   [:div.tab {:class (when active? "tab--active")
-             :on {:click on-select}}
+             :draggable (when draggable? "true")
+             :on {:click on-select
+                  :contextmenu on-menu
+                  :dragstart on-drag-start
+                  :drop on-drop}}
    (when (= origin :run) [:span.dot.dot--agent])
-   body
+   [:span.tab__label body]
    ;; Dirty is a dot, never a colour change and never an asterisk in the label —
    ;; the label is the file's name and a name does not change when you type.
    (when dirty? [:span.dot.dot--result])
-   (when count [::count-pill {:count count :tone (when (= origin :run) :agent)}])])
+   (when count [::count-pill {:count count :tone (when (= origin :run) :agent)}])
+   ;; Last, and only when there is somewhere for it to go. The close button is
+   ;; a user behavior — `lt.objs.tabs/show-close-button` — because a row of
+   ;; crosses is one mis-click per tab and not everyone wants the trade.
+   (when on-close
+     [:span.tab__close {:on {:click on-close}} "×"])])
 
 ;; Names the file and range a multibuffer region came from, and whose edit it is.
 ;; Three origins rather than two: an excerpt you wrote yourself is not an

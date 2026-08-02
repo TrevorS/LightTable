@@ -262,6 +262,26 @@
 }
 
 .tab--active { background: var(--lt-base); color: var(--lt-text); }
+.tab:hover { color: var(--lt-subtext1); }
+/* One line, ellipsised. A tab that wraps is a strip that changes height. */
+.tab__label { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+
+/* Only when the user behavior asks for it — see lt.objs.tabs/show-close-button.
+   Hidden until you are on the tab, because a row of crosses is a row of
+   mis-clicks. */
+.tab__close {
+  margin-left: 2px;
+  padding: 0 2px;
+  border-radius: var(--lt-radius-sm);
+  color: var(--lt-overlay0);
+  visibility: hidden;
+}
+.tab:hover .tab__close { visibility: visible; }
+.tab__close:hover { background: var(--lt-error-tint); color: var(--lt-error); }
+
+/* Being dragged over. The strip is the drop target as well as the tabs, so a
+   tab dropped past the last one lands at the end. */
+.tab[draggable="true"] { -webkit-user-drag: element; }
 
 /* Names the file and range a multibuffer region came from, and whose edit it is. */
 .excerpt {
@@ -716,6 +736,7 @@
   background: var(--lt-crust);
   overflow-x: auto;
 }
+.titlebar::-webkit-scrollbar { height: 0; }
 
 .window__body { display: flex; flex: 1; min-height: 0; }
 

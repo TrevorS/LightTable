@@ -585,16 +585,11 @@
  [:statusbar-item :lt.objs.statusbar/on-show!]
  [:statusbar-item :lt.objs.statusbar/on-hide!]
 
- [:tab-label :lt.objs.menu/menu!]
- [:tab-label :lt.objs.tabs/tab-label-menu+]
- [:tab-label :lt.objs.tabs/on-close-tab-label]
-
  [:tabs :lt.objs.tabs/on-destroy-objs]
  [:tabs :lt.objs.tabs/active-tab-num]
  [:tabs :lt.objs.tabs/prev-tab]
  [:tabs :lt.objs.tabs/next-tab]
  [:tabs :lt.objs.tabs/tab-close]
- [:tabs :lt.objs.tabs/repaint-tab-updated]
  [:tabs :lt.objs.tabs/tabset-bottom!]
  [:tabs :lt.objs.tabs/right!]
  [:tabs :lt.objs.tabs/left!]
@@ -605,7 +600,7 @@
  [:tabset :lt.objs.tabs/tabset-active]
  [:tabset :lt.objs.tabs/next-tab]
  [:tabset :lt.objs.tabs/unset-dragging]
- [:tabset :lt.objs.tabs/repaint-tab-updated]
+ [:tabset :lt.ui.window/sync-from-tabs]
  [:tabset :lt.objs.tabs/width!]
  [:tabset :lt.objs.tabs/tab-close]
  [:tabset :lt.objs.tabs/prev-tab]
@@ -619,6 +614,8 @@
  [:tabset.tab :lt.objs.tabs/on-destroy-remove]
  [:tabset.tab :lt.objs.tabs/tab-active]
  [:tabset.tab :lt.objs.tabs/show-close-button]
+ [:tabset.tab :lt.objs.tabs/tab-menu+]
+ [:tabset.tab :lt.objs.menu/menu!]
 
  [:tcp.client :lt.objs.clients.tcp/send!]
 

@@ -46,7 +46,6 @@ body { -webkit-user-select: none; }
 .underline-result pre { display:inline-block; white-space:pre-wrap; padding:10px 10px !important; border-radius:2px; }
 .underline-result .spacer { display:inline-block; white-space:pre; vertical-align:top; }
 
-.sortable-placeholder { box-sizing:border-box; }
 
 .inspector-object h2 { cursor:default; }
 .inspector-object > h2:before { content:"▶"; margin-right:10px; font-size:8px; width:6px; display:inline-block; vertical-align:middle; box-sizing:border-box; }
@@ -63,15 +62,12 @@ body { -webkit-user-select: none; }
 #multi { z-index:20; position:fixed; left:0px; right:0px; top:10px; bottom:0px; overflow:hidden; }
 #multi .tabsets { left:0; right:0; position:absolute; top:0; bottom:34px; max-width:100%; width:100%; overflow:hidden; white-space:nowrap; }
 #multi .tabset { box-sizing:border-box; position:relative; overflow:hidden; width:100%; height:100%; float:none; vertical-align:top; display:inline-block; white-space:normal; }
-#multi .list { display:block; background:transparent; overflow-y:hidden; overflow-x:hidden; margin:0 8px; z-index:10000000; }
-#multi .list:hover { overflow-x:auto; height:36px; z-index:1000; }
-#multi .list ul { height:36px; width:auto; white-space:nowrap; }
-#multi .list li { float:none; overflow:hidden; border-radius:0px; border-top-left-radius:0; border-top-right-radius:0; vertical-align:top; height:29px; box-sizing:border-box; display:inline-block; padding:5px 10px; cursor:default; }
-
-#multi .list span { display:inline-block; vertical-align:middle; }
-
-#multi .list .tab-close { width:17px; padding:0 5px; visibility:hidden; margin-left:10px; overflow:hidden; box-sizing:border-box; border-radius:2px; }
-#multi li:hover .tab-close { width:17px; padding:0 5px; visibility:visible; margin-left:10px; }
+/* The strip is a view — `.titlebar` and `.tab` in css/kit.css. This is the box
+   it sits in and nothing about what is in it. */
+#multi .list { position:absolute; top:0; left:0; right:0; height:36px; overflow:hidden; }
+/* The strip fills the box, so the empty part of it is a drop target too — a
+   tab dragged past the last one has somewhere to land. */
+#multi .list .titlebar { height:100%; }
 
 #multi .content { left:0px; right:10px; position:absolute; top:36px; bottom:0; padding-left:10px; white-space:normal;}
 #multi .content > * { width:100%; height:100%; box-sizing:border-box; }
@@ -276,7 +272,6 @@ body { -webkit-user-select: none; }
 .animated #side { -webkit-transition:width 0.1s ease-in-out; }
 .animated #right-bar { -webkit-transition:width 0.10s ease-in-out; }
 .animated #find-bar {  -webkit-transition:height 0.1s ease-in-out;}
-.animated #multi .tab-close { -webkit-transition:width 0.2s ease-in-out, padding 0.2s ease-in-out; }
 
 .dragging .frame-shade { display:block !important; }
 

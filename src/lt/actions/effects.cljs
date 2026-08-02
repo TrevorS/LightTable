@@ -28,10 +28,42 @@
 ;; state + effect — a tab is chosen in the chrome and the tabset is told.
 ;; The state is written first so the click feels instant, and the tabset
 ;; catches up in the same turn.
+;;
+;; By tabset id rather than by position: a window can be split, and the strip
+;; you clicked in is not always the first one.
 (actions/register! :tab/activate
-                   (fn [state i]
-                     {:state (assoc-in state [:tabsets 0 :active] i)
-                      :effects [[:tabs/activate i]]}))
+                   (fn [state ts i]
+                     {:state (update state :tabsets
+                                     (fn [tss]
+                                       (mapv #(if (= ts (:id %)) (assoc % :active i) %) tss)))
+                      :effects [[:tabs/activate ts i]]}))
+
+;; state only — which tab is being dragged. Picking one up changes nothing
+;; else, which is the point: a drag is a fact about the window, so it lives
+;; where the rest of them do rather than in a variable inside a library.
+(actions/register! :tab/drag-start
+                   (fn [state ts i]
+                     (assoc state :dragging {:tabset ts :index i})))
+
+;; state + effect — and it is the *state* that says what was picked up, so the
+;; drop needs nothing from the event. `nil` for the index means the empty part
+;; of a strip, which is "put it at the end".
+(actions/register! :tab/drop
+                   (fn [state to-ts to-i]
+                     (let [{from-ts :tabset from-i :index} (:dragging state)]
+                       {:state (assoc state :dragging nil)
+                        :effects (when from-ts
+                                   [[:tabs/reorder from-ts from-i to-ts to-i]])})))
+
+;; state + effect — closing and the menu are both the object's, because a tab
+;; is a window onto something that knows how to close itself.
+(actions/register! :tab/close
+                   (fn [state ts i]
+                     {:state state :effects [[:tabs/close ts i]]}))
+
+(actions/register! :tab/menu
+                   (fn [state ts i]
+                     {:state state :effects [[:tabs/menu ts i]]}))
 
 ;; state + effect — which client an evaluation reaches. Bound in the state so
 ;; the panel can draw it, and told to the editor so it is true.
@@ -55,16 +87,8 @@
 ;; Carrying them out
 ;;*********************************************************
 
-(defn- tab-at
-  "The object in the active tabset at index `i`."
-  [i]
-  (when-let [ts (first (object/by-tag :tabset))]
-    (get (:objs @ts) i)))
-
-(actions/register-effect! :tabs/activate
-                          (fn [i]
-                            (when-let [obj (tab-at i)]
-                              (tabs/active! obj))))
+;; The tab effects are `lt.objs.tabs`'s, registered there — that is where the
+;; tabsets are, and an effect belongs beside the thing it reaches.
 
 (actions/register-effect! :cmd/exec
                           (fn [k & args]

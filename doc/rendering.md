@@ -16,7 +16,7 @@ bundle whatever else happens. The question is only what *new* UI is written in.
 | | |
 |---|---|
 | singultus | everything, minus the list below. Stays: `defui` is plugin API |
-| Replicant | the statusbar, the workspace tree, the connect panel, the welcome screen, the component kit, and the window as a view |
+| Replicant | the tab strip, the statusbar, the workspace tree, the connect panel, the welcome screen, the component kit, and the window as a view |
 
 The swap is one object at a time and the two render side by side in the same
 document, which is what makes it safe to do gradually rather than as one
@@ -53,8 +53,9 @@ object:
 | replace | redefining the type rebuilds every live instance and swaps the node |
 
 This was measured rather than assumed. Opening six files and closing them,
-three times over, returns the object count, the editor count, the tab-label
-count and the watch count on the tabset's atom to exactly where they started.
+three times over, returns the object count, the editor count, the number of
+tabs drawn and the watch count on the tabset's atom to exactly where they
+started.
 `bound` adds a watch and destroying the object is what ends it, so the binding
 layer does not leak — which means the object model is a foundation to render
 onto rather than a second thing to replace at the same time.
@@ -97,12 +98,12 @@ changes on every keystroke is worth measuring before converting.
 ## What cannot be swapped one-for-one
 
 **Anything composing another object's content.** `map-bound` over a collection
-of objects, splicing `(object/->content %)` — the tabs, and the right bar's
-remaining panels. Replicant renders hiccup, and a DOM node another object owns
-is not hiccup. Those stay on singultus until the thing they are composing is a
-view rather than an object with a node.
+of objects, splicing `(object/->content %)` — the right bar's remaining panels,
+and the *content* area of a tabset. Replicant renders hiccup, and a DOM node
+another object owns is not hiccup. Those stay on singultus until the thing they
+are composing is a view rather than an object with a node.
 
-The way out is not to swap them, and three surfaces have now gone the other way
+The way out is not to swap them, and four surfaces have now gone the other way
 instead. The statusbar's three items — a cursor, a loader, a console toggle —
 were deleted rather than converted, and `lt.ui.view/statusbar` draws the whole
 bar from the state. The workspace tree was an object per file and an object per
@@ -118,12 +119,28 @@ whether the buffer you are in evaluates through a client — is read from the
 editor rather than stored, so the claim it makes cannot go stale the way a flag
 can.
 
-All three deleted more than they moved, and all three left the container
+The tab strip is the fourth, and it is the clearest case of the two halves
+coming apart. A tabset draws a strip and a content area: the strip was a `<ul>`
+of `::tab-label` objects, one object with one node per tab per tabset, and the
+content area hosts each tab object's own DOM. Only the strip moved.
+`lt.ui.view/titlebar` draws it per tabset from the projection; the content area
+is untouched, because hosting foreign DOM is what it is for.
+
+Two things went with it. `objs-list` destroyed every label and rebuilt the whole
+`<ul>` — reattaching the drag-and-drop wiring each time — whenever anything
+about the tabset changed, including a dirty flag; a view patches. And
+`src-window/dragdrop.ts`, 146 lines of sortable that moved list items and then
+read the new tab order back out of the document, is deleted: picking a tab up
+is `[:tab/drag-start ts i]` and putting it down is `[:tab/drop ts j]`, so
+reordering is a change to `:objs` and the strip follows.
+
+All four deleted more than they moved, and all of them left the container
 behind. The statusbar strip is still an object because the find bar is in it
 too and the tabs above give back its height; the workspace and connect panels
-are still objects because `lt.objs.sidebar` holds their nodes. What used to be
-`object/merge!` into an item is an action in each case, so what those surfaces
-show is asserted by folding actions over a map.
+are still objects because `lt.objs.sidebar` holds their nodes; a tabset is
+still an object because it owns a column of the window and the editors in it.
+What used to be `object/merge!` into an item is an action in each case, so what
+those surfaces show is asserted by folding actions over a map.
 
 The tree is the one worth reading twice, because it is where the shape paid.
 Every folder was a `ul` whose closed state was `display:none`, so opening a
@@ -150,9 +167,9 @@ the architecture:
 | view | 9, in `view` | a function of the whole state, composing aliases |
 
 Only views read state, so every question about correctness is a question about
-however many views there are. Nine, and three of them — the statusbar, the
-workspace tree and the connect panel — are on screen in the editor you are
-using. The rest of the
+however many views there are. Nine, and four of them — the tab strip, the
+statusbar, the workspace tree and the connect panel — are on screen in the
+editor you are using. The rest of the
 chrome is still objects, which is the honest state of the migration.
 
 **Light Table: Component kit** opens
@@ -186,9 +203,12 @@ that an empty queue says what would fill it. Milliseconds, no editor, no DOM.
 beside the real chrome. Moving a surface there is moving its root, which is the
 point of having exactly one — and [`lt.objs.statusbar`](../src/lt/objs/statusbar.cljs)
 and [`lt.objs.sidebar.workspace`](../src/lt/objs/sidebar/workspace.cljs) are
-that done twice. The bar along the bottom of the real editor and the tree down
-its left side are `view/statusbar` and `view/workspace`, the same functions
-this tab draws and the same ones `test/lt/ui/view_test.cljs` asks with a map.
+that done twice, [`lt.objs.sidebar.clients`](../src/lt/objs/sidebar/clients.cljs)
+a third time and [`lt.objs.tabs`](../src/lt/objs/tabs.cljs) a fourth. The strip
+across the top of the real editor, the bar along its bottom and the tree down
+its left side are `view/titlebar`, `view/statusbar` and `view/workspace` — the
+same functions this tab draws and the same ones `test/lt/ui/view_test.cljs`
+asks with a map.
 
 ## Where the state comes from
 

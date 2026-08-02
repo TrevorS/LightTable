@@ -45,6 +45,16 @@
           :reaction (fn [_ & _]
                       (from-objects/sync!)))
 
+(behavior ::sync-from-tabs
+          :triggers #{:tab.updated}
+          :desc "State: Keep the state atom current with the tabs"
+          :doc "The tab strip is `lt.ui.view/titlebar` over the projection, so
+                a tab opening, closing, moving, being renamed or going dirty
+                has to reach it. `lt.objs.tabs` raises `:tab.updated` on the
+                tabset for every one of those."
+          :reaction (fn [_ & _]
+                      (from-objects/sync!)))
+
 (behavior ::sync-from-clients
           :triggers #{:connect :close :destroy}
           :desc "State: Keep the state atom current with the connections"

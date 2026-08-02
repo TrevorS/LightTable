@@ -17,9 +17,11 @@
             [lt.objs.clients :as clients]
             [lt.objs.clients.agent :as agent]
             [lt.objs.command :as cmd]
+            [lt.objs.context :as ctx]
             [lt.objs.editor :as editor]
             [lt.objs.editor.lsp :as lsp]
             [lt.objs.editor.pool :as pool]
+            [lt.objs.tabs :as tabs]
             [lt.state :as state]))
 
 (defn- path-of [obj]
@@ -31,16 +33,42 @@
   [obj]
   (or (path-of obj) (str "obj-" (object/->id obj))))
 
+(defn- tab
+  "One tab, as the strip draws it.
+
+  The label is `tabs/->name` rather than the leaf of the path, because most
+  tabs are not files: the console, the plugin manager, the component kit and a
+  browser all have a name and no path at all, and a strip that took the leaf of
+  `obj-42` would draw exactly that."
+  [obj]
+  {:id (tab-id obj)
+   :label (tabs/->name obj)
+   :path (path-of obj)
+   :dirty? (boolean (:dirty @obj))
+   ;; Per tab, because it is a `:close-button+` raise-reduce and a user
+   ;; behavior — off unless you turn it on. See `lt.objs.tabs`.
+   :closable? (boolean (object/raise-reduce obj :close-button+ false))})
+
 (defn tabsets
-  "The open tabs, per tabset, and which is active."
+  "The open tabs, per tabset, and which tabset and tab are active.
+
+  In the order they are on screen — `(:tabsets @tabs/multi)` is left to right,
+  where `object/by-tag` is whatever order the registry happens to hold.
+
+  Which tabset is active is read from the context rather than from a tabset,
+  because that is where it lives: `activate-tabset` puts it in `ctx` and a CSS
+  class, and no atom has ever held it."
   []
-  (vec (for [ts (object/by-tag :tabset)
-             :let [objs (:objs @ts)]]
-         {:id (object/->id ts)
-          :tabs (mapv tab-id objs)
-          :active (or (some (fn [[i o]] (when (= o (:active-obj @ts)) i))
-                            (map-indexed vector objs))
-                      0)})))
+  (let [active-ts (ctx/->obj :tabset)]
+    (vec (for [ts (:tabsets @tabs/multi)
+               :let [objs (:objs @ts)]]
+           {:id (object/->id ts)
+            :active? (= ts active-ts)
+            :width (:width @ts)
+            :tabs (mapv tab objs)
+            :active (or (some (fn [[i o]] (when (= o (:active-obj @ts)) i))
+                              (map-indexed vector objs))
+                        0)}))))
 
 (defn editors
   "Every open editor, by path."

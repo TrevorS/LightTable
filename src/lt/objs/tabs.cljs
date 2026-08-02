@@ -1,14 +1,14 @@
 (ns lt.objs.tabs
   "Manage tabsets and tabs"
-  (:require [lt.object :refer [object*] :as object]
-            [lt.objs.editor :as editor]
+  (:require [lt.actions :as actions]
+            [lt.object :refer [object*] :as object]
             [lt.objs.canvas :as canvas]
             [lt.objs.command :as cmd]
             [lt.objs.animations :as anim]
             [lt.objs.context :as ctx]
-            [lt.objs.menu :as menu]
-            [lt.util.load :as load]
-            [lt.window.modules :as window]
+            [lt.state :as state]
+            [lt.ui :as ui]
+            [lt.ui.view :as view]
             [lt.util.dom :refer [append] :as dom]
             [lt.util.style :refer [->px]]
             [lt.util.js]
@@ -37,7 +37,7 @@
 (def multi (object/create multi-def))
 
 (defn ensure-visible [idx tabset]
-  (when-let [cur (aget (dom/$$ ".list li" (object/->content tabset)) idx)]
+  (when-let [cur (aget (dom/$$ ".titlebar .tab" (object/->content tabset)) idx)]
     (let [left (.-offsetLeft cur)
           width (.-clientWidth cur)
           right (+ left width)
@@ -62,17 +62,20 @@
              (::tabset @obj))
     (object/merge! (::tabset @obj) {:active-obj obj})
     (object/raise obj :show)
+    (object/raise (::tabset @obj) :tab.updated)
     (ensure-visible (->index obj) (::tabset @obj))))
 
-(defn update-tab-order [multi children]
-  (let [ser (if (vector? children)
-              children
-              (map #(dom/attr % :pos) children))
-        prev-active (:active-obj @multi)]
-    (object/merge! multi {:objs (mapv (:objs @multi) ser)
-                          :active-obj nil})
+(defn update-tab-order
+  "Put `objs` in `ts` in that order, keeping whichever tab was active active.
+
+  Took a list of DOM nodes and read a `:pos` attribute off each. The order of
+  the tabs is the order of `:objs`, and reading it back out of the document was
+  only ever necessary because the document is what a sortable library moved."
+  [ts objs]
+  (let [prev-active (:active-obj @ts)]
+    (object/merge! ts {:objs (vec objs) :active-obj nil})
     (active! prev-active)
-    ))
+    (object/raise ts :tab.updated)))
 
 (defn ->name [e]
   (or
@@ -86,66 +89,33 @@
    (:path @e)
    ""))
 
-(defn active? [c e multi]
-  (str c (when (= (@multi :active-obj) e)
-           " active")))
+(defn- strip!
+  "The tab strip of `ts`, as a Replicant root.
 
-(defn dirty? [c e]
-  (str c (when (:dirty @e)
-           " dirty")))
+  This was a `<ul>` of `::tab-label` objects, rebuilt from nothing every time
+  anything about the tabset changed — every label destroyed and recreated, the
+  drag-and-drop wiring reattached, on a dirty flag. `lt.ui.view/titlebar` draws
+  it from the projection instead, and patches.
 
-(defui close-tab [obj]
-  [:span.tab-close "x"]
-  :click (fn [] (object/raise obj :close)))
-
-(defui item [label multi e pos]
-  [:li {:class (-> " "
-                   (active? e multi)
-                   (dirty? e))
-        :draggable "true"
-        :title (->path e)
-        :obj-id (object/->id e)
-        :pos pos}
-   [:span.file-name
-    (->name e)]
-   (when (object/raise-reduce e :close-button+ false)
-     (close-tab label))]
-  ;; Disable middle-click pasting in linux
-  :mouseup (fn [ev]
-             (when (or (= 1 (.-button ev)) (.-metaKey ev))
-               (dom/prevent ev)))
-  :click (fn [ev]
-           (if (or (= 1 (.-button ev)) (.-metaKey ev))
-             (object/raise label :close)
-             (active! e)))
-  :contextmenu (fn [ev]
-                 (object/raise label :menu! ev)))
-
-(object/object* ::tab-label
-                :tags #{:tab-label}
-                :init (fn [this multi e pos]
-                        (object/merge! this {::tab-object e
-                                             :tabset multi})
-                        (item this multi e pos)))
-
-(declare move-tab)
-
-(defn objs-list [multi objs]
-  (let [prev-tabs (filter #(= (:tabset @%) multi) (object/by-tag :tab-label))
-        item (crate/html
-              [:ul
-               (for [[idx o] (map vector (range) objs)
-                     :when @o]
-                 (object/->content (object/create ::tab-label multi o idx)))])]
-    ;;Remove old tabs
-    (doseq [tab prev-tabs]
-      (object/destroy! tab))
-    (.sortable window/dragdrop item (js-obj "axis" "x" "distance" 10 "scroll" false "opacity" 0.9 "connectWith" ".list"))
-    (dom/on item "contextmenu" (fn [e]
-                                 (object/raise multi :menu! e)))
-    (dom/on item "moved" (fn [^js e] (move-tab multi (.-opts e)) ))
-    (dom/on item "sortupdate" (fn [^js e] (update-tab-order multi (.-opts e))))
-    item))
+  The node belongs to the tabset, which is why this is a node spliced into the
+  singultus hiccup below rather than the tabset itself becoming a view: the
+  content area beside it hosts the DOM of every tab object, and that stays."
+  [ts]
+  (let [el (ui/state-node ts [:div.titlebar]
+                          #(view/titlebar @state/app (object/->id ts))
+                          [state/app])]
+    ;; Two listeners that are not handlers. Allowing a drop is a property of
+    ;; the element rather than something that happens — the browser wants
+    ;; `preventDefault` on every `dragover` to hear it — and a drop on the
+    ;; empty end of the strip is not on any tab, so there is nothing for a tab
+    ;; to have carried.
+    (dom/on el :dragover (fn [e] (dom/prevent e)))
+    (dom/on el :drop (fn [e]
+                       (when (= el (.-target e))
+                         (dom/prevent e)
+                         (actions/dispatch! [[:tab/drop (object/->id ts) nil]]))))
+    (dom/on el :contextmenu (fn [_] (object/raise ts :menu!)))
+    el))
 
 (defui tabbed-item [active item]
   [:div.content {:style {:visibility (bound active #(if (= % @item)
@@ -228,6 +198,9 @@
       (dom/remove-class (object/->content old) :active))
     (ctx/in! :tabset ts)
     (dom/add-class (object/->content ts) :active)
+    ;; Which tabset is active is drawn by every strip — the inactive ones dim —
+    ;; so all of them have to hear about it, and the state is where they look.
+    (object/raise ts :tab.updated)
     true))
 
 
@@ -235,7 +208,7 @@
 (defui tabset-ui [this]
   [:div.tabset {:style {:width (bound (subatom this :width) ->perc)}}
    [:div.list
-    (bound this #(objs-list this (:objs %)))]
+    (strip! this)]
    [:div.items
     (map-bound (partial tabbed-item (subatom this :active-obj)) this {:path [:objs]})]
    (vertical-grip this)]
@@ -268,6 +241,7 @@
      (add-watch (subatom obj [:dirty]) :tabs (fn [_ _ _ cur]
                                                (object/raise cur-tabset :tab.updated)
                                                ))
+     (object/raise cur-tabset :tab.updated)
      obj)))
 
 (defn rem-tabset
@@ -299,8 +273,8 @@
         (object/raise cur-tabset :tab idx)
         (when (not= aidx (->index active))
           (object/merge! cur-tabset {:active-obj nil})
-          (active! active))
-        ))))
+          (active! active)))
+      (object/raise cur-tabset :tab.updated))))
 
 (defn refresh! [obj]
   (when-let [ts (::tabset @obj)]
@@ -333,17 +307,73 @@
   (active! obj)
   (object/raise obj :move))
 
-(defn move-tab [multi elem]
-  (let [id (dom/attr elem :obj-id)
-        idx (dom/index elem)
-        obj (object/by-id (js/parseInt id))
-        cnt (-> @multi :objs count)]
-    (rem! obj)
-    (add! obj multi)
-    (if (> cnt 0)
-      (update-tab-order multi (vec (concat (range idx) [cnt] (range idx cnt)))))
-    (active! obj)
-    (object/raise obj :move)))
+(defn- tabset-by-id [id]
+  (first (filter #(= id (object/->id %)) (:tabsets @multi))))
+
+(defn- move-within
+  "`objs` with the item at `from` put back at `to`."
+  [objs from to]
+  (let [obj (nth objs from)
+        without (vec (concat (subvec objs 0 from) (subvec objs (inc from))))
+        to (min (max (or to (count without)) 0) (count without))]
+    (vec (concat (subvec without 0 to) [obj] (subvec without to)))))
+
+(defn reorder!
+  "Move the tab at `from-i` in `from-ts` to `to-i` in `to-ts`.
+
+  What dragging a tab means, as a function of four numbers. It was a DOM
+  element handed over by a sortable library, read for an `obj-id` attribute and
+  an index among its siblings — so the truth about tab order lived in the
+  document and was copied back into the object afterwards. `nil` for `to-i` is
+  the end of the strip, which is what dropping past the last tab means."
+  [from-ts from-i to-ts to-i]
+  (when-let [from (tabset-by-id from-ts)]
+    (when-let [to (tabset-by-id to-ts)]
+      (when-let [obj (get (:objs @from) from-i)]
+        (if (= from to)
+          (update-tab-order from (move-within (vec (:objs @from)) from-i to-i))
+          (do
+            (rem! obj)
+            (add! obj to)
+            (update-tab-order to (move-within (vec (:objs @to))
+                                              (dec (count (:objs @to)))
+                                              to-i))))
+        (active! obj)
+        (object/raise obj :move)
+        (object/raise from :tab.updated)
+        (object/raise to :tab.updated)))))
+
+;;*********************************************************
+;; What the strip emits
+;;*********************************************************
+
+;; Four effects and no state of their own. A tab is a window onto an object
+;; that knows how to close itself and what belongs in its menu, so all of these
+;; end up raising something — see [[lt.actions]] for the actions that ask.
+
+(defn- tab-at [ts-id i]
+  (when-let [ts (tabset-by-id ts-id)]
+    (get (:objs @ts) i)))
+
+(actions/register-effect! :tabs/activate
+                          (fn [ts i]
+                            (when-let [obj (tab-at ts i)]
+                              (active! obj))))
+
+(actions/register-effect! :tabs/close
+                          (fn [ts i]
+                            (when-let [obj (tab-at ts i)]
+                              (object/raise obj :close))))
+
+(actions/register-effect! :tabs/reorder reorder!)
+
+(actions/register-effect! :tabs/menu
+                          (fn [ts i]
+                            (when-let [obj (tab-at ts i)]
+                              ;; Raised on the tab object rather than on a
+                              ;; label object that no longer exists, so what a
+                              ;; tab offers is what the thing in it offers.
+                              (object/raise obj :menu!))))
 
 ;;*********************************************************
 ;; Behaviors
@@ -401,11 +431,6 @@
                       (doseq [e (:objs @this)]
                         (object/destroy! e))
                       ))
-
-(behavior ::repaint-tab-updated
-          :triggers #{:tab.updated}
-          :reaction (fn [this]
-                      (object/update! this [:count] inc)))
 
 (behavior ::no-anim-on-drag
           :triggers #{:start-drag}
@@ -500,23 +525,20 @@
           :reaction (fn [this]
                       (activate-tabset (::tabset @this))))
 
-(behavior ::tab-label-menu+
+(behavior ::tab-menu+
           :triggers #{:menu+}
+          :desc "Tab: The right-click menu for a tab"
           :reaction (fn [this items]
+                      ;; On the tab object now, because the label it used to be
+                      ;; on is not an object any more. Which is also the better
+                      ;; place: what a tab offers is what the thing in it does.
                       (conj items
                             {:label "Move tab to new tabset"
                              :order 1
-                             :click (fn [] (cmd/exec! :tabs.move-new-tabset (::tab-object this)))}
+                             :click (fn [] (cmd/exec! :tabs.move-new-tabset this))}
                             {:label "Close tab"
                              :order 2
                              :click (fn [] (object/raise this :close))})))
-
-(behavior ::on-close-tab-label
-          :triggers #{:close}
-          :reaction (fn [this]
-                      (when-let [e (::tab-object @this)]
-                        (object/raise e :close))
-                      (object/destroy! this)))
 
 (behavior ::tabset-active
           :triggers #{:active}

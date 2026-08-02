@@ -41,7 +41,12 @@
        (string/join " ")))
 
 (def ^:private state
-  {:tabsets [{:id 0 :tabs ["src-worker/fuzzy.ts" "port-fuzzy"] :active 0}]
+  {:tabsets [{:id 0
+              :active? true
+              :active 0
+              :tabs [{:id "src-worker/fuzzy.ts" :label "fuzzy.ts"
+                      :path "src-worker/fuzzy.ts" :dirty? true :closable? true}
+                     {:id "port-fuzzy" :label "port fuzzy to ranges" :dirty? false}]}]
    :editors {"src-worker/fuzzy.ts" {:lang :ts :dirty? true}}
    :clients {51423 {:name "nREPL 51423" :kind :nrepl :status :finished :bound? true}
              :claude {:name "claude" :kind :agent :status :executing :via 51423}}
@@ -68,7 +73,9 @@
 (deftest a-run-is-a-tab-like-any-other
   (let [tabs (find-all (view/titlebar state) :lt.ui.chrome/tab)]
     (is (= 2 (count tabs)))
-    (testing "the file is named by its leaf, because that is what a tab is for"
+    (testing "a tab carries its own label, because most tabs are not files"
+      ;; The console, the plugin manager and the component kit have a name and
+      ;; no path at all — a strip that took the leaf of one would draw `obj-42`.
       (is (= "fuzzy.ts" (text-of (first tabs)))))
     (testing "and the run is named by its label, with what it is waiting on"
       (let [run (second tabs)]
@@ -77,7 +84,7 @@
     (testing "a run that is not in the tab list is still a tab"
       ;; The projection owns the tab list and knows nothing about runs, so the
       ;; view is what makes "a run is a tab like any other" true on screen.
-      (let [projected (assoc-in state [:tabsets 0 :tabs] ["src-worker/fuzzy.ts"])]
+      (let [projected (update-in state [:tabsets 0 :tabs] (comp vec (partial take 1)))]
         (is (= 2 (count (find-all (view/titlebar projected) :lt.ui.chrome/tab))))))
     (testing "and it is not listed twice when it is in both"
       (is (= 2 (count tabs))))
@@ -88,7 +95,42 @@
       ;; deciding what dirty looks like, which is the component's decision and
       ;; would have to be made the same way in every other place a tab appears.
       (is (true? (:dirty? (attrs-of (first tabs)))))
-      (is (false? (:dirty? (attrs-of (second tabs))))))))
+      (is (false? (:dirty? (attrs-of (second tabs))))))
+    (testing "and what you can do to it is a handler it is given"
+      (is (= [[:tab/activate 0 0]] (:on-select (attrs-of (first tabs)))))
+      (is (= [[:tab/menu 0 0]] (:on-menu (attrs-of (first tabs)))))
+      (is (= [[:tab/close 0 0]] (:on-close (attrs-of (first tabs)))))
+      (testing "closing only when the user behavior asks for it"
+        (is (nil? (:on-close (attrs-of (second tabs))))))
+      (testing "and picking it up is two state changes, not a library"
+        (is (= [[:tab/drag-start 0 0]] (:on-drag-start (attrs-of (first tabs)))))
+        (is (= [[:tab/drop 0 1]] (:on-drop (attrs-of (second tabs)))))))))
+
+(deftest a-strip-belongs-to-its-tabset
+  ;; There is one per tabset, because a tabset is a column of the window and
+  ;; its tabs are its own. The one-argument form is what a window with no
+  ;; splits has.
+  (let [split (assoc state
+                     :runs {}
+                     :tabsets
+                     [{:id 0 :active 0 :tabs [{:id "a" :label "a"}]}
+                      {:id 1 :active 0 :tabs [{:id "b" :label "b"} {:id "c" :label "c"}]}])]
+    (is (= ["a"] (map text-of (find-all (view/titlebar split 0) :lt.ui.chrome/tab))))
+    (is (= ["b" "c"] (map text-of (find-all (view/titlebar split 1) :lt.ui.chrome/tab))))
+    (testing "and the tabset it belongs to is in every action it emits"
+      (is (= [[:tab/activate 1 1]]
+             (:on-select (attrs-of (second (find-all (view/titlebar split 1)
+                                                     :lt.ui.chrome/tab)))))))
+    (testing "no argument is the first, which is a window that was never split"
+      (is (= ["a"] (map text-of (find-all (view/titlebar split) :lt.ui.chrome/tab)))))
+    (testing "and a run with no tab is appended to the first strip and only it"
+      ;; It has to be somewhere, and "wherever you happen to be looking" would
+      ;; put one in every column of a split window.
+      (let [with-run (assoc split :runs (:runs state))]
+        (is (= ["a" "port fuzzy to ranges"]
+               (map text-of (find-all (view/titlebar with-run 0) :lt.ui.chrome/tab))))
+        (is (= ["b" "c"]
+               (map text-of (find-all (view/titlebar with-run 1) :lt.ui.chrome/tab))))))))
 
 (deftest the-review-queue-is-rows-keyed-by-address
   (let [rows (find-all (view/review-queue state) :lt.ui.row/list-row)]
@@ -225,7 +267,8 @@
     (testing "and the file you are looking at is the row that is selected"
       (is (empty? (filter (comp :selected? attrs-of) rows)))
       (let [here (find-all (view/workspace
-                            (assoc-in with-tree [:tabsets 0 :tabs] ["/p/deps.edn"]))
+                            (assoc-in with-tree [:tabsets 0 :tabs]
+                                      [{:id "/p/deps.edn" :label "deps.edn" :path "/p/deps.edn"}]))
                            :lt.ui.row/tree-row)]
         (is (= ["/p/deps.edn"] (map (comp :replicant/key attrs-of)
                                     (filter (comp :selected? attrs-of) here))))))))

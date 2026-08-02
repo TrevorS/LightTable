@@ -102,10 +102,14 @@ test('an object that is destroyed lets go of what it was watching', async ({ win
     // and closing tabs returns every count to where it started, which is what
     // makes the object model a foundation to render onto rather than one to
     // replace at the same time.
+    // `:tab-label` was the third count here — one object with one node per
+    // tab per tabset, destroyed and recreated wholesale on every change. The
+    // strip is a view now and there are none, so what is counted instead is
+    // what the strip draws: a tab in the document per open tab.
     const counts = async () => await evalClj(window, `
         [(count @object/instances)
          (count (object/by-tag :editor))
-         (count (object/by-tag :tab-label))]`);
+         (count (js/document.querySelectorAll "#multi .titlebar .tab"))]`);
 
     const before = await counts();
     for (let i = 0; i < 3; i++) {

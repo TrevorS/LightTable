@@ -318,13 +318,17 @@
                   [":active?" "boolean" "background becomes base"]
                   [":dirty?" "boolean" "sky dot"]
                   [":origin" ":run" "a run is a tab like any other"]
-                  [":count" "number?" "pill, agent tone for runs"]]
+                  [":count" "number?" "pill, agent tone for runs"]
+                  [":on-close" "actions?" "only when the close-button behavior is on"]
+                  [":on-menu" "actions" "right-clicking it"]
+                  [":draggable?" "boolean" "picked up and put down as state"]]
           :usage "view/titlebar"}
          [:div.kit__demo-row {:style {:gap "0"}}
           [::chrome/tab {:active? true} "fuzzy.ts"]
           [::chrome/tab {:dirty? true} "tabs.cljs"]
           [::chrome/tab {:count 11} "Review"]
-          [::chrome/tab {:origin :run :count 6} "port fuzzy to ranges"]]
+          [::chrome/tab {:origin :run :count 6} "port fuzzy to ranges"]
+          [::chrome/tab {:on-close [[:tab/close 0 4]]} "closable.md"]]
          (note "active = base · rest = overlay2 on crust · a run is a tab like any other"))
 
    (card {:ns "chrome/" :nm "excerpt-header" :width :wide
@@ -556,7 +560,11 @@
   "A window's worth of state, so the views draw themselves rather than being
   described. The same shape `test/lt/ui/view_test.cljs` uses — a view is a
   function of the whole state, which is exactly what makes this possible."
-  {:tabsets [{:id 0 :tabs ["src-worker/fuzzy.ts" "src-window/tabs.cljs"] :active 0}]
+  {:tabsets [{:id 0 :active 0 :active? true
+              :tabs [{:id "src-worker/fuzzy.ts" :label "fuzzy.ts"
+                      :path "src-worker/fuzzy.ts" :dirty? false :closable? true}
+                     {:id "src-window/tabs.cljs" :label "tabs.cljs"
+                      :path "src-window/tabs.cljs" :dirty? true}]}]
    :editors {"src-window/tabs.cljs" {:dirty? true}}
    :runs {"port-fuzzy" {:label "port fuzzy to ranges"
                         :status :executing
@@ -592,11 +600,11 @@
 
    (card {:ns "view/" :nm "titlebar" :width :wide
           :desc "Frameless. Tabs live in it, and a run is one of them."
-          :props [[":tabsets" "the active one's tabs" ""]
-                  [":runs" "id → run" "appended, because a run is a tab like any other"]
-                  [":editors" "path → editor" "for the dirty dot"]]
-          :usage "view/window, and every window"}
-         (view/titlebar demo-state))
+          :props [[":tabsets" "one per tabset — a strip belongs to its column" ""]
+                  [":runs" "id → run" "appended, because a run is a tab like any other"]]
+          :usage "the strip of every tabset — lt.objs.tabs"}
+         (view/titlebar demo-state)
+         (note "drag to reorder is `:on-drag-start` and `:on-drop` — two state changes, no library"))
 
    (card {:ns "view/" :nm "connections" :width :narrow
           :desc "The clients, or the kinds of client there are. One panel, two lists."
@@ -707,7 +715,7 @@
 
 (def ^:private view-descriptions
   "The nine, in the order [[lt.ui.view]] defines them."
-  [["titlebar" "Drawn in 04. Tabs of the active tabset."]
+  [["titlebar" "Drawn in 04. The strip of every tabset in this window."]
    ["review-queue" "The edits a run proposes for this buffer."]
    ["connections" "Drawn in 04. The connect panel in the right bar of this window."]
    ["workspace" "Drawn in 04. The file tree, in the left sidebar of this window."]
