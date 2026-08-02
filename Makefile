@@ -89,9 +89,13 @@ docs: ## Regenerate doc/api from the source docstrings
 
 clean: ## Remove build output. Leaves node_modules and the Electron download.
 	rm -rf builds target src-gen .shadow-cljs
-	rm -rf deploy/core/lighttable/bootstrap.js deploy/core/lighttable/bootstrap.js.map \
-	       deploy/core/lighttable/user.js deploy/core/lighttable/paredit.js \
-	       deploy/core/lighttable/ws.js deploy/core/lighttable/background/worker.js \
+	# Every module in shadow-cljs.edn's :modules, and its map. This listed five
+	# of the nine, so `clean` left clojure.js, javascript.js, css.js, html.js
+	# and python.js behind — and a stale compiled artifact surviving a rebuild
+	# is a failure this project has already had once.
+	rm -f deploy/core/lighttable/{bootstrap,user,paredit,clojure,javascript,css,html,python}.js
+	rm -f deploy/core/lighttable/{bootstrap,user,paredit,clojure,javascript,css,html,python}.js.map
+	rm -rf deploy/core/lighttable/ws.js deploy/core/lighttable/background/worker.js \
 	       deploy/core/lighttable/cljs deploy/core/lighttable/shadow \
 	       deploy/core/lighttable/cljs-cache \
 	       deploy/core/main.js deploy/core/main.js.map \

@@ -25,18 +25,15 @@
     "deps:plugins": "node script/install-plugin-deps.mts",
     "lint:cljs": "node script/fetch-clj-kondo.mts && .tools/clj-kondo --fail-level error --lint src test deploy/core/User/src plugins/Clojure/src plugins/CSS/src plugins/HTML/src plugins/Javascript/src plugins/Paredit/src plugins/Python/src",
     "lint:js": "eslint script src-electron src-window src-worker src-browser test-electron test-e2e",
-    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.window.json --noEmit && tsc -p tsconfig.worker.json --noEmit && tsc -p tsconfig.browser.json --noEmit && tsc -p plugins/TypeScript/tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit && tsc -p tsconfig.scripts.json --noEmit",
+    "typecheck": "node script/typecheck.mts",
     "test": "npm run --silent test:cljs && npm run --silent test:electron",
     "test:cljs": "shadow-cljs compile test && node target/test.js",
     "test:electron": "node --test \"test-electron/**/*.test.ts\"",
     "test:e2e": "script/e2e.sh",
     "docs:api": "node script/gen-api-docs.mts",
     "docs:check": "node script/gen-api-docs.mts --check",
-    "check": "npm run --silent lint:cljs && npm run --silent lint:js && npm run --silent typecheck && npm run --silent docs:check",
+    "check": "npm run --silent lint:cljs && npm run --silent lint:js && npm run --silent typecheck && npm run --silent docs:check && node script/check-pins.mts",
     "tools": "node script/fetch-clj-kondo.mts"
-  },
-  "allowScripts": {
-    "fsevents": false
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.20.3",

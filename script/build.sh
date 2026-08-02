@@ -34,19 +34,22 @@ popd
 # Build tooling lives at the repo root
 npm install
 
-# The main process and the window's own TypeScript modules.
+# The main process. The window's own TypeScript modules are build:cljs's first
+# step, because shadow-cljs consumes their output — running them here as well
+# compiled src-window twice per build for identical output.
 npm run build:main
-npm run build:window
 
-# The window bundle, the default user plugin, and the worker thread that backs
-# lt.objs.thread. The worker is a separate target because it runs under node
-# rather than in the window.
+# The window bundle, the default user plugin, the worker thread that backs
+# lt.objs.thread, and the plugins. The worker is a separate target because it
+# runs under node rather than in the window.
+#
+# Plugins are in here rather than a step of their own: `build:plugins` is a
+# subsequence of `build:cljs` — the same TypeScript compile, the same dependency
+# install, the same directory copy — so running both did the plugin half twice.
+# Every plugin lives in this repository and is built from source against the
+# editor it extends; nothing is cloned and nothing is downloaded but each
+# plugin's own npm dependencies.
 rm -f deploy/core/lighttable/bootstrap.js
 npm run build:cljs
-
-# Plugins. Every one of them lives in this repository now and is built from
-# source against the editor it extends; nothing is cloned and nothing is
-# downloaded but each plugin's own npm dependencies.
-npm run build:plugins
 
 script/build-app.sh $@
