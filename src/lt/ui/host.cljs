@@ -4,7 +4,8 @@
   The shape doc/rendering.md named as the one that cannot be swapped a
   component at a time: `map-bound` over a collection of objects, splicing
   `(object/->content %)`. Replicant renders hiccup, and a node another object
-  owns is not hiccup — so a panel built that way stayed on singultus until the
+  owns is not hiccup — so a panel built that way stayed on the old renderer
+  until the
   thing it was composing became a view.
 
   This is the way out that does not require that. The hiccup is an empty

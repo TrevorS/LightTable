@@ -9,6 +9,8 @@
             [lt.objs.keyboard :as keyboard]
             [lt.objs.opener :as opener]
             [lt.objs.sidebar :as sidebar]
+            [lt.ui :as ui]
+            [lt.ui.host :as host]
             [lt.util.dom :as dom]
             [lt.util.load :as load]
             [lt.objs.thread :as thread])
@@ -115,10 +117,14 @@
                                                      :empty-why "Add a folder to the workspace and every file in it is one keystroke away."})]
                         (object/add-tags list [:navigate.selector])
                         (object/merge! this {:filter-list list})
-                        [:div.navigate
-                         (object/->content list)
-                         ]
-                        )))
+                        ;; Hosted rather than spliced. This used to be hiccup
+                        ;; with the filter list's node dropped into it, which
+                        ;; worked while `->dom` went through singultus and does
+                        ;; not now: Replicant renders hiccup and leaves a node
+                        ;; out without saying so.
+                        (ui/node this [:div.navigate]
+                                 (fn [t]
+                                   [::host/host {:content (object/->content (:filter-list @t))}])))))
 
 (def sidebar-navigate (object/create ::sidebar.navigate))
 

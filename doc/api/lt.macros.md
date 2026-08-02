@@ -10,7 +10,6 @@ Source: [`src/lt/macros.cljc`](https://github.com/TrevorS/LightTable/blob/develo
 |---|---|
 | [`->params`](#var-params) | — |
 | [`behavior`](#var-behavior) | Define a behavior with a unique namespaced keyword and multiple key value pairs. |
-| [`defui`](#var-defui) | Define a UI element for given hiccup data and key-value pairs… |
 
 ## Vars
 
@@ -24,7 +23,7 @@ Source: [`src/lt/macros.cljc`](https://github.com/TrevorS/LightTable/blob/develo
 
 *Undocumented.*
 
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/macros.cljc#L52)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/macros.cljc#L36)
 
 <a id="var-behavior"></a>
 
@@ -51,18 +50,3 @@ Keys are:
 * :debounce - Number of ms to debounce reaction fn
 
 [source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/macros.cljc#L8)
-
-<a id="var-defui"></a>
-
-### `defui`
-
-*macro*
-
-```clojure
-(defui sym & decl)
-```
-
-Define a UI element for given hiccup data and key-value pairs
-of events for element. Like defn, a docstring is optional.
-
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/macros.cljc#L30)

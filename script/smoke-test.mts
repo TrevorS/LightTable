@@ -588,7 +588,12 @@ app.on('ready', function () {
                     editors: document.querySelectorAll('.cm-editor').length,
                     editorText: (function () { var e = document.querySelector('.cm-content'); return e ? e.innerText.slice(0, 40) : ''; })(),
                     behaviors: cljs.core.count(cljs.core.deref(lt.object.behaviors)),
-                    crateShim: typeof (window.crate && window.crate.core && window.crate.core.html) === 'function',
+                    // window.crate was a compatibility shim for plugins
+                    // published before the hiccup library here was renamed.
+                    // Nothing calls it: every bundled plugin is compiled from
+                    // source in this repo and none of them draws through crate.
+                    // Asserted absent, so a shim quietly coming back fails.
+                    crateShim: typeof window.crate === 'undefined',
                     // The default user plugin, which is compiled from source in
                     // this repo rather than shipped as a checked-in artifact.
                     userPlugin: (function () {
@@ -1251,7 +1256,7 @@ async function main(): Promise<void> {
             r.readBytes.isBytes === true && r.readBytes.length === 9 &&
             r.readBytes.magic === '0,97,115,109'],
         ['and reading the same file as text is visibly lossy', r.readBytes.textIsLossy === true],
-        ['the crate compatibility shim is published', r.crateShim === true],
+        ['no crate compatibility shim is published, and none is needed', r.crateShim === true],
         ['the default user plugin loaded', r.userPlugin === true],
         ['the TypeScript plugin loaded and registered its commands', r.tsPlugin === true],
         ['Paredit, built here from ClojureScript, loaded', r.paredit === true],

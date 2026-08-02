@@ -1,42 +1,54 @@
-# Rendering, and adding a renderer beside the one that is here
+# Rendering
 
-Light Table's UI is built with **singultus**, a vendored fork of crate — hiccup
-in, DOM out, plus a fine-grained binding layer (`bound`, `bound-coll`,
-`map-bound`, `subatom`) that writes into a node when an atom changes. 560 lines,
-in `src/singultus/`, unmaintained upstream. 116 `defui`, 67 `bound` and 27
-`subatom` across 37 namespaces in core, and a further 11 and 3 in the bundled
-plugins. 35, 26 and 27 across 7 today — so `defui` has more than halved,
-`bound` has, and `subatom` has not moved at all. That is not a stall: what is
-left of it is layout, `#multi`'s insets and the sidebar widths and the
-bottombar height, which is the part that stays object-owned.
+Light Table's UI is drawn by **Replicant**: hiccup in, DOM out, by diffing.
 
-It was also the plugin API — `lt.macros/defui` and `defpartial` compile to
-singultus calls — and for most of this migration that meant singultus stays in
-the bundle whatever else happens, because deleting it breaks every published
-plugin that draws.
+It was drawn by **singultus**, a vendored fork of crate — hiccup in, DOM out,
+plus a fine-grained binding layer (`bound`, `bound-coll`, `map-bound`,
+`subatom`) that wrote into a node when an atom changed. 560 lines in
+`src/singultus/`, unmaintained upstream, with 116 `defui`, 67 `bound` and 27
+`subatom` across 37 namespaces in core and a further 11 and 3 in the bundled
+plugins.
 
-**That is no longer a constraint.** This fork is one person's editor. The only
-plugins that matter are the ones in this repository, and those are ported as
-first-class citizens rather than supported as guests. So singultus is not a
-permanent tenant; it is the thing 7 remaining files still use, and the last
-one to stop using it is the commit that deletes it.
+**All of it is gone.** `src/singultus/` is deleted, `lt.macros/defui` with it,
+and `lt.compat` — the shim that published `crate.core` and `crate.binding` to
+plugins built before the rename — because nothing calls them: every bundled
+plugin is compiled from source here and none of them draws through crate. The
+smoke test asserts `window.crate` is *absent*, so a shim quietly coming back is
+a failure rather than a surprise.
 
-What that changes in practice: a file being touched for another reason should
-go to a view rather than being tidied in place, and `defui` is not a signature
-to preserve. What it does not change: the order. The chrome is worth converting
-because the design is worth having; the plugin manager's twelve `defui` are
-worth converting because they are the last twelve.
+What replaced it is four mechanisms, and which one a thing needs is always the
+same question: **what makes this draw again?**
 
-## What is where, today
-
-| | |
+| | what redraws it |
 |---|---|
-| singultus | everything, minus the list below. 35 `defui` across 7 files in `src`, from 116 across 37 — and none at all in the bundled plugins |
-| Replicant | the tab strip, the statusbar, the workspace tree, the connect panel, the modal, the welcome screen, the component kit, and the window as a view |
+| [[lt.ui/node]] | the object. The facts are on it, so the watch is on its own atom |
+| [[lt.ui/state-node]] | some other atom — `lt.state/app`, `lt.state/cursor` |
+| [[lt.ui/element]] | nothing. Something else takes the node and owns it |
+| [[lt.ui.host]] | nothing, and it is not ours. DOM another object owns, placed rather than described |
 
-The swap is one object at a time and the two render side by side in the same
-document, which is what makes it safe to do gradually rather than as one
-change nobody can review.
+`lt.ui.hiccup/element` is the fifth and the smallest: hiccup to a node, once,
+which is what `crate/html` did. It has a namespace to itself with one
+dependency, because `lt.object/->dom` needs it and `lt.ui` needs `lt.object`.
+
+## What this cost, and what to watch for
+
+The migration turned up the same failure four times, in four different files,
+and it is the one to know about: **Replicant does not render a DOM node, and
+does not complain about one either.** A node left in hiccup is dropped, the
+element around it is drawn empty, and no error is reported. It happened to an
+inline result carrying a devtools inspector, to a console line carrying the
+same, to a sidebar grip, and to the file navigator's filter list. Each was
+found by a test written for something else.
+
+If a thing hands you `object/->content`, it goes through `lt.ui.host`. If you
+are looking at an empty box that should have something in it, that is the first
+place to look.
+
+The second recurring one: a view runs *whenever* its object changes, where
+`bound` ran when one path changed. Anything with a side effect in it — creating
+an object, say — has to move out. `lt.objs.clients.devtools` built an inspector
+per property while drawing and got away with it under `bound`; under a view it
+would have built a fresh one on every keystroke.
 
 ## The seam
 
@@ -44,12 +56,12 @@ change nobody can review.
 
 ```clojure
 (if (vector? content)
-  (crate/html content)
+  (hiccup/element content)
   content)
 ```
 
-An object's `:init` returns its content. Hiccup goes through singultus;
-anything else is already a DOM node and is used as it is. So an `:init` that
+An object's `:init` returns its content. Hiccup is rendered once, by
+Replicant; anything else is already a DOM node and is used as it is. So an `:init` that
 returns what Replicant, React or `document.createElement` produced works today,
 with no change to `lt.object` — in the create path and in the redefinition one
 both, since they share this function.
@@ -144,25 +156,23 @@ Nothing redraws an `element`, which also means [[lt.ui.kit/redefine!]] does not
 reach one. That is the right trade for a widget and the wrong one for chrome:
 if a thing should follow a redefinition, it wants a root of its own.
 
-## What is left, by kind
+## How each kind was answered
 
-`defui` expands to exactly two things — `singultus.core/html` and one
-`lt.util.dom/on` per event — so converting one is always the same question,
-*what re-renders this?*, and what is left sorts into four answers.
-
-Three of the four kinds are finished.
+`defui` expanded to exactly two things — hiccup to a node, and one
+`lt.util.dom/on` per event — so converting one was always the same question,
+and the 116 sorted into four answers.
 
 **Grips** — the bottombar's, a sidebar's and a tabset's were the same HTML5
-drag handle three times, and each is now an [[lt.ui/element]] spliced into the
-singultus hiccup that still owns the geometry around it. That splice is the
-pattern for layout generally: the panel's width or height is bound to an atom
-and stays bound, and only what is inside it moves.
+drag handle three times. Each is plain hiccup inside its panel's view now. They
+were `lt.ui/element` for a while, while the panels around them were still
+hiccup-with-a-node, and that intermediate step is where two of them went
+missing: a node in a view is dropped silently.
 
 **Decorations** — the widgets CodeMirror owns. `eval`'s three, the two
 `->helper` in `langs`, `console/->item`, the Clojure plugin's collapsible
 exception, Python's plot. Two shapes between them: one that opens when you
-click it, where the class on the *root* is what says so and goes through
-`node`'s `attrs`; and one that is drawn once, which is `element`.
+click it, where the class on the *root* says so and goes through `node`'s
+`attrs`; and one drawn once, which is `element`.
 
 `eval/->underline-result` was the knot. Its `:result` is whatever a caller
 passes, and both callers passed a DOM node built by `defui` — so the widget
@@ -173,30 +183,33 @@ has no `.children`.
 
 **Buttons** — `eval/button`, `document/button` and `deploy/button` turned out
 to be three copies of the same dead function with no caller anywhere;
-`canvas/canvas-elem` was a macro wrapping `[:div#canvas]`. What is left of the
-kind lives inside panels and moves with them.
+`canvas/canvas-elem` was a macro wrapping `[:div#canvas]`; `plugins/url-input`
+and `python/canvas` had no callers either. Six of the last twenty were dead.
 
-The panels are what remain, all of it tab *contents* rather than chrome:
-`plugins` 12, `doc` 7, `search` 6, `browser` 5, `devtools` 3, `tabs` 2,
-`command` 2. Whole panels that want their own design pass, not a translation.
-
-**Deleting `defui` and deleting singultus are different finish lines.**
-`lt.ui/node`, `lt.ui/state-node`, `lt.ui.window`, `lt.ui.pane`,
-`lt.object/->dom` and `lt.compat` all call `singultus.core/html` for a static
-root element. The 260-line binding layer goes with the last `defui`; the
-192-line compiler outlives it until something replaces `crate/html` there,
-which is a small `createElement` helper whenever it is wanted.
+**Panels** — the work. Search, the docs sidebar, the plugin manager, the
+browser tab, the command bar, the object inspector, the tabset. Each had the
+same shape underneath: an object whose `:init` was static markup with an empty
+`<ul>` in it, and behaviors that reached in with `dom/empty` and `dom/append`
+as answers arrived. In every case the list was already a value on the object;
+only the drawing had to change.
 
 ## What cannot be swapped one-for-one
 
 **Anything composing another object's content.** `map-bound` over a collection
-of objects, splicing `(object/->content %)` — the right bar's remaining panels,
-and the *content* area of a tabset. Replicant renders hiccup, and a DOM node
-another object owns is not hiccup. Those stay on singultus until the thing they
-are composing is a view rather than an object with a node.
+of objects, splicing `(object/->content %)` — the sidebars' panels, the command
+bar's two slots, an inspector's expandable properties, and the content area of
+a tabset. Replicant renders hiccup, and a DOM node another object owns is not
+hiccup.
 
-The way out is not to swap them, and four surfaces have now gone the other way
-instead. The statusbar's three items — a cursor, a loader, a console toggle —
+That was true until [[lt.ui.host]], which is the way out that does not require
+the composed thing to move first: the hiccup is an empty element and a render
+hook, and everything inside belongs to whoever made it. The alias was proposed
+once and turned down for having no caller — the layout files it was meant for
+keep their bound roots either way — and built later when the command bar needed
+it, with three callers waiting.
+
+The other way out is to delete the objects instead, and four surfaces went that
+way. The statusbar's three items — a cursor, a loader, a console toggle —
 were deleted rather than converted, and `lt.ui.view/statusbar` draws the whole
 bar from the state. The workspace tree was an object per file and an object per
 folder, 677 lines and 28 behaviors, and is now `[:workspace :nodes]` in the
@@ -417,10 +430,16 @@ CodeMirror made; a component may put that node somewhere, and must not describe
 what is inside it.
 
 **Do not mutate a managed node imperatively.** There are about 40 `dom/css`,
-`dom/add-class` and `dom/remove-class` calls in core. Under singultus they are
-correct: nothing re-renders behind them. Under a renderer that diffs, a class
-set that way is gone the next time the component renders. New components should
-put it in the data they render from.
+`dom/add-class` and `dom/remove-class` calls in core, and they were correct
+when nothing re-rendered behind them. A class set that way is gone the next
+time the element around it draws — put it in the data instead.
+
+Two survive deliberately and both are on a *root*, which a view never owns.
+`activate-tabset` writes `active` on a tabset, which is why the tabset's
+`attrs` sets `:style` and pointedly not `:class`; and `temp-width` writes a
+column width during a drag, which the next real `:width` change overwrites.
+Where the root genuinely is the styled thing, `attrs` is the answer instead —
+see the inline result that opens when you click it.
 
 ## Where the stylesheets stand
 

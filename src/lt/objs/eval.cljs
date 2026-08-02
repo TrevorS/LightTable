@@ -216,7 +216,7 @@
   "The node for an inline result.
 
   Handlers go on with `dom/on` rather than in the root's hiccup, because the
-  root is built by singultus — it is the element the object hands out, and
+  root is built by `lt.ui.hiccup` — it is the element the object hands out, and
   Replicant owns only what is inside it. So it does not read `:on`."
   [this]
   (doto (ui/node this [:span] inline-res-ui

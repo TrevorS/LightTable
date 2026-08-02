@@ -3,7 +3,7 @@
 
   The command bar, the file navigator, the syntax selector and the
   auto-complete hinter are all one widget. It was a fixed pool of `<li>` nodes
-  repainted in place on every keystroke — singultus renders once and has no
+  repainted in place on every keystroke — the old renderer drew once and had no
   diffing step, so a per-keystroke redraw had to be a mutation — and every row
   was written with `innerHTML` from a string the caller built by concatenation.
 

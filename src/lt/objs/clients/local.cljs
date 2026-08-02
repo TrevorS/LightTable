@@ -28,7 +28,7 @@
             [lt.objs.eval :as eval]
             [lt.objs.console :as console]
             [clojure.string :as string]
-            [singultus.core :as crate]
+            [lt.ui.hiccup :as hiccup]
             [lt.util.dom :refer [$ append remove]])
   (:require-macros [lt.macros :refer [behavior]]))
 
@@ -80,7 +80,7 @@
     (when cur
       (remove cur))
     (append ($ :head)
-            (crate/html [:style {:type "text/css" :id name} (:code data)]))))
+            (hiccup/element [:style {:type "text/css" :id name} (:code data)]))))
 
 (defmethod on-message :client.close [_ _ _]
   (clients/rem! (clients/by-name client-name)))

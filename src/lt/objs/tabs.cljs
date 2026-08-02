@@ -116,9 +116,10 @@
   drag-and-drop wiring reattached, on a dirty flag. `lt.ui.view/titlebar` draws
   it from the projection instead, and patches.
 
-  The node belongs to the tabset, which is why this is a node spliced into the
-  singultus hiccup below rather than the tabset itself becoming a view: the
-  content area beside it hosts the DOM of every tab object, and that stays."
+  The node belongs to the tabset, which is why it is made once here and hosted
+  by the tabset's view rather than built by it: this is a render root of its
+  own, on a different clock — it watches `lt.state/app` where the tabset around
+  it watches itself."
   [ts]
   (let [el (ui/state-node ts [:div.titlebar]
                           #(view/titlebar @state/app (object/->id ts))

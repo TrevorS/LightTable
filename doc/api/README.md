@@ -10,7 +10,7 @@ will keep its shape.
 
 | | | |
 |---|---|---|
-| [`lt.macros`](lt.macros.md) | Macros used across LT | 3 vars |
+| [`lt.macros`](lt.macros.md) | Macros used across LT | 2 vars |
 | [`lt.object`](lt.object.md) | Define core of BOT architecture and provide fns for manipulating objects… | 34 vars |
 | [`lt.objs.command`](lt.objs.command.md) | Provide command manager and command related fns | 5 vars |
 | [`lt.objs.editor`](lt.objs.editor.md) | Provide fns and behaviors for interfacing with an editor object. | 83 vars |

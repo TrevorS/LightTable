@@ -77,7 +77,7 @@
   An alias rather than a function, so that `lt.ui.view` can ask for an editor by
   writing `[:lt.ui.pane/pane {:path p}]` without requiring this namespace. That
   is not tidiness: hosting an editor means loading the editor, which means
-  loading singultus and `lt.util.dom`, which extend browser types at load and
+  loading `lt.util.dom`, which extends browser types at load and
   cannot be loaded anywhere without a DOM. Requiring it made every view
   unloadable under `node`, and the ClojureScript unit suite failed at import.
   The view layer stays a pure function of a value; the keyword is the seam."

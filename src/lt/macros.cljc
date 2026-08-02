@@ -27,22 +27,6 @@
          (lt.object/behavior* ~name ~@(apply concat (assoc r :reaction (namify "BEH" name))))))
     `(lt.object/behavior* ~name ~@(apply concat r))))
 
-(defmacro defui
-  "Define a UI element for given hiccup data and key-value pairs
-  of events for element. Like defn, a docstring is optional."
-  [sym & decl]
-   (let [doc (if (string? (first decl))
-                  (first decl)
-                  "")
-        [params hiccup & events] (if (string? (first decl))
-                (next decl)
-                decl)]
-   `(defn ~sym ~doc ~params
-      (let [e# (singultus.core/html ~hiccup)]
-        (doseq [[ev# func#] (partition 2 ~(vec events))]
-          (lt.util.dom/on e# ev# func#))
-        e#))))
-
 (defmacro ^:private timed [ev & body]
   `(let [start# (lighttable.util.js/now)
          res# (do ~@body)]
@@ -105,14 +89,5 @@
             (do-something v))
           :zomg (fn [r]
                   ))
-
-  (defui cool [l]
-    [:li (bound l)]
-
-    :click (fn [e]
-             (this-as me
-                      ))
-    :hover (fn [e]
-             ))
 
   )

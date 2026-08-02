@@ -1,12 +1,17 @@
 (ns lt.plugins.user
   (:require [lt.object :as object]
             [lt.objs.tabs :as tabs]
-            [lt.objs.command :as cmd])
-  (:require-macros [lt.macros :refer [defui behavior]]))
+            [lt.objs.command :as cmd]
+            [lt.ui :as ui])
+  (:require-macros [lt.macros :refer [behavior]]))
 
-;; UI to be associated with an object
-(defui hello-panel [this]
-  [:h1 "Hello World!"])
+;; UI to be associated with an object.
+;;
+;; Hiccup, drawn once. See doc/rendering.md for the three ways to draw:
+;; `ui/element` when nothing redraws it, `ui/node` when the object does, and
+;; `ui/state-node` when some other atom does.
+(defn hello-panel [_this]
+  (ui/element [:h1 "Hello World!"]))
 
 ;; Define an object prototype
 (object/object* ::user.hello

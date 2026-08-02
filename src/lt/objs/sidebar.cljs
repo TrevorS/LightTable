@@ -17,7 +17,7 @@
   "The handle you drag to resize a sidebar.
 
   Plain hiccup: this is inside a view now, so Replicant draws it. It was an
-  `lt.ui/element` while the bar around it was still singultus hiccup, and a
+  `lt.ui/element` while the bar around it was still plain hiccup, and a
   node left in hiccup after the bar became a view is dropped without a word —
   which is what happened, and what the grip test in `renderer.spec.ts` is for."
   [this]

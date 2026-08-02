@@ -2,10 +2,9 @@
   "Define core of BOT architecture and provide fns for manipulating objects,
   behaviors and tags"
   (:refer-clojure :exclude [set!])
-  (:require [singultus.core :as crate]
+  (:require [lt.ui.hiccup :as hiccup]
             [clojure.set :as set]
             [clojure.string :as string]
-            [singultus.binding :refer [deref?]]
             [lt.util.cljs :as cljs]
             [lt.util.dom :refer [replace-with] :as dom]
             [lt.util.js :refer [throttle debounce]])
@@ -45,6 +44,12 @@
 
 (defn- add-behavior [beh]
   (swap! behaviors assoc (:name beh) beh))
+
+(defn- deref?
+  "Whether `x` is something to deref. Was `singultus.binding/deref?`, which was
+  this line, and the last thing in the editor requiring that namespace."
+  [x]
+  (satisfies? IDeref x))
 
 (defn ->id
   "Return id of given object"
@@ -240,7 +245,7 @@
 (defn ->dom
   "What an object's `:init` returned, as a DOM node.
 
-  Hiccup goes through singultus. Anything else is already a node and is used
+  Hiccup is rendered once, by Replicant. Anything else is already a node and is used
   as it is — and that second branch is the seam another renderer plugs into. An
   `:init` returning what Replicant, React or plain `document.createElement`
   produced needs nothing here to change, in either the create path or the
@@ -250,7 +255,7 @@
   says so, because nothing else would."
   [content]
   (if (vector? content)
-    (crate/html content)
+    (hiccup/element content)
     content))
 
 (defn- handle-redef [odef]

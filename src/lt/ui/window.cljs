@@ -30,7 +30,7 @@
             [lt.state.objects :as from-objects]
             [lt.ui :as ui]
             [lt.ui.view :as view]
-            [singultus.core :as crate])
+            [lt.ui.hiccup :as hiccup])
   (:require-macros [lt.macros :refer [behavior]]))
 
 (behavior ::sync-from-objects
@@ -105,7 +105,7 @@
   helper, which is the thing worth noticing here: this tab is not a mock of the
   chrome, it is the chrome, drawn twice. See [[lt.objs.statusbar]]."
   [this]
-  (let [el (crate/html [:div.window-host])]
+  (let [el (hiccup/element [:div.window-host])]
     (.appendChild el (ui/state-node this [:div]
                                     (fn [] (view/window @state/app))
                                     [state/app]))

@@ -7,7 +7,6 @@
   on the source path into one file. A bundler only keeps what an entry point can
   reach, so the namespaces nothing else pulls in are listed here explicitly."
   (:require [lt.objs.app :as app]
-            [lt.compat]
    ;; Generated: every CodeMirror mode and fold addon, so they are bundled.
    ;; Light Table's own JavaScript, bundled.
    [lt.window.modules :as modules]
