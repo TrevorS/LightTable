@@ -50,10 +50,10 @@
            {:replicant/key id
             :active? (= i active)
             :origin (when run :run)
+            :dirty? (boolean (get-in editors [id :dirty?]))
             :count (when run (count (remove :applied? (:edits run))))
             :on-select [[:tab/activate i]]}
-           (if run (:label run) (leaf id))
-           (when (get-in editors [id :dirty?]) [:span.dot.dot--result])]))
+           (if run (:label run) (leaf id))]))
       tabs)]))
 
 ;;*********************************************************
@@ -77,8 +77,8 @@
          :selected? (= i (:at review))
          :focused? (= focus [:review i])
          :tone (when (:conflict e) :warning)
+         :leading [:span.row__num (second (:at e))]
          :on-select [[:review/goto i]]}
-        [:span.row__num (second (:at e))]
         [:span (:summary e)]])
      (when (empty? edits)
        [::chrome/empty-state {:what "Nothing proposed here"}
@@ -243,8 +243,9 @@
         [::chrome/excerpt-header
          {:path path
           :range (str "line " line)
-          :whose (cond (:conflict e) :conflict
-                       (not (:applied? e)) :run)}]
+          :origin (cond (:conflict e) :conflict
+                        (not (:applied? e)) :proposed
+                        :else :yours)}]
         (if (:conflict e)
           [::band/conflict {:line line :yours (:yours e) :note (:conflict e)}]
           [::band/proposed-edit {:line line

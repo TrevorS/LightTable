@@ -33,7 +33,7 @@
 .cm-s-catppuccin-mocha.CodeMirror { background: #1e1e2e; color: #cdd6f4; }
 
 /* ── CodeMirror tokens, for the languages a mode still draws ────────────── */
-.cm-s-catppuccin-mocha span.cm-comment    { color: #6c7086; font-style: italic; }
+.cm-s-catppuccin-mocha span.cm-comment    { color: #6c7086; font-family: 'Victor Mono', ui-monospace, monospace; font-style: italic; }
 .cm-s-catppuccin-mocha span.cm-string     { color: #a6e3a1; }
 .cm-s-catppuccin-mocha span.cm-string-2   { color: #f5c2e7; }
 .cm-s-catppuccin-mocha span.cm-number     { color: #fab387; }
@@ -44,13 +44,13 @@
 .cm-s-catppuccin-mocha span.cm-variable   { color: #cdd6f4; }
 .cm-s-catppuccin-mocha span.cm-variable-2 { color: #b4befe; }
 .cm-s-catppuccin-mocha span.cm-variable-3 { color: #f9e2af; }
-.cm-s-catppuccin-mocha span.cm-property   { color: #89b4fa; }
+.cm-s-catppuccin-mocha span.cm-property   { color: #b4befe; }
 .cm-s-catppuccin-mocha span.cm-operator   { color: #89dceb; }
 .cm-s-catppuccin-mocha span.cm-builtin    { color: #f38ba8; }
 .cm-s-catppuccin-mocha span.cm-meta       { color: #a6adc8; }
 .cm-s-catppuccin-mocha span.cm-bracket    { color: #9399b2; }
 .cm-s-catppuccin-mocha span.cm-tag        { color: #89b4fa; }
-.cm-s-catppuccin-mocha span.cm-attribute  { color: #f9e2af; }
+.cm-s-catppuccin-mocha span.cm-attribute  { color: #94e2d5; }
 .cm-s-catppuccin-mocha span.cm-header     { color: #89b4fa; font-weight: 600; }
 .cm-s-catppuccin-mocha span.cm-quote      { color: #a6e3a1; }
 .cm-s-catppuccin-mocha span.cm-link       { color: #89dceb; text-decoration: underline; }
@@ -63,7 +63,7 @@
 /* The same roles the palette publishes, against the vocabulary in
  * css/treesitter.css. Scoped by the theme class, so it wins on specificity as
  * well as on order and a theme that says nothing still gets the defaults. */
-.cm-s-catppuccin-mocha .cm-ts-comment            { color: #6c7086; font-style: italic; }
+.cm-s-catppuccin-mocha .cm-ts-comment            { color: #6c7086; font-family: 'Victor Mono', ui-monospace, monospace; font-style: italic; }
 .cm-s-catppuccin-mocha .cm-ts-comment-doc        { color: #7f849c; }
 
 .cm-s-catppuccin-mocha .cm-ts-string             { color: #a6e3a1; }
@@ -87,27 +87,27 @@
 
 .cm-s-catppuccin-mocha .cm-ts-variable           { color: #cdd6f4; }
 .cm-s-catppuccin-mocha .cm-ts-variable-parameter { color: #eba0ac; }
-.cm-s-catppuccin-mocha .cm-ts-variable-builtin   { color: #f38ba8; font-style: italic; }
-.cm-s-catppuccin-mocha .cm-ts-variable-member    { color: #89b4fa; }
+.cm-s-catppuccin-mocha .cm-ts-variable-builtin   { color: #f38ba8; }
+.cm-s-catppuccin-mocha .cm-ts-variable-member    { color: #b4befe; }
 .cm-s-catppuccin-mocha .cm-ts-parameter          { color: #eba0ac; }
-.cm-s-catppuccin-mocha .cm-ts-property           { color: #89b4fa; }
-.cm-s-catppuccin-mocha .cm-ts-field              { color: #89b4fa; }
+.cm-s-catppuccin-mocha .cm-ts-property           { color: #b4befe; }
+.cm-s-catppuccin-mocha .cm-ts-field              { color: #b4befe; }
 
 .cm-s-catppuccin-mocha .cm-ts-function           { color: #89b4fa; }
-.cm-s-catppuccin-mocha .cm-ts-function-builtin   { color: #fab387; font-style: italic; }
+.cm-s-catppuccin-mocha .cm-ts-function-builtin   { color: #fab387; }
 .cm-s-catppuccin-mocha .cm-ts-function-method    { color: #89b4fa; }
 .cm-s-catppuccin-mocha .cm-ts-function-macro     { color: #cba6f7; }
 .cm-s-catppuccin-mocha .cm-ts-method             { color: #89b4fa; }
 .cm-s-catppuccin-mocha .cm-ts-constructor        { color: #74c7ec; }
 
 .cm-s-catppuccin-mocha .cm-ts-type               { color: #f9e2af; }
-.cm-s-catppuccin-mocha .cm-ts-type-builtin       { color: #f9e2af; font-style: italic; }
+.cm-s-catppuccin-mocha .cm-ts-type-builtin       { color: #f9e2af; }
 .cm-s-catppuccin-mocha .cm-ts-type-definition    { color: #f9e2af; }
 .cm-s-catppuccin-mocha .cm-ts-class              { color: #f9e2af; }
-.cm-s-catppuccin-mocha .cm-ts-namespace          { color: #f9e2af; font-style: italic; }
-.cm-s-catppuccin-mocha .cm-ts-module             { color: #f9e2af; font-style: italic; }
+.cm-s-catppuccin-mocha .cm-ts-namespace          { color: #f2cdcd; }
+.cm-s-catppuccin-mocha .cm-ts-module             { color: #f2cdcd; }
 .cm-s-catppuccin-mocha .cm-ts-label              { color: #74c7ec; }
-.cm-s-catppuccin-mocha .cm-ts-attribute          { color: #f9e2af; }
+.cm-s-catppuccin-mocha .cm-ts-attribute          { color: #94e2d5; }
 
 .cm-s-catppuccin-mocha .cm-ts-punctuation           { color: #9399b2; }
 .cm-s-catppuccin-mocha .cm-ts-punctuation-bracket   { color: #9399b2; }
@@ -116,7 +116,7 @@
 .cm-s-catppuccin-mocha .cm-ts-operator              { color: #89dceb; }
 
 .cm-s-catppuccin-mocha .cm-ts-tag                { color: #89b4fa; }
-.cm-s-catppuccin-mocha .cm-ts-tag-attribute      { color: #f9e2af; }
+.cm-s-catppuccin-mocha .cm-ts-tag-attribute      { color: #94e2d5; }
 .cm-s-catppuccin-mocha .cm-ts-tag-delimiter      { color: #9399b2; }
 .cm-s-catppuccin-mocha .cm-ts-markup-heading     { color: #89b4fa; font-weight: 600; }
 .cm-s-catppuccin-mocha .cm-ts-markup-link        { color: #89dceb; text-decoration: underline; }

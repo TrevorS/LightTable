@@ -51,14 +51,30 @@
      [:span.path__leaf (if cut (subs path (inc cut)) path)]
      (when range [:span.path__range (str " · " range)])]))
 
+(defn duration
+  "`ms` as the shortest true unit — the one an editor shows beside a run.
+
+  Truncating rather than rounding, so a number on screen is never larger than
+  the thing it measures."
+  [ms]
+  (let [s (quot (or ms 0) 1000)]
+    (cond
+      (< s 60) (str s "s")
+      (< s 3600) (str (quot s 60) "m")
+      :else (str (quot s 3600) "h"))))
+
+(defn ago
+  "How long ago, from an age in milliseconds rather than a timestamp.
+
+  An age and not a timestamp because the components that show one must render
+  the same way twice from the same arguments; reading the clock inside a
+  component is what stops that being true."
+  [ms]
+  (if (< (or ms 0) 5000) "just now" (str (duration ms) " ago")))
+
 ;; Time, only while it is still running or still relevant.
 (defalias elapsed [{:keys [ms live]}]
-  (let [s (quot (or ms 0) 1000)]
-    [:span.elapsed {:class (when live "elapsed--live")}
-     (cond
-       (< s 60) (str s "s")
-       (< s 3600) (str (quot s 60) "m")
-       :else (str (quot s 3600) "h"))]))
+  [:span.elapsed {:class (when live "elapsed--live")} (duration ms)])
 
 ;; ---------------------------------------------------------------------------
 ;; Chrome
@@ -66,22 +82,29 @@
 
 ;; Lives in the titlebar. Active is the editor ground pulled up into the
 ;; chrome. A run is a tab like any other.
-(defalias tab [{:keys [active? origin count on-select]} body]
+(defalias tab [{:keys [active? origin dirty? count on-select]} body]
   [:div.tab {:class (when active? "tab--active")
              :on {:click on-select}}
    (when (= origin :run) [:span.dot.dot--agent])
    body
+   ;; Dirty is a dot, never a colour change and never an asterisk in the label —
+   ;; the label is the file's name and a name does not change when you type.
+   (when dirty? [:span.dot.dot--result])
    (when count [::count-pill {:count count :tone (when (= origin :run) :agent)}])])
 
 ;; Names the file and range a multibuffer region came from, and whose edit it is.
-(defalias excerpt-header [{:keys [path range whose]}]
-  [:div.excerpt {:class (case whose
-                          :run "excerpt--agent"
+;; Three origins rather than two: an excerpt you wrote yourself is not an
+;; unattributed one, and a multibuffer that could not say so would be claiming
+;; every region in it came from the run.
+(defalias excerpt-header [{:keys [path range origin]}]
+  [:div.excerpt {:class (case origin
+                          :proposed "excerpt--agent"
+                          :yours "excerpt--yours"
                           :conflict "excerpt--conflict"
                           nil)}
    [:span.excerpt__path [::path-label {:path path}]]
    (when range [:span range])
-   (when whose [:span.excerpt__whose (name whose)])])
+   (when origin [:span.excerpt__whose (name origin)])])
 
 ;; Stands in for the lines nobody needs to see. Never a number without a count.
 (defalias fold-row [{:keys [lines on-select]}]
@@ -89,7 +112,7 @@
    (str "⋯  " lines " unchanged line" (when-not (= 1 lines) "s"))])
 
 ;; The path you walked into a value. Every segment is still addressable.
-(defalias breadcrumb [{:keys [root segments on-select]}]
+(defalias breadcrumb [{:keys [root segments siblings on-select]}]
   [:div.crumbs
    [:span.crumbs__seg root]
    (map-indexed
@@ -100,7 +123,14 @@
               :class (when (= i (dec (count segments))) "crumbs__seg--last")
               :on {:click (when on-select (conj (vec on-select) i))}}
              (pr-str seg)]))
-    segments)])
+    segments)
+   ;; Where you are among the peers of where you are. Walking into the fourth
+   ;; of forty entries and being shown only the fourth is how an inspector
+   ;; loses you.
+   (when siblings
+     (let [[at total] siblings]
+       [:span.crumbs__siblings (str at " of " total " sibling"
+                                    (when-not (= 1 total) "s"))]))])
 
 ;; One link in a cause chain. The root is the only one that gets actions.
 (defalias cause-row [{:keys [depth kind root?]} body]
@@ -117,8 +147,13 @@
                    :on {:click on-select}}
    body])
 
-(defalias action-cluster [_ body]
-  [:div.actions body])
+;; The row is the thing with an opinion about order, which is why it is a
+;; component and not a `div`. `:tone` sets the primary fill: the accent belongs
+;; to the situation — granting a run is mauve, restarting a dead process is red
+;; — rather than to the button, which is why the button does not name it.
+(defalias action-cluster [{:keys [tone]} body]
+  [:div.actions {:class (when (and tone (not= tone :result)) (str "actions--" (name tone)))}
+   body])
 
 ;; What an eval will actually reach. The agent is a client like the others.
 (defalias connection-row [{:keys [name-of what status bound? kind trailing on-select]}]

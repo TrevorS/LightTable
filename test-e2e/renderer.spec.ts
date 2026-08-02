@@ -176,24 +176,18 @@ test('the welcome screen renders and its buttons still do something', async ({ w
     await evalClj(window, '(do (object/destroy! intro) :gone)');
 });
 
-test('the component kit renders from the aliases the editor uses', async ({ window }) => {
-    // The design document draws twenty-five components; this draws the same
-    // twenty-five from lt.ui.row, lt.ui.chrome and lt.ui.band. If the two ever
-    // disagree about one, the disagreement is visible rather than theoretical —
-    // which is the only reason a catalogue is worth having.
+test('a role in the kit resolves through the token sheet, not the markup', async ({ window }) => {
+    // That the catalogue draws every alias the registry holds is asked in
+    // `catalogue.spec.ts`, against the registry rather than against counts
+    // written here — counts that went stale the first time the page changed.
+    // What is left is the claim this file is for and that one does not make:
+    // a component names a role, and the colour is somewhere else entirely.
     await evalClj(window, '(do (cmd/exec! :kit.catalogue) :opened)');
 
     const kit = window.locator('.kit');
     await expect(kit).toHaveCount(1);
 
-    // Every alias is exercised, so a component that throws takes this down.
-    await expect(kit.locator('.kit__card')).toHaveCount(23);
-    await expect(kit.locator('.dot')).toHaveCount(15);
-    await expect(kit.locator('.row')).toHaveCount(11);
-    await expect(kit.locator('.band')).toHaveCount(7);
-
-    // Roles resolve through the token sheet rather than a literal in the
-    // markup: the class is what the component names, the colour is the CSS.
+    // The class is what the component names, the colour is the CSS.
     const selected = kit.locator('.row--selected').first();
     expect(await selected.evaluate((n) => getComputedStyle(n).backgroundColor))
         .toBe('rgba(137, 220, 235, 0.15)');

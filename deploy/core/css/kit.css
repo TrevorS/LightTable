@@ -98,6 +98,11 @@
 .dot--agent { background: var(--lt-agent); }
 .dot--result { background: var(--lt-result); }
 
+/* Severities, for the one place a marker lives: the gutter column. */
+.dot--error { background: var(--lt-error); }
+.dot--warning { background: var(--lt-warning); }
+.dot--info { background: var(--lt-result); }
+
 /* Hollow means nothing has run yet, whatever the status. */
 .dot--hollow { background: transparent !important; box-shadow: inset 0 0 0 1.5px currentColor; }
 
@@ -159,6 +164,7 @@
 }
 
 .path__dir { color: var(--lt-overlay2); }
+.path__leaf { color: var(--lt-subtext1); }
 .path__range { color: var(--lt-overlay2); }
 
 /* Time, only while it is still running or still relevant. */
@@ -194,7 +200,11 @@
 .row--disabled { color: var(--lt-text-disabled); }
 .row--warning { background: var(--lt-warning-tint); color: var(--lt-warning); }
 .row--error { background: var(--lt-error-tint); color: var(--lt-error); }
+.row--agent { background: var(--lt-agent-tint); color: var(--lt-agent); }
 
+/* What identifies the row before its label, in a column every row reserves —
+ * so names line up down the list whether or not the row above had a twist. */
+.row__leading { display: inline-flex; align-items: center; flex-shrink: 0; }
 .row__num { color: var(--lt-overlay0); flex-shrink: 0; }
 .row__trailing { margin-left: auto; color: var(--lt-overlay2); }
 
@@ -239,7 +249,9 @@
 }
 
 .excerpt__path { color: var(--lt-subtext1); font-size: 12.5px; }
+.excerpt__whose { margin-left: auto; }
 .excerpt--agent .excerpt__whose { color: var(--lt-agent); }
+.excerpt--yours .excerpt__whose { color: var(--lt-overlay2); }
 .excerpt--conflict .excerpt__whose { color: var(--lt-warning); }
 
 /* Stands in for the lines nobody needs to see. Never a number without a count. */
@@ -267,6 +279,7 @@
 .crumbs__sep { color: var(--lt-surface2); }
 .crumbs__seg { color: var(--lt-sky); cursor: default; }
 .crumbs__seg--last { color: var(--lt-text); }
+.crumbs__siblings { margin-left: 8px; color: var(--lt-overlay1); font-size: 11.5px; }
 
 /* One link in a cause chain. The root is the only one that gets actions. */
 .cause {
@@ -307,6 +320,13 @@
 .action--primary { background: var(--lt-sky); color: var(--lt-crust); }
 .action--secondary { background: var(--lt-element-hover); color: var(--lt-subtext1); }
 .action--tertiary { background: transparent; color: var(--lt-overlay2); }
+
+/* The primary fill belongs to the situation, not to the button — granting a
+ * run is mauve, restarting a dead process is red — so the cluster sets it and
+ * the button never names a colour at all. */
+.actions--agent .action--primary { background: var(--lt-agent); }
+.actions--warning .action--primary { background: var(--lt-warning); }
+.actions--error .action--primary { background: var(--lt-error); }
 
 /* What an eval will actually reach. The agent is a client like the others. */
 .connection {
@@ -372,11 +392,17 @@
   width: var(--lt-gutter);
   flex-shrink: 0;
   padding: 7px 0;
+  padding-right: 14px;
   text-align: right;
   color: var(--lt-surface2);
   font-size: 12px;
   box-sizing: border-box;
 }
+
+/* The cursor's line, and the only place a diagnostic marker lives. A marker
+ * replaces the number rather than crowding it: there is one column. */
+.band__gutter--active { color: var(--lt-subtext0); }
+.band__gutter--marked .dot { vertical-align: middle; }
 
 .band__body { flex: 1; padding: 7px 11px; min-width: 0; }
 .band__value { color: var(--lt-text); white-space: pre-wrap; }
@@ -387,10 +413,30 @@
 .band--watch .band__value { color: var(--lt-watch); }
 .band--agent { background: var(--lt-agent-tint); }
 .band--conflict { background: var(--lt-warning-tint); }
-.band--diagnostic { background: var(--lt-error-tint); }
+
+/* Severity carries the tint, so a warning does not arrive looking like an
+ * error. `.band--diagnostic` is the layout; the three below are the reading. */
+.band--diagnostic.band--error { background: var(--lt-error-tint); }
+.band--diagnostic.band--warning { background: var(--lt-warning-tint); }
+.band--diagnostic.band--info { background: var(--lt-quiet-tint); }
+
+/* The last value it had, marked as such. Clearing the band when the process
+ * dies would throw away the only thing still known. */
+.band__row { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+.band__row > .band__value { min-width: 0; }
+.band--stale .band__value { color: var(--lt-overlay1); }
+.band__stale { flex-shrink: 0; color: var(--lt-overlay1); font-size: 11.5px; }
 
 .band__reads { color: var(--lt-watch); font-size: 11.5px; }
 .band__code { color: var(--lt-subtext1); }
+.band__code--theirs { color: var(--lt-agent); }
+.band__age { color: var(--lt-overlay0); font-family: var(--lt-cursive); font-style: italic; }
+
+/* A watch inside a loop is a sequence, not a value — showing only the last
+ * read makes a recurrence look like a constant. */
+.band__history { display: inline-flex; flex-wrap: wrap; gap: 8px; }
+.band__read { color: var(--lt-watch); }
+.band__read:last-child { color: var(--lt-text); }
 
 /* Struck original, tinted replacement, both on the same code column. */
 .edit__before { color: var(--lt-overlay0); text-decoration: line-through; opacity: 0.38; }
@@ -412,15 +458,23 @@
   margin-bottom: 6px;
 }
 
+.evidence__age { color: var(--lt-overlay2); font-weight: 400; }
+.evidence__client { color: var(--lt-overlay2); font-weight: 400; }
+
+/* Three columns, because the evidence for an edit is rarely two lines: what it
+ * was called with, and what came back, for each claim being made. */
 .evidence__row { display: flex; gap: 10px; padding: 4px 0; }
 .evidence__side { width: 44px; flex-shrink: 0; color: var(--lt-overlay2); font-size: 11.5px; }
-.evidence__before { color: var(--lt-red); }
-.evidence__after { color: var(--lt-green); }
+.evidence__expr { width: 190px; flex-shrink: 0; color: var(--lt-subtext1); }
+.evidence__value { color: var(--lt-subtext0); min-width: 0; }
+.evidence__value--before { color: var(--lt-error); }
+.evidence__value--after { color: var(--lt-green); }
 
 /* An LSP diagnostic, in the buffer, with the reason beside the line.
  * No left border — Zed uses one here, this does not. */
 .diagnostic__code { color: var(--lt-maroon); }
 .diagnostic__message { font-family: var(--lt-sans); color: var(--lt-subtext1); }
+.diagnostic__fix { margin-top: 7px; }
 
 /* ---- the catalogue ----------------------------------------------------- */
 
@@ -438,13 +492,37 @@
 
 .kit__title { font-size: 26px; font-weight: 600; letter-spacing: -0.01em; }
 .kit__blurb { font-size: 13.5px; line-height: 1.65; color: var(--lt-subtext0); max-width: 720px; margin-top: 8px; }
-.kit__section { margin-top: 34px; }
-.kit__section-name {
-  font-family: var(--lt-mono);
-  font-size: 12px;
-  color: var(--lt-sky);
-  margin-bottom: 12px;
+
+/* The two rules, stated where they can be checked against what is below. */
+.kit__rules {
+  margin-top: 14px;
+  padding: 16px 18px;
+  border-radius: 14px;
+  max-width: 560px;
+  background: rgba(137, 220, 235, 0.06);
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--lt-lavender);
 }
+
+.kit__rules-name { color: var(--lt-sky); font-weight: 500; margin-bottom: 7px; }
+
+/* Props and usage are the two things you turn off for a clean visual pass. */
+.kit__toggles { display: flex; gap: 8px; margin-top: 14px; }
+
+.kit__section { margin-top: 34px; }
+
+.kit__section-head {
+  display: flex;
+  gap: 20px;
+  align-items: baseline;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.kit__section-num { font-family: var(--lt-mono); font-size: 12px; color: var(--lt-sky); }
+.kit__section-name { font-size: 19px; font-weight: 600; color: var(--lt-text); }
+.kit__section-desc { font-size: 13px; color: var(--lt-overlay2); flex: 1; min-width: 280px; line-height: 1.6; }
 
 .kit__cards { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start; }
 
@@ -459,6 +537,7 @@
 }
 
 .kit__card--wide { width: 100%; }
+.kit__card--narrow { width: 340px; }
 
 .kit__card-head {
   display: flex;
@@ -469,7 +548,19 @@
 }
 
 .kit__name { font-family: var(--lt-mono); font-size: 13px; font-weight: 500; color: var(--lt-text); }
+/* The namespace recedes and the component does not — the same rule as a path. */
+.kit__ns { color: var(--lt-overlay2); }
 .kit__desc { font-size: 12.5px; color: var(--lt-overlay2); flex: 1; min-width: 180px; }
+
+/* Two things in this document look like components and are deliberately not
+ * registered as any. Saying so on the card is the only way that stays true. */
+.kit__badge {
+  padding: 2px 7px;
+  border-radius: var(--lt-radius-sm);
+  background: var(--lt-warning-tint);
+  color: var(--lt-warning);
+  font-size: 11.5px;
+}
 
 /* The ground each component actually sits on. */
 .kit__demo {
@@ -481,6 +572,82 @@
 }
 
 .kit__demo-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.kit__demo-note { font-family: var(--lt-mono); font-size: 11.5px; line-height: 1.6; color: var(--lt-overlay2); }
+
+/* A specimen, not a value. An embed at its working height is most of the card,
+ * and the card is about which renderer the mime chooses — not how tall the
+ * frame that renderer opens turns out to be. */
+.kit__demo .band__frame { height: 84px; }
+
+/* The props it takes, beside the states it has — so a card answers both
+ * questions a component raises rather than only the visible one. */
+.kit__props {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 11px 16px 13px;
+  border-top: 1px solid var(--lt-surface0);
+}
+
+.kit__prop { display: flex; align-items: baseline; gap: 10px; }
+.kit__prop-name { font-family: var(--lt-mono); font-size: 11.5px; color: var(--lt-lavender); width: 106px; flex-shrink: 0; }
+.kit__prop-type { font-family: var(--lt-mono); font-size: 11.5px; color: var(--lt-overlay2); width: 138px; flex-shrink: 0; }
+.kit__prop-note { font-size: 11.5px; color: var(--lt-overlay2); flex: 1; min-width: 0; }
+
+.kit__usage {
+  padding: 9px 16px 11px;
+  border-top: 1px solid var(--lt-surface0);
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--lt-overlay2);
+}
+
+/* Turned off for a clean visual pass. A class rather than a conditional, so
+ * every card stays a pure function of its own spec and nothing has to be
+ * handed the state of a control at the top of the page. */
+.kit--no-props .kit__props { display: none; }
+.kit--no-usage .kit__usage { display: none; }
+
+/* The kit is a table: what the editor is made of, as the registry holds it. */
+.kit__table { padding: 4px 0 8px; }
+
+.kit__table-head {
+  padding: 14px 16px 8px;
+  font-family: var(--lt-mono);
+  font-size: 11.5px;
+  color: var(--lt-sky);
+}
+
+.kit__table-row { display: flex; align-items: baseline; gap: 14px; padding: 4px 16px; }
+.kit__table-row:hover { background: var(--lt-element-hover); }
+.kit__table-name { font-family: var(--lt-mono); font-size: 12px; color: var(--lt-text); width: 250px; flex-shrink: 0; }
+.kit__table-desc { font-size: 12px; color: var(--lt-overlay2); flex: 1; min-width: 0; }
+
+/* An alias the registry has and this page does not draw, or the reverse. The
+ * document and the implementation are allowed to disagree; they are not
+ * allowed to do it quietly. */
+.kit__table-row--undrawn .kit__table-name { color: var(--lt-warning); }
+
+.kit__note {
+  margin-top: 16px;
+  padding: 16px 18px;
+  border-radius: 14px;
+  background: var(--lt-mantle);
+  box-shadow: inset 0 0 0 1px var(--lt-surface0);
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--lt-overlay2);
+  max-width: 900px;
+}
+
+.kit__note-name { color: var(--lt-subtext1); font-weight: 500; margin-bottom: 7px; }
+
+/* The gutter card in 01 draws code, because a gutter with nothing beside it is
+ * not a gutter. The column itself is the real `band/gutter`; only the code
+ * beside it is local, and its colours come from the theme rather than here. */
+.kit__code { font-family: var(--lt-mono); font-size: 13.5px; line-height: 23px; white-space: pre; display: flex; }
+.kit__code .band__gutter { padding-top: 0; padding-bottom: 0; }
+.kit__code--active { background: rgba(49, 50, 68, 0.5); }
 
 /* ---- the window -------------------------------------------------------- */
 

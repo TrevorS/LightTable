@@ -83,8 +83,12 @@
       (is (= 2 (count tabs))))
     (testing "the active one says so"
       (is (true? (:active? (attrs-of (first tabs))))))
-    (testing "a dirty editor shows it in the tab"
-      (is (seq (find-all (first tabs) :span.dot.dot--result))))))
+    (testing "a dirty editor says so in the tab, as a prop rather than a child"
+      ;; The dot is the tab's to draw. A view that appended one would be
+      ;; deciding what dirty looks like, which is the component's decision and
+      ;; would have to be made the same way in every other place a tab appears.
+      (is (true? (:dirty? (attrs-of (first tabs)))))
+      (is (false? (:dirty? (attrs-of (second tabs))))))))
 
 (deftest the-review-queue-is-rows-keyed-by-address
   (let [rows (find-all (view/review-queue state) :lt.ui.row/list-row)]
