@@ -6,7 +6,7 @@ Four layers, each answering a question the one below it cannot.
 |---|---|---|---|
 | `make test-cljs` | ClojureScript, under node | nothing | seconds |
 | `make test-electron` | the main process, under plain node | nothing | under a second |
-| `make test-e2e` | the real application, per test | a build | ~12s |
+| `make test-e2e` | the real application, one per worker | a build | ~45s |
 | `make smoke` | the whole assembled application, once | a build | ~40s |
 
 `make test` runs both unit layers. CI runs all four.
@@ -140,6 +140,15 @@ its windows with `show: false`. They still lay out, still run scripts, and
 suite that opens sixteen windows across your desktop and steals focus from
 whatever you were typing into is a suite people stop running.
 
+Hidden windows are not the whole of it on a Mac, because macOS puts an
+*application* in the Dock when it launches rather than when it opens a window.
+So under `LT_HEADLESS` the main process also asks for the `accessory`
+activation policy, before `ready` — after it is half a second too late, and
+what that looks like is the Dock growing and shrinking once per launch. The
+policy is set from the Info.plist at process start, so a launch still
+registers for an instant before the JS runs; the reason that is no longer
+worth chasing is the section below.
+
 Hidden is not the same as displayless. Electron has no headless mode —
 Chromium's is not exposed — so Linux without a display still goes through
 `xvfb-run`, which both wrappers arrange.
@@ -155,6 +164,29 @@ make smoke ARGS=--headed
 
 `LT_HEADED` beats `LT_HEADLESS`, so exporting it turns any run visible without
 editing the script that set the other one.
+
+## One application per worker
+
+`test-e2e/fixtures.ts` launches Light Table once per Playwright worker, not
+once per test, and `reset` puts the editor back between tests — tabs closed,
+workspace emptied, console cleared. Files run in parallel across four workers;
+tests inside a file run in order, which is what sharing one editor requires.
+
+It was one launch per test, which is the arrangement that needs no thought and
+cost four minutes: booting Light Table is a second and a half, there are a
+hundred tests, and almost the whole run was Electron starting. Four workers
+each booting once is forty-five seconds for the same hundred tests, and
+fourteen launches rather than a hundred and nine.
+
+Two things make the sharing safe. Each `launch()` gets its own `LT_USER_DIR`
+from `mkdtemp`, so parallel instances have no settings, workspace, log or cache
+in common — `workers: 1` was justified by that having once been untrue. And a
+test that genuinely needs a fresh process still calls `launch()` itself:
+`session.spec.ts` does, because what it tests is what a second boot remembers.
+
+The failure mode to know about is a test that leaves state `reset` does not
+clear, which shows up as a test that passes alone and fails after another one.
+Add it to `reset` rather than working around it in the test.
 
 ## The scripts are TypeScript
 

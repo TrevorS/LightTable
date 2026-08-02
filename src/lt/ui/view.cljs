@@ -101,24 +101,55 @@
 
   `:via` is what makes that true rather than said: an agent that evaluates
   through a REPL is drawn as reaching it, so the question \"where does this
-  actually run\" has an answer on screen."
-  [{:keys [clients focus]}]
+  actually run\" has an answer on screen.
+
+  `:bound?` is the other half of that and is read rather than declared: a
+  client is bound when the buffer you are in already evaluates through it.
+
+  What you can do to a connection is in its menu, not on the row. The design's
+  rule for a row holds here — what follows the label is a count, a time or a
+  hint, and never a control — and disconnecting is not something to put one
+  mis-click away from the thing you are reading."
+  [{:keys [clients connect]}]
   [:div.panel
    [::chrome/panel-header {:count (count clients)} "Connections"]
-   (for [[id c] (sort-by (comp str key) clients)]
-     [::chrome/connection-row
-      {:replicant/key id
-       :name-of (or (:name c) (str id))
-       :kind (:kind c)
-       :status (:status c)
-       :bound? (:bound? c)
-       :what (str (get kind-label (:kind c) (some-> (:kind c) name))
-                  (when-let [via (:via c)] (str " · through " via)))
-       :trailing (:note c)
-       :on-select [[:client/bind id]]}])
-   (when (empty? clients)
-     [::chrome/empty-state {:what "No connection for this editor"}
-      "A buffer needs a client before anything can be evaluated."])])
+   ;; The panel's own affordance rather than a row's, so it is a cluster above
+   ;; the list. Choosing shows the kinds instead of the list, the same way the
+   ;; workspace panel shows saved workspaces instead of the tree.
+   [::chrome/action-cluster {}
+    (if (:choosing? connect)
+      [::chrome/action {:weight :secondary :on-select [[:client/choose false]]} "cancel"]
+      [::chrome/action {:weight :tertiary :on-select [[:client/choose true]]} "add connection"])]
+   (if (:choosing? connect)
+     [:div.connectors
+      ;; A kind is a name and a sentence about it, so the sentence is a child
+      ;; rather than `:trailing` — the row's trailing slot is a count, a time
+      ;; or a hint, and a paragraph in it is neither of those and does not fit.
+      (for [{:keys [name-of desc]} (:connectors connect)]
+        [::row/list-row {:replicant/key name-of
+                         :on-select [[:client/connect name-of]]}
+         [:div
+          [:div.connector__name name-of]
+          [:div.connector__desc desc]]])
+      (when (empty? (:connectors connect))
+        [::chrome/empty-state {:what "Nothing to connect to"}
+         "A language plugin adds the kinds of connection it knows how to make."])]
+     (list
+      (for [[id c] (sort-by (comp str key) clients)]
+        [::chrome/connection-row
+         {:replicant/key id
+          :name-of (or (:name c) (str id))
+          :kind (:kind c)
+          :status (:status c)
+          :bound? (:bound? c)
+          :what (str (get kind-label (:kind c) (some-> (:kind c) name))
+                     (when-let [via (:via c)] (str " · through " via)))
+          :trailing (:note c)
+          :on-select [[:client/bind id]]
+          :on-menu [[:client/menu id]]}])
+      (when (empty? clients)
+        [::chrome/empty-state {:what "No connection for this editor"}
+         "Evaluate something, or add a connection above — a buffer needs a client before anything can run."])))])
 
 ;;*********************************************************
 ;; 3½ · the workspace tree

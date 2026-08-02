@@ -372,8 +372,24 @@
 }
 
 .connection--bound { background: rgba(137, 220, 235, 0.07); }
-.connection__name { width: 140px; flex-shrink: 0; color: var(--lt-text); }
-.connection__what { color: var(--lt-overlay2); font-size: 12px; }
+/* A fixed column so what a client *is* lines up down the list, and a name that
+ * runs past it truncates rather than wrapping — a row is one line, and a
+ * two-line one puts the kind beside the wrong half of the name. */
+.connection__name {
+  width: 140px;
+  flex-shrink: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--lt-text);
+}
+.connection__what {
+  color: var(--lt-overlay2);
+  font-size: 12px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
 .connection__trailing { margin-left: auto; color: var(--lt-overlay2); font-size: 12px; }
 .connection--agent .connection__name { color: var(--lt-agent); }
 
@@ -731,6 +747,18 @@
   overflow-y: auto;
   overflow-x: hidden;
 }
+
+/* The kinds of connection there are to make. Two lines each, so the row grows
+ * — `.row` is one line high because a list of files is, and a list of things
+ * with a sentence about each is the other kind of list. */
+.connectors .row {
+  height: auto;
+  align-items: flex-start;
+  padding: 8px;
+  margin-bottom: 2px;
+}
+.connector__name { color: var(--lt-text); }
+.connector__desc { color: var(--lt-overlay2); font-size: 11.5px; margin-top: 3px; }
 
 .wstree__back {
   padding: 4px 8px 10px;

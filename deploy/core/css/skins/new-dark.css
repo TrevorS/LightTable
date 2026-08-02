@@ -327,77 +327,10 @@ input {
   background: #999;
   color: #fff;
 }
-#right-bar .clients td {
-  color: #bbb;
-}
-#right-bar .clients .button {
-  background: #616161;
-  color: #f4f4f4;
-}
-#right-bar .clients .button:hover {
-  background: #ccc;
-  color: #555;
-}
-#right-bar .clients .list li h2 {
-  color: #c7e6ff;
-  font-size: 12pt;
-}
-#right-bar .clients .list > ul > li:first-child {
-  border-top: 0px solid #888;
-}
-#right-bar .clients .list > ul > li:last-child {
-  border-bottom: 0px solid #888;
-}
-#right-bar .clients .list > ul > li + li {
-  background: transparent;
-  border-top: 0px solid #888;
-}
-#right-bar .clients .list .active {
-  background: #616161;
-  color: inherit;
-  border-color: #888;
-}
-#right-bar .clients .list .active * {
-  color: inherit;
-}
-#right-bar .clients .list .active h2 {
-  color: #f4f4f4;
-}
-#right-bar .clients .list .active .button {
-  background: #ccc;
-  color: #555;
-}
-#right-bar .clients .list .active .button:hover {
-  background: #c7e6ff !important;
-  color: #505d6b;
-}
-#right-bar .clients .connector li {
-  border-top: 0px solid #888;
-  border-bottom: 1px solid #888;
-}
-#right-bar .clients .connector li:first-child {
-  border: none;
-}
-#right-bar .clients .connector li:last-child {
-  border-bottom: none;
-}
-#right-bar .clients .connector li + li {
-  border-bottom: none;
-}
-#right-bar .clients .connector li h2 {
-  color: #f4f4f4;
-}
-#right-bar .clients .connector li:hover h2 {
-  color: #f4f4f4;
-}
-#right-bar .clients .connector li:hover {
-  background: #616161;
-  color: #ccc;
-  border-color: #888;
-}
-/* The statusbar is not skinned here any more. It is a view, and every colour
-   in it is a role the token sheet resolves — see css/kit.css. A skin that
-   restated them would be the second answer this fork is getting rid of. */
+/* The statusbar and the connect panel are not skinned here any more. They are
+   views, and every colour in one is a role the token sheet resolves — see
+   css/kit.css. A skin that restated them would be the second answer this fork
+   is getting rid of. */
 #find-bar input {
   border-top: 2px solid #3b3f41;
   background: #202020;
@@ -704,11 +637,6 @@ input {
   background-size: 100% 1em;
   background-position: center;
   background-repeat: no-repeat;
-}
-#right-bar .clients .load-wrapper .img {
-  width: 20px;
-  height: 20px;
-  background: url("../../img/connectingloader.gif");
 }
 .load-wrapper .img {
   background: url("../../img/loaderdark.gif");

@@ -78,7 +78,7 @@ test.describe('the component kit', () => {
     });
 
     test('the views draw themselves from a map, in the page', async ({ window }) => {
-        // Four of the nine are drawn by calling them, which is the same thing
+        // Five of the nine are drawn by calling them, which is the same thing
         // the test file does — so a view that throws on a shape takes this down
         // rather than waiting to be noticed in a window.
         // Three from two tabs: a run that is not in the tab list is still a tab,
@@ -92,6 +92,11 @@ test.describe('the component kit', () => {
         // The tree, drawn from a map: two roots, one folder open with two
         // children in it, and the shut folder's contents nowhere.
         await expect(window.locator('.kit .wstree .row')).toHaveCount(4);
+        // And the connect panel showing the clients rather than the kinds.
+        // Scoped to `.panel`, which is the view — section 02 draws three more
+        // `connection-row`s as the alias on its own.
+        await expect(window.locator('.kit .panel .connection')).toHaveCount(2);
+        await expect(window.locator('.kit .connectors')).toHaveCount(0);
     });
 
     test('props and usage turn off for a clean visual pass', async ({ window }) => {

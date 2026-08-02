@@ -34,7 +34,7 @@
   (:require-macros [lt.macros :refer [behavior]]))
 
 (behavior ::sync-from-objects
-          :triggers #{:active :dirty :clean :close :focus}
+          :triggers #{:active :dirty :clean :close :focus :set-client}
           :desc "State: Keep the state atom current with this editor"
           :doc "The views are functions of one value and the editor's facts are
                 spread across a hundred objects, so something has to carry them
@@ -42,6 +42,18 @@
 
                 Deliberately not `:move`: the cursor has its own atom, because
                 a projection per keystroke is a window render per keystroke."
+          :reaction (fn [_ & _]
+                      (from-objects/sync!)))
+
+(behavior ::sync-from-clients
+          :triggers #{:connect :close :destroy}
+          :desc "State: Keep the state atom current with the connections"
+          :doc "The connect panel is `lt.ui.view/connections` and reads the
+                projection, so a client arriving or going away has to reach it.
+                Here rather than in `lt.objs.sidebar.clients` because the
+                projection requires the clients and the clients would then
+                require the projection — see the circular dependency that made
+                this its own behavior."
           :reaction (fn [_ & _]
                       (from-objects/sync!)))
 

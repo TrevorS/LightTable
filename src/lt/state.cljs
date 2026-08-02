@@ -50,7 +50,10 @@
    ;; remembers what was in it, which is what makes reopening one instant.
    ;;
    ;; path -> {:dir? :open? :loaded? :children [path]}
-   :workspace {:roots [] :nodes {} :renaming nil :recents nil}})
+   :workspace {:roots [] :nodes {} :renaming nil :recents nil}
+   ;; The connect panel shows the clients or the kinds of client, and
+   ;; `:choosing?` is which. The kinds are what the language plugins registered.
+   :connect {:choosing? false :connectors []}})
 
 (defonce app (atom initial))
 

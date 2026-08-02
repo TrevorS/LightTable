@@ -400,9 +400,10 @@
           :props [[":name-of" "string" ""]
                   [":kind" ":nrepl | :agent | :self | :browser" ""]
                   [":status" "one of the eight" ""]
-                  [":bound?" "boolean" "this editor evaluates here"]
-                  [":what" "string" "and what it reaches through"]]
-          :usage "view/connections"}
+                  [":bound?" "boolean" "this editor evaluates here — read, not stored"]
+                  [":what" "string" "and what it reaches through"]
+                  [":on-menu" "actions" "disconnecting is in the menu, not on the row"]]
+          :usage "view/connections — the connect panel in the right bar"}
          [::chrome/connection-row {:name-of "nREPL 51423" :what "clj · lt.objs.tabs"
                                    :status :finished :bound? true :trailing "this tab"}]
          [::chrome/connection-row {:name-of "claude · terminal" :kind :agent
@@ -563,6 +564,9 @@
                                 {:at ["src-worker/fuzzy.ts" 22] :applied? false}
                                 {:at ["src-window/tabs.cljs" 44] :applied? false}]}}
    :cursor {:line 89 :ch 33}
+   :clients {51423 {:name "nREPL 51423" :kind :nrepl :status :finished :bound? true}
+             :claude {:name "claude" :kind :agent :status :executing :via 51423}}
+   :connect {:choosing? false :connectors []}
    :workspace {:roots ["src-worker" "notes.md"]
                :nodes {"src-worker" {:dir? true :open? true :loaded? true
                                      :children ["src-worker/lib" "src-worker/fuzzy.ts"]}
@@ -579,7 +583,7 @@
 (defn- views []
   (section
    "04 · views" "Views"
-   (list "Four of the nine views in " [:span.kit__name "lt.ui.view"]
+   (list "Five of the nine views in " [:span.kit__name "lt.ui.view"]
          ", each a pure function of the whole state — not aliases, which is why
           the keyword says " [:span.kit__name "view/"]
          ". They are drawn here by calling them with a map, which is the same
@@ -593,6 +597,14 @@
                   [":editors" "path → editor" "for the dirty dot"]]
           :usage "view/window, and every window"}
          (view/titlebar demo-state))
+
+   (card {:ns "view/" :nm "connections" :width :narrow
+          :desc "The clients, or the kinds of client there are. One panel, two lists."
+          :props [[":clients" "id → client" "from lt.state.objects"]
+                  [":connect" "{:choosing? :connectors}" "which of the two lists is up"]]
+          :usage "the right bar of this window — lt.objs.sidebar.clients"}
+         (view/connections demo-state)
+         (note "`:choosing?` is which — not CSS hiding one of them"))
 
    (card {:ns "view/" :nm "workspace" :width :narrow
           :desc "The file tree, from a map of paths. A closed folder is not drawn rather than hidden."
@@ -697,7 +709,7 @@
   "The nine, in the order [[lt.ui.view]] defines them."
   [["titlebar" "Drawn in 04. Tabs of the active tabset."]
    ["review-queue" "The edits a run proposes for this buffer."]
-   ["connections" "Drawn in 02 as connection-row."]
+   ["connections" "Drawn in 04. The connect panel in the right bar of this window."]
    ["workspace" "Drawn in 04. The file tree, in the left sidebar of this window."]
    ["sidebar" "review-queue then connections, in work order."]
    ["statusbar" "Drawn in 04. Its own render root — the cursor is a different clock."]

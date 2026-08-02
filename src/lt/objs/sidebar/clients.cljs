@@ -1,183 +1,162 @@
 (ns lt.objs.sidebar.clients
-  "Provide sidebar for (dis)connecting to a client"
-  (:require [lt.object :as object]
+  "The connect panel, which is `lt.ui.view/connections`.
+
+  That view is one of the design's eight and has been written and tested since
+  the kit landed, drawn only in the window-as-a-view tab. This is it in the
+  window you use: the same function, the same `chrome/connection-row`, over
+  `lt.state.objects/clients*`.
+
+  It was a `map-bound` over `lt.objs.clients/cs` splicing a node per client,
+  with a second list underneath it for the kinds of connection and CSS deciding
+  which of the two you saw. The list is state now and `:choosing?` is which —
+  the same shape the workspace panel has for tree-or-recents.
+
+  What you can do to a connection is in its menu. The design's rule for a row
+  holds: what follows the label is a hint, never a control, and `disconnect`
+  one mis-click from the thing you are reading was the old panel's arrangement
+  rather than a decision."
+  (:require [lt.actions :as actions]
+            [lt.object :as object]
             [lt.objs.clients :as clients]
-            [lt.objs.sidebar :as sidebar]
-            [lt.objs.command :as cmd]
-            [lt.objs.context :as ctx]
-            [lt.objs.clients.tcp :as tcp]
             [lt.objs.clients.ws :as ws]
-            [lt.objs.popup :as popup]
+            [lt.objs.clients.tcp :as tcp]
+            [lt.objs.command :as cmd]
             [lt.objs.editor.pool :as pool]
-            [lt.util.dom :as dom]
-            [singultus.binding :refer [bound map-bound subatom]])
-  (:require-macros [lt.macros :refer [behavior defui]]))
+            [lt.objs.menu :as menu]
+            [lt.objs.popup :as popup]
+            [lt.objs.sidebar :as sidebar]
+            [lt.state :as state]
+            [lt.ui :as ui]
+            [lt.ui.view :as view])
+  (:require-macros [lt.macros :refer [behavior]]))
 
-(defui close-button [i]
-  [:span.button "disconnect"]
-  :click (fn []
-           (clients/close! i)))
+(declare panel)
 
-(declare clients)
+(defn- dispatch! [& as] (actions/dispatch! (vec as)))
 
-(defui unset-button [i]
-  [:span.button.unset "unset"]
-  :click (fn []
-           (object/raise clients :unset! i)))
+;; Connecting, disconnecting and unsetting change what is out there rather than
+;; what is in the state — the panel hears about the result through the
+;; projection. They are still actions, because a view emits actions.
+(doseq [kind [:client/connect :client/disconnect :client/unset :client/menu]]
+  (actions/register-passthrough! kind))
 
-(defui add-button [this]
-  [:h2.toggle.add.button "Add Connection"]
-  :click (fn []
-           (object/raise this :selecting!)))
+;;*********************************************************
+;; The kinds of connection there are
+;;*********************************************************
 
-(defui choose-cancel [this]
-  [:h2.toggle.button [:span "Choose a client type"]]
-  :click (fn []
-           (object/raise this :cancel)))
+(defonce ^:private connectors (atom (sorted-map)))
 
-(defn ->active? [cur clients]
-  (let [actives (:active clients)
-        found? (first (filter #(= cur (val %)) actives))
-        connected? (:connected @cur)]
-    (if (and found? connected?)
-      (str "active client-" (name (first found?)))
-      "")))
+(defn add-connector
+  "Register a kind of connection. `c` is `{:name :desc :connect}`.
 
-(defn client-item* [i]
-  (if (:connected @i)
-    [:div
-     [:h2 (:name @i)]
-     [:div.details
-      [:table
-       [:tr
-        [:td "Type"] [:td (:type @i)]]
-       [:tr
-        [:td "Commands"] [:td
-                          [:ul
-                           (for [c (:commands @i)]
-                             [:li c])]]]]
-      (close-button i)
-      (unset-button i)]]
-    [:div.connecting
-     [:div.load-wrapper [:div.img]]
-     [:p "Connecting.."]]
-    ))
+  Unchanged, because it is what every language plugin calls. The connect
+  function stays here in a map rather than going into the state: it is a
+  closure, and a closure is not data — the panel names the kind and this is
+  what turns a name back into the thing that does it."
+  [c]
+  (swap! connectors assoc (:name c) c)
+  (dispatch! [:client/connectors (for [[nm {:keys [desc]}] @connectors]
+                                   {:name-of nm :desc desc})]))
 
-(defn connector? [clients]
-  (str "clients "
-       (if (:selecting? clients)
-         "selecting"
-         "")
-       (when (dom/has-class? (:content clients) :active)
-         " active")))
+(defn connect!
+  "Make a connection of the kind called `name-of`, as clicking it would.
 
-(defui client-item [clients i]
-  (let [i @i]
-    [:li {:class (bound clients #(->active? i %))}
-     (bound i #(client-item* i))
-     ]))
+  The panel is a view and a view emits actions, so this is the action — which
+  makes it the one way in for anything else that wants a connection made, a
+  command or a test included."
+  [name-of]
+  (dispatch! [:client/connect name-of]))
 
-(defui connection-type [this i]
-  [:li
-   [:h2 (i :name)]
-   [:p (i :desc)]
-   ]
-  :click (fn []
-           (object/raise this :selected)
-           ((:connect i))
-           ))
+(actions/register-effect! :client/connect
+                          (fn [name-of]
+                            (when-let [c (get @connectors name-of)]
+                              (dispatch! [:client/choose false])
+                              ((:connect c)))))
 
-(defn connectors [this connectors]
-  (for [[k c] connectors]
-    (connection-type this c)
-    ))
+;;*********************************************************
+;; What you can do to one
+;;*********************************************************
 
-(defui connect-ui [this]
-  [:div {:class (bound this connector?)
-         :tabindex -1}
-   [:div.list
-    (add-button this)
-    [:ul
-     (map-bound (partial client-item this) clients/cs)]]
-   [:div.connector
-    (choose-cancel this)
-    [:ul
-     (bound (subatom this [:connectors]) (partial connectors this))
-     ]]]
-  :focus (fn []
-           (ctx/in! :sidebar.clients this))
-  :blur (fn []
-          (ctx/out! :sidebar.clients this))
-  )
+(defn- client-by-id [id]
+  (get @clients/cs id))
 
-(behavior ::track-active-client
-          :triggers #{:active :set-client}
-          :reaction (fn [ed]
-                      (object/merge! clients {:active (:client @ed)})))
+(actions/register-effect! :client/disconnect
+                          (fn [id]
+                            (when-let [c (client-by-id id)]
+                              (clients/close! c))))
 
-(behavior ::unset-client
-          :triggers #{:unset!}
-          :reaction (fn [this cur]
-                      (let [ed (pool/last-active)
-                            actives (:client @ed)
-                            found? (first (filter #(= cur (val %)) actives))]
-                        (when found?
-                          (object/update! ed [:client] dissoc (first found?)))
-                        (pool/focus-last))))
+(actions/register-effect! :client/unset
+                          (fn [id]
+                            ;; Take this client off the buffer you are in, so
+                            ;; the next evaluation goes looking again. The
+                            ;; client itself is untouched — it is a connection,
+                            ;; not a property of the editor.
+                            (when-let [c (client-by-id id)]
+                              (when-let [ed (pool/last-active)]
+                                (doseq [[k v] (:client @ed)
+                                        :when (= v c)]
+                                  (object/update! ed [:client] dissoc k))
+                                ;; The projection is what the panel reads, and
+                                ;; `:set-client` is what tells it to look again
+                                ;; — see `lt.ui.window/sync-from-objects`.
+                                (object/raise ed :set-client nil)
+                                (pool/focus-last)))))
 
-(behavior ::selecting!
-          :triggers #{:selecting!}
-          :reaction (fn [this]
-                      (object/merge! this {:selecting? true})
-                      ))
+(behavior ::client-menu-items
+          :triggers #{:client-menu-items}
+          :desc "Connect: The right-click menu for a connection"
+          :reaction (fn [this items id]
+                      (let [c (client-by-id id)
+                            bound? (and c (contains? (set (some-> (pool/last-active) deref :client vals)) c))]
+                        (concat items
+                                (when bound?
+                                  [{:label "Stop evaluating through this" :order 0
+                                    :click #(dispatch! [:client/unset id])}])
+                                [{:label "Disconnect" :order 1
+                                  :click #(dispatch! [:client/disconnect id])}]))))
 
-(behavior ::done-selecting
-          :triggers #{:selected :cancel}
-          :reaction (fn [this]
-                      (object/merge! this {:selecting? false})))
+(actions/register-effect! :client/menu
+                          (fn [id]
+                            (-> (menu/menu (sort-by :order (object/raise-reduce panel :client-menu-items [] id)))
+                                (menu/show-menu))))
 
-(behavior ::hide-on-select
-          :triggers #{:selected}
-          :reaction (fn [this]
-                      (object/raise sidebar/rightbar :close!)))
+;;*********************************************************
+;; The panel
+;;*********************************************************
 
-(behavior ::focus!
-          :triggers #{:focus!}
-          :reaction (fn [this]
-                      (dom/focus (object/->content this))))
+(defn- panel-ui []
+  (view/connections @state/app))
 
 (object/object* ::sidebar.clients
                 :tags #{:sidebar.clients}
                 :label "connect"
-                :connectors (sorted-map)
                 :order 2
                 :init (fn [this]
-                        (connect-ui this)
-                        ))
+                        (ui/state-node this [:div.clients] panel-ui [state/app])))
 
-(def clients (object/create ::sidebar.clients))
+;; `panel`, not `clients` as it was. The clients are `lt.objs.clients/cs` and
+;; this is the thing that draws them; naming it after what it shows is what let
+;; `clients/clients` and `clients/clients` mean two different objects three
+;; namespaces apart. Nothing outside called it — `add-connector` is the whole
+;; of what this namespace is used for.
+(def panel (object/create ::sidebar.clients))
 
-(sidebar/add-item sidebar/rightbar clients)
-
-(defn add-connector [c]
-  (object/update! clients [:connectors] assoc (:name c) c))
+(sidebar/add-item sidebar/rightbar panel)
 
 (cmd/command {:command :show-connect
               :desc "Connect: Toggle connect bar"
               :exec (fn []
-                      (object/raise sidebar/rightbar :toggle clients)
-                      (object/raise clients :focus!))})
+                      (object/raise sidebar/rightbar :toggle panel))})
 
 (cmd/command {:command :show-add-connection
               :desc "Connect: Add Connection"
               :exec (fn []
-                      (object/raise sidebar/rightbar :toggle clients {:force? true
-                                                                     :transient? false})
-                      (object/raise clients :selecting!)
-                      )})
+                      (object/raise sidebar/rightbar :toggle panel {:force? true
+                                                                    :transient? false})
+                      (dispatch! [:client/choose true]))})
 
 (add-connector {:name "Ports"
-                :desc "Get the ports for the local TCP and Websocket servers"
+                :desc "the local TCP and WebSocket ports"
                 :connect (fn []
                            (popup/popup! {:header "Ports"
                                           :body [:dl#ports

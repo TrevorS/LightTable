@@ -616,13 +616,63 @@ test('an editor is hosted inside the chrome, and never diffed', async ({ window 
 test('the actions the views emit are all handled', async ({ window }) => {
     // Every handler in the chrome is a vector, and a vector nothing answers is
     // a click that does nothing — which looks exactly like a click that did
-    // something invisible. So the table has to cover what the views emit.
-    const emitted = ['review/goto', 'tab/activate', 'client/bind', 'cmd/exec',
-                     'eval/form', 'watch/promote', 'edit/apply', 'run/grant',
-                     'ns/refresh', 'behavior/rebind'];
-    const registered = await evalClj(window,
-        '(vec (sort (map str (keys (lt.actions/registered)))))');
-    for (const a of emitted) expect(registered).toContain(a);
+    // something invisible.
+    //
+    // Read off the views rather than listed here. A list goes stale silently
+    // and did: the tree's whole right-click menu dispatched actions that were
+    // only ever registered as effects, so every one of them reported
+    // `:error/unknown-action` into a console nobody was looking at. This walks
+    // what the views actually emit, with both branches of the two panels that
+    // have one open.
+    const unhandled = await evalClj(window, `
+        (let [s (assoc @lt.state/app
+                       :command-bar {:open? true :query "" :at 0
+                                     :commands [{:label "x" :action [:cmd/exec :x]}]}
+                       :workspace {:roots ["/p"]
+                                   :nodes {"/p" {:dir? true :open? true
+                                                 :children ["/p/a.txt"]}
+                                           "/p/a.txt" {:dir? false}}
+                                   :recents nil}
+                       :keymap {"⌘⏎" [[:eval/form]]}
+                       ;; Enough of a window that every list has a row in it —
+                       ;; a view with nothing to draw emits no handlers, and
+                       ;; would pass this by drawing nothing.
+                       :tabsets [{:id 0 :tabs ["a.cljs"] :active 0}]
+                       :clients {51423 {:name "nREPL" :kind :nrepl :status :finished}}
+                       :review {:run "r" :at 0}
+                       :runs {"r" {:label "r" :status :executing
+                                   :edits [{:at ["a.cljs" 1] :summary "s" :applied? false}]}})
+              both (fn [k v] [(assoc-in s k v) s])
+              drawn (concat [(lt.ui.view/window s) (lt.ui.view/settings s)]
+                            (map lt.ui.view/workspace
+                                 (both [:workspace :recents] [{:path "/w" :folders [] :files []}]))
+                            (map lt.ui.view/connections
+                                 (both [:connect] {:choosing? true
+                                                   :connectors [{:name-of "Ports" :desc "d"}]})))
+              nodes (filter vector? (tree-seq #(and (coll? %) (not (map? %))) seq drawn))
+              attrs (keep #(when (map? (second %)) (second %)) nodes)
+              handlers (mapcat (fn [a]
+                                 (concat (vals (select-keys a [:on-select :on-menu]))
+                                         (vals (:on a))))
+                               attrs)
+              kinds (set (for [h handlers
+                               :when (vector? h)
+                               action (if (vector? (first h)) h [h])
+                               :when (keyword? (first action))]
+                           (first action)))]
+          ;; The count comes back too, so a walk that found nothing — a
+          ;; refactor that moved where handlers live, say — fails here rather
+          ;; than passing by looking at an empty set.
+          (str "unhandled " (vec (sort (remove (set (keys (lt.actions/registered))) kinds)))
+               " · emitted " (vec (sort kinds))))`);
+    expect(unhandled, 'actions a view emits that nothing is registered for')
+        .toContain('unhandled []');
+    // And the walk found the chrome rather than an empty tree, which is the way
+    // a guard like this goes quiet.
+    for (const a of [':tab/activate', ':review/goto', ':client/bind', ':tree/toggle',
+                     ':tree/menu', ':cmd/exec', ':workspace/show-recents']) {
+        expect(unhandled).toContain(a);
+    }
 
     // And an effect with no handler is reported rather than swallowed, which
     // is how the gap above was found in the first place.

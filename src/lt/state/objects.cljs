@@ -56,21 +56,26 @@
   point of the panel — an evaluation reaching Light Table is not a special
   case, it is a client with a name."
   []
-  (into {} (for [[id c] @clients/cs
-                 :when @c]
-             [id (merge
-                  {:name (:name @c)
-                   :kind (cond
-                           (object/has-tag? c :client.agent) :agent
-                           (object/has-tag? c :nrepl.client) :nrepl
-                           (object/has-tag? c :client.local) :self
-                           (object/has-tag? c :clients.devtools) :browser
-                           :else :client)
-                   :status (if (clients/available? c) :finished :lost)}
-                  ;; An agent is a client like the others and has one thing
-                  ;; they do not: where its work actually runs.
-                  (when (object/has-tag? c :client.agent)
-                    (select-keys (agent/state) [:status :via])))])))
+  ;; What the buffer you are in already evaluates through. `:bound?` is read
+  ;; from that rather than stored anywhere, which is what makes the panel's
+  ;; claim — \"this is where an eval goes\" — true instead of asserted.
+  (let [bound (set (some-> (pool/last-active) deref :client vals))]
+    (into {} (for [[id c] @clients/cs
+                   :when @c]
+               [id (merge
+                    {:name (:name @c)
+                     :kind (cond
+                             (object/has-tag? c :client.agent) :agent
+                             (object/has-tag? c :nrepl.client) :nrepl
+                             (object/has-tag? c :client.local) :self
+                             (object/has-tag? c :clients.devtools) :browser
+                             :else :client)
+                     :status (if (clients/available? c) :finished :lost)
+                     :bound? (contains? bound c)}
+                    ;; An agent is a client like the others and has one thing
+                    ;; they do not: where its work actually runs.
+                    (when (object/has-tag? c :client.agent)
+                      (select-keys (agent/state) [:status :via])))]))))
 
 (defn results
   "Diagnostics, as results keyed the way the design keys them.

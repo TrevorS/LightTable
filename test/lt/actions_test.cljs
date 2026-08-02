@@ -86,18 +86,24 @@
   ;; that only reach the object world live there, and are absent from this
   ;; suite because that namespace needs a window, which is the point of this
   ;; suite not having one.
-  (let [registered (set (keys (actions/registered)))]
+  (let [registered (set (keys (actions/registered)))
+        of (fn [& nses] (into #{} (filter (comp (set nses) namespace) registered)))]
     (is (= #{:review/goto :eval/form :watch/promote :edit/apply
              :run/grant :ns/refresh :behavior/rebind}
-           (into #{} (remove (comp #{"status" "console" "tree" "workspace"} namespace) registered))))
+           (into #{} (remove (comp #{"status" "console" "tree" "workspace" "client"} namespace)
+                             registered))))
     (testing "the statusbar's, from when the bar stopped being three objects"
       (is (= #{:status/message :status/loading :console/unread}
-             (into #{} (filter (comp #{"status" "console"} namespace) registered)))))
-    (testing "and the tree's, from when it stopped being an object per file"
+             (of "status" "console"))))
+    (testing "the tree's, from when it stopped being an object per file"
       (is (= #{:tree/toggle :tree/loaded :tree/open :tree/roots :tree/changed
                :tree/rename-start :tree/rename-cancel :tree/rename-submit
                :workspace/show-tree :workspace/show-recents :workspace/recents-loaded}
-             (into #{} (filter (comp #{"tree" "workspace"} namespace) registered)))))))
+             (of "tree" "workspace"))))
+    (testing "and the connect panel's, which is which of its two lists is up"
+      ;; `:client/bind` is not here: it is registered in `lt.actions.effects`
+      ;; with the rest of the ones that reach the object world.
+      (is (= #{:client/choose :client/connectors} (of "client"))))))
 
 (deftest a-folder-is-read-once-and-remembered
   ;; The reason the tree is a map of paths rather than a tree of nodes: opening

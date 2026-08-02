@@ -43,6 +43,16 @@
 
 (defn- dispatch! [& actions] (actions/dispatch! (vec actions)))
 
+;; Everything below that changes what is on disk rather than what is in the
+;; state. They are actions because a view emits actions and `dispatch!` only
+;; resolves those — and they carry nothing but their effect, because the tree
+;; hears what happened from the watcher rather than from having assumed it.
+(doseq [kind [:tree/menu :tree/new-file :tree/new-folder :tree/duplicate
+              :tree/delete :tree/refresh :tree/remove-root
+              :workspace/menu :workspace/add-folder :workspace/add-file
+              :workspace/open :workspace/clear]]
+  (actions/register-passthrough! kind))
+
 ;;*********************************************************
 ;; Reading the disk
 ;;*********************************************************
@@ -128,18 +138,25 @@
                             (let [path (files/next-available-name
                                         (files/join dir "untitled.txt"))]
                               (files/save path "")
-                              (dispatch! [:tree/toggle dir]
-                                         [:tree/changed dir]
-                                         [:file/open path]
-                                         [:tree/rename-start path]))))
+                              ;; Expanded rather than toggled: a new file in a
+                              ;; folder that was already open must not close it.
+                              (expand! dir)
+                              (dispatch! [:tree/changed dir] [:tree/open path])
+                              ;; After, and in a dispatch of its own. Opening a
+                              ;; file focuses its editor, and the input this
+                              ;; draws focuses itself when it mounts — so the
+                              ;; two have to happen in that order or the row
+                              ;; you are naming loses the cursor to the buffer.
+                              (dispatch! [:tree/rename-start path]))))
 
 (actions/register-effect! :tree/new-folder
                           (fn [dir]
                             (let [path (files/next-available-name
                                         (files/join dir "NewFolder"))]
                               (files/mkdir path)
-                              (dispatch! [:tree/changed dir]
-                                         [:tree/rename-start path]))))
+                              (expand! dir)
+                              (dispatch! [:tree/changed dir])
+                              (dispatch! [:tree/rename-start path]))))
 
 (actions/register-effect! :tree/duplicate
                           (fn [path]

@@ -16,7 +16,7 @@ bundle whatever else happens. The question is only what *new* UI is written in.
 | | |
 |---|---|
 | singultus | everything, minus the list below. Stays: `defui` is plugin API |
-| Replicant | the statusbar, the workspace tree, the welcome screen, the component kit, and the window as a view |
+| Replicant | the statusbar, the workspace tree, the connect panel, the welcome screen, the component kit, and the window as a view |
 
 The swap is one object at a time and the two render side by side in the same
 document, which is what makes it safe to do gradually rather than as one
@@ -97,12 +97,12 @@ changes on every keystroke is worth measuring before converting.
 ## What cannot be swapped one-for-one
 
 **Anything composing another object's content.** `map-bound` over a collection
-of objects, splicing `(object/->content %)` — the tabs, the client list, the
-right bar's panels. Replicant renders hiccup, and a DOM node another object
-owns is not hiccup. Those stay on singultus until the thing they are composing
-is a view rather than an object with a node.
+of objects, splicing `(object/->content %)` — the tabs, and the right bar's
+remaining panels. Replicant renders hiccup, and a DOM node another object owns
+is not hiccup. Those stay on singultus until the thing they are composing is a
+view rather than an object with a node.
 
-The way out is not to swap them, and two surfaces have now gone the other way
+The way out is not to swap them, and three surfaces have now gone the other way
 instead. The statusbar's three items — a cursor, a loader, a console toggle —
 were deleted rather than converted, and `lt.ui.view/statusbar` draws the whole
 bar from the state. The workspace tree was an object per file and an object per
@@ -110,12 +110,20 @@ folder, 677 lines and 28 behaviors, and is now `[:workspace :nodes]` in the
 state: a map from path to what is known about that path, drawn by
 `lt.ui.view/workspace`.
 
-Both deleted more than they moved, and both left the container behind. The
-statusbar strip is still an object because the find bar is in it too and the
-tabs above give back its height; the workspace panel is still an object because
-`lt.objs.sidebar` holds its node. What used to be `object/merge!` into an item
-is an action in each case, so what those surfaces show is asserted by folding
-actions over a map.
+The connect panel is the third and the cheapest, because the view was already
+written: `lt.ui.view/connections` is one of the design's eight and had been
+tested from a map since the kit landed, drawn only in the window-as-a-view tab.
+The panel is that function over `lt.state.objects/clients*`, and `:bound?` —
+whether the buffer you are in evaluates through a client — is read from the
+editor rather than stored, so the claim it makes cannot go stale the way a flag
+can.
+
+All three deleted more than they moved, and all three left the container
+behind. The statusbar strip is still an object because the find bar is in it
+too and the tabs above give back its height; the workspace and connect panels
+are still objects because `lt.objs.sidebar` holds their nodes. What used to be
+`object/merge!` into an item is an action in each case, so what those surfaces
+show is asserted by folding actions over a map.
 
 The tree is the one worth reading twice, because it is where the shape paid.
 Every folder was a `ul` whose closed state was `display:none`, so opening a
@@ -142,8 +150,9 @@ the architecture:
 | view | 9, in `view` | a function of the whole state, composing aliases |
 
 Only views read state, so every question about correctness is a question about
-however many views there are. Nine, and two of them — the statusbar and the
-workspace tree — are on screen in the editor you are using. The rest of the
+however many views there are. Nine, and three of them — the statusbar, the
+workspace tree and the connect panel — are on screen in the editor you are
+using. The rest of the
 chrome is still objects, which is the honest state of the migration.
 
 **Light Table: Component kit** opens
@@ -217,7 +226,16 @@ two registries can eventually be one.
 
 What it buys immediately: an action is a pure function of state and arguments,
 so what a click does is asserted by calling it. `test/lt/actions_test.cljs`
-tests seven actions without a window, a DOM, or a click.
+tests them without a window, a DOM, or a click.
+
+An action that changes nothing about the state still has to be registered —
+`lt.actions/register-passthrough!` is for those, and it exists because
+forgetting it is invisible. `dispatch!` resolves actions, so an effect that no
+action asks for is an `:error/unknown-action` reported into a console nobody is
+reading, and the button appears to work. That is what the tree's whole
+right-click menu did for an afternoon. `test-e2e/renderer.spec.ts` now walks
+what the views emit and checks the table covers it, rather than listing what it
+covers.
 
 ## The boundary: bands live in DOM Replicant does not own
 

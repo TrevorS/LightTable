@@ -10,9 +10,11 @@
 // Playwright's Electron support reaches both halves: `page` for the window and
 // `electronApp.evaluate` for the main process, in the same test.
 //
-// One worker on purpose. Light Table writes its settings and workspace under a
-// single home directory, and instances started at once would fight over it.
-// Isolation here is per file rather than per assertion.
+// Parallel across files, one Electron per worker. Every launch gets its own
+// `LT_USER_DIR` — settings, workspace, logs and caches all live under it — so
+// instances started at once have nothing to fight over. That was not always
+// true, and `workers: 1` outlived the reason for it by long enough to make the
+// suite four minutes of booting Electron.
 
 import { defineConfig } from '@playwright/test';
 
@@ -24,8 +26,10 @@ export default defineConfig({
     timeout: 120_000,
     expect: { timeout: 30_000 },
 
+    // Files run in parallel, tests within a file in order — which is what the
+    // worker-scoped `app` fixture in test-e2e/fixtures.ts assumes.
     fullyParallel: false,
-    workers: 1,
+    workers: process.env.CI ? 2 : 4,
 
     // A test that only passes when retried is a flaky test, and hiding it
     // locally is how it reaches CI. Retry once there, where a cold runner is

@@ -142,6 +142,40 @@ test('the right-click menu is built from the path, not from an object', async ({
     fs.rmSync(dir, { recursive: true, force: true });
 });
 
+test('and what a menu item does is the action it dispatches', async ({ window }) => {
+    // The other half of the menu, and the half that was broken: every item
+    // dispatches an action, and those actions were registered only as effects
+    // — so each one reported `:error/unknown-action` and did nothing. The
+    // items being right is not the same as clicking one working.
+    const dir = scratchDir('ws-new');
+
+    await evalClj(window, '(do (lt.objs.command/exec! :workspace.show :force) :shown)');
+    await evalClj(window, `
+        (do (object/raise lt.objs.workspace/current-ws :add.folder! "${dir}") :added)`);
+    await window.locator('#side .wstree .row', { hasText: path.basename(dir) }).first().click();
+
+    const before = (await consoleErrors(window)).length;
+    await evalClj(window, `(do (lt.actions/dispatch! [[:tree/new-file "${dir}"]]) :new)`);
+
+    // On disk, in the tree, open in the editor, and ready to be named — which
+    // is four separate actions the one effect asks for in order.
+    expect(fs.existsSync(path.join(dir, 'untitled.txt'))).toBe(true);
+    await expect(window.locator('#side .wstree .tree__rename')).toBeFocused();
+    expect(await evalClj(window, `
+        (boolean (seq (lt.objs.editor.pool/by-path "${path.join(dir, 'untitled.txt')}")))`)).toBe('true');
+
+    await evalClj(window, '(do (lt.objs.command/exec! :workspace.rename.cancel!) :cancelled)');
+    await expect.poll(async () => await window.locator('#side .wstree .tree__name').allInnerTexts())
+        .toContain('untitled.txt');
+
+    const after = await consoleErrors(window);
+    expect(after.length, after.slice(before).join('\n')).toBe(before);
+
+    await evalClj(window, `
+        (do (object/raise lt.objs.workspace/current-ws :remove.folder! "${dir}") :removed)`);
+    fs.rmSync(dir, { recursive: true, force: true });
+});
+
 test('a file is renamed in the row it is in', async ({ window }) => {
     // The one thing in the tree that types. It is worth an end-to-end test
     // because three separate mechanisms meet in it: the row becomes an input

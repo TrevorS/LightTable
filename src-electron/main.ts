@@ -112,7 +112,9 @@ function createWindow(): electron.BrowserWindow {
         windowOptions(packageJSON.browserWindowOptions, __dirname,
                       headless(process.env) ? { show: false } : {}));
     windows[window.id] = window;
-    window.focus();
+    // A hidden window that focuses itself takes the keyboard from whatever you
+    // were typing in, which under a test run is your editor.
+    if (!headless(process.env)) window.focus();
     window.webContents.on("will-navigate", function(e) {
         e.preventDefault();
         window.webContents.send("app", "will-navigate");
@@ -432,6 +434,19 @@ if (debugPort.port !== null) {
 }
 
 function start(): void {
+
+    // Before `ready`, and that is the whole point. macOS puts an application in
+    // the Dock when it launches, not when it opens a window — so hiding the
+    // icon from inside `onReady` is half a second too late and shows up as the
+    // Dock growing and shrinking for every launch. `accessory` means it was
+    // never a Dock application to begin with.
+    //
+    // Only under LT_HEADLESS. A real launch belongs in the Dock, and this is
+    // the setting that would stop it appearing there at all.
+    if (headless(process.env)) {
+        app.setActivationPolicy?.('accessory');
+        app.dock?.hide();
+    }
 
     // This method will be called when electron has done everything
     // initialization and ready for creating browser windows.

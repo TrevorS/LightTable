@@ -161,6 +161,37 @@
       (let [bad (view/statusbar (assoc quiet :console {:unread 2 :tone :error}))]
         (is (= :error (:tone (attrs-of (first (find-all bad :lt.ui.chrome/count-pill))))))))))
 
+(deftest the-connect-panel-shows-the-clients-or-the-kinds-of-client
+  ;; One panel, two lists, and the state says which — the same shape the
+  ;; workspace panel has for tree-or-recents, and for the same reason: CSS
+  ;; hiding one of them is a second place the answer lives.
+  (let [drawn (view/connections state)]
+    (is (= 2 (count (find-all drawn :lt.ui.chrome/connection-row))))
+    (is (empty? (find-all drawn :lt.ui.row/list-row)) "the kinds are not underneath")
+    (testing "and what you can do to one is in its menu, never on the row"
+      (let [row (attrs-of (first (find-all drawn :lt.ui.chrome/connection-row)))]
+        (is (= [[:client/menu 51423]] (:on-menu row)))
+        (is (nil? (:trailing row)) "which is a hint when there is one, not a control"))))
+
+  (let [choosing (assoc state :connect
+                        {:choosing? true
+                         :connectors [{:name-of "Ports" :desc "the local TCP and WebSocket ports"}]})
+        drawn (view/connections choosing)]
+    (is (empty? (find-all drawn :lt.ui.chrome/connection-row)) "the clients are not underneath")
+    (is (= [[:client/connect "Ports"]]
+           (:on-select (attrs-of (first (find-all drawn :lt.ui.row/list-row))))))
+    (testing "and none registered is a thing to say"
+      (is (seq (find-all (view/connections (assoc state :connect {:choosing? true :connectors []}))
+                         :lt.ui.chrome/empty-state))))))
+
+(deftest a-connection-is-drawn-as-bound-when-the-buffer-evaluates-through-it
+  ;; The claim the panel makes — this is where an eval goes — is read from the
+  ;; editor rather than stored, so it cannot be stale in the way a flag can.
+  (let [rows (find-all (view/connections state) :lt.ui.chrome/connection-row)]
+    (is (= [true false] (map (comp boolean :bound? attrs-of) rows)))
+    (testing "and an agent evaluating through a REPL says which one, on the row"
+      (is (= "agent · through 51423" (:what (attrs-of (second rows))))))))
+
 (def ^:private with-tree
   (assoc state :workspace
          {:roots ["/p" "/notes.md"]

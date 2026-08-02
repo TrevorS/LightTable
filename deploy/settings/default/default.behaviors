@@ -169,6 +169,7 @@
 
  [:editor :lt.ui.window/sync-from-objects]
  [:editor :lt.ui.window/track-cursor]
+ [:client :lt.ui.window/sync-from-clients]
  [:editor :lt.objs.document/close-document-on-editor-close]
  [:editor :lt.objs.editor/active-on-focus]
  ;; The language-server client object, which is one per window and receives
@@ -228,7 +229,6 @@
  [:editor :lt.objs.editor/context-on-inactive]
  [:editor :lt.objs.editor/refresh-on-show]
  [:editor :lt.objs.editor/destroy-on-close]
- [:editor :lt.objs.sidebar.clients/track-active-client]
  [:editor :lt.plugins.auto-complete/intra-buffer-string-hints]
  [:editor :lt.plugins.auto-complete/textual-hints]
  [:editor :lt.plugins.auto-paren/close-pair]
@@ -559,11 +559,7 @@
  [:sidebar :lt.objs.sidebar/reanim-on-drop]
  [:sidebar :lt.objs.sidebar/pop-transient]
 
- [:sidebar.clients :lt.objs.sidebar.clients/unset-client]
- [:sidebar.clients :lt.objs.sidebar.clients/selecting!]
- [:sidebar.clients :lt.objs.sidebar.clients/focus!]
- [:sidebar.clients :lt.objs.sidebar.clients/hide-on-select]
- [:sidebar.clients :lt.objs.sidebar.clients/done-selecting]
+ [:sidebar.clients :lt.objs.sidebar.clients/client-menu-items]
 
  [:sidebar.command :lt.objs.sidebar.command/refresh!]
  [:sidebar.command :lt.objs.sidebar.command/focus!]

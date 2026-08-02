@@ -156,10 +156,11 @@
    body])
 
 ;; What an eval will actually reach. The agent is a client like the others.
-(defalias connection-row [{:keys [name-of what status bound? kind trailing on-select]}]
+(defalias connection-row [{:keys [name-of what status bound? kind trailing on-select on-menu]}]
   [:div.connection {:class [(when bound? "connection--bound")
                             (when (= kind :agent) "connection--agent")]
-                    :on {:click on-select}}
+                    :on {:click on-select
+                         :contextmenu on-menu}}
    [::status-dot {:status status}]
    [:span.connection__name name-of]
    [:span.connection__what what]

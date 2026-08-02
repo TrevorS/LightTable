@@ -52,6 +52,20 @@
   []
   @registry)
 
+(defn register-passthrough!
+  "Register `kind` as an action whose whole content is the effect of that name.
+
+  Some of what a view emits changes nothing about the state: deleting a file
+  asks for a confirmation and then the disk, and the tree hears about it from
+  the watcher like any other change. Those still have to be actions, because
+  `dispatch!` resolves actions and an effect that no action asks for is an
+  `:error/unknown-action` nobody sees until they click the thing.
+
+  Which is exactly what happened, twice, before this existed."
+  [kind]
+  (register! kind (fn [state & args]
+                    {:state state :effects [(into [kind] args)]})))
+
 (defn- ->outcome [result before]
   (cond
     (nil? result) {:state before :effects []}
@@ -306,6 +320,22 @@
 (register! :workspace/recents-loaded
            (fn [state recents]
              (assoc-in state [:workspace :recents] (vec recents))))
+
+;;*********************************************************
+;; The connect panel
+;;*********************************************************
+
+;; Which of the two things the panel is showing. The same shape as the
+;; workspace panel's tree-or-recents, and for the same reason: one panel, two
+;; lists, and the state says which rather than CSS hiding one of them.
+(register! :client/choose
+           (fn [state choosing?]
+             (assoc-in state [:connect :choosing?] (boolean choosing?))))
+
+;; The kinds of connection there are to make, from the plugins that know how.
+(register! :client/connectors
+           (fn [state connectors]
+             (assoc-in state [:connect :connectors] (vec connectors))))
 
 ;;*********************************************************
 ;; The statusbar's own facts
