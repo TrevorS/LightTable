@@ -373,3 +373,32 @@ test('and it can say which behaviors a trigger actually ran', async ({ window })
     await evalClj(window, '(do (cmd/exec! :toggle-console) (cmd/exec! :toggle-console) :more)');
     expect(await evalData<number>(window, '(count @lt.objs.trace/records)')).toBe(before);
 });
+
+test('and a command registered after startup reaches the projection', async ({ window }) => {
+    // `lt.state.objects/commands` projects `lt.objs.command/manager` so the
+    // command bar can be a view over it, and nothing listened for a command
+    // being registered — so a plugin's commands, which arrive after the window
+    // does, were missing until something else happened to sync.
+    //
+    // The command bar you open was never wrong: `lt.objs.sidebar.command`
+    // passes `:items` as a function and calls it when it needs the list, so it
+    // reads the table live. This is the surface that replaces it.
+    //
+    // Found by `drift` once it stopped excluding the command bar wholesale.
+    // Only half of that key is the state's own, and dropping all of it made
+    // the check blind to the half it could judge — which is worse than not
+    // checking, because a tool that reports nothing reads as agreement.
+    await evalClj(window, '(do (lt.state.objects/sync!) :settled)');
+    await evalClj(window, `
+        (do (cmd/command {:command :lt.probe/late :desc "Probe: registered late"
+                          :exec (fn [] nil)})
+            :registered)`);
+
+    const inProjection = async () => await evalData<boolean>(window, `
+        (boolean (some #(= "Probe: registered late" (:label %))
+                       (:commands (:command-bar @lt.state/app))))`);
+
+    // Debounced, because 217 commands register at load and each raises this.
+    await expect.poll(inProjection, { timeout: 5000 }).toBe(true);
+    expect((await control(window, 'drift')).drifted).toEqual([]);
+});

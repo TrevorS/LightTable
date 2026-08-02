@@ -201,6 +201,7 @@
  ; focused, which for a file opened before its server finished indexing is
  ; "connecting", pulsing, forever.
  [:lsp.client :lt.ui.window/sync-from-language-servers]
+ [:command.manager :lt.ui.window/sync-from-commands]
  [:editor :lt.objs.editor.lsp/use-language-server]
  [:editor :lt.objs.editor.lsp/sync-on-change]
  [:editor :lt.objs.editor.lsp/close-document]

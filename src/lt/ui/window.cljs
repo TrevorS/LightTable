@@ -112,6 +112,29 @@
           :reaction (fn [_ & _]
                       (from-objects/sync!)))
 
+(behavior ::sync-from-commands
+          :triggers #{:added}
+          :debounce 100
+          :desc "State: Keep the state atom current with the command table"
+          :doc "`lt.state.objects/commands` projects `lt.objs.command/manager`
+                so the command bar can be a view over it, and nothing was
+                listening for a command being registered. A plugin that
+                registers one after the last sync — which is every plugin, they
+                load after the window does — was missing from that list until
+                something else happened to project.
+
+                Not the command bar you open: `lt.objs.sidebar.command` passes
+                `:items` as a *function* and calls it when it needs the list,
+                so it reads the table live and was never wrong. This is the
+                window-as-a-view one, which is the surface that replaces it.
+
+                Debounced because 217 commands register at load and each raises
+                this. Found by `lt.objs.control/drift` once it stopped
+                excluding the command bar wholesale — only half of that key is
+                the state's own, and dropping all of it made the check blind."
+          :reaction (fn [_ & _]
+                      (from-objects/sync!)))
+
 (behavior ::track-cursor
           :triggers #{:move :active}
           :desc "State: Keep the cursor where the statusbar can see it"

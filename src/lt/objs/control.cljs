@@ -460,8 +460,12 @@
   []
   (let [fresh (from-objects/snapshot)
         live @state/app
-        ;; `:command-bar` because only its list of commands is projected — the
-        ;; open flag, the query and the selection are the state's own.
+        ;; The command bar is not excluded. Only *part* of it is the state's
+        ;; own — the open flag, the query, the selection — and the list of
+        ;; commands is projected like everything else. Dropping the key whole
+        ;; was the easy thing and it made this check blind to the one half it
+        ;; could judge, which is worse than not checking: a tool that reports
+        ;; nothing reads as agreement.
         ;;
         ;; `:cursor` because it has a different clock and that is deliberate:
         ;; the statusbar renders from `lt.state/cursor`, its own atom, and a
@@ -469,7 +473,7 @@
         ;; every keypress. `(:cursor @state/app)` is therefore always behind,
         ;; by design, and reporting it would make this tool cry wolf — which
         ;; is how a check stops being read.
-        interesting (disj (set (keys fresh)) :command-bar :cursor)
+        interesting (disj (set (keys fresh)) :cursor)
         ;; The observer is part of what it observes. This is reached through
         ;; the control surface, which is itself an agent client, and asking
         ;; puts it in `:executing` with a `:via` — so a fresh projection taken
@@ -480,7 +484,14 @@
         settle (fn [clients]
                  (into {} (for [[id c] clients]
                             [id (if (= :agent (:kind c)) (dissoc c :status :via) c)])))
-        normalise (fn [k v] (if (= k :clients) (settle v) v))]
+        normalise (fn [k v]
+                    (case k
+                      :clients (settle v)
+                      ;; The projected half only. `:open?`, `:query` and
+                      ;; `:selected` belong to the state and are supposed to
+                      ;; differ.
+                      :command-bar (select-keys v [:commands])
+                      v))]
     {:drifted (vec (for [k (sort interesting)
                          :let [a (normalise k (get fresh k))
                                b (normalise k (get live k))]

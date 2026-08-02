@@ -239,6 +239,24 @@ would create the second source of truth it exists to avoid.
 
 ## Closed
 
+**A command registered after startup never reached the projection.**
+`lt.state.objects/commands` projects `lt.objs.command/manager` so the command
+bar can be a view over it, and nothing listened for `:added` — so every
+plugin's commands, which arrive after the window does, were missing from that
+list until something else happened to sync. Debounced, because 217 commands
+register at load and each raises it.
+
+Narrow in effect and worth knowing why: the command bar you actually open was
+never wrong. `lt.objs.sidebar.command` passes `:items` as a *function* and
+calls it when it needs the list, so it reads the table live. This is the
+window-as-a-view surface that replaces it.
+
+Found by scouting the two bugs that building `drift` turned up, and it needed a
+fix to `drift` first: the check excluded `:command-bar` wholesale because part
+of that key is the state's own, which made it blind to the half it could judge.
+A tool that reports nothing reads as agreement. It compares `:commands` and
+ignores `:open?`, `:query` and `:selected` now.
+
 **A closed editor stayed in the projection.** `lt.object/destroy!` raises
 `:destroy` and *then* removes the instance from the registry, so
 `lt.ui.window/sync-from-objects` — which covers `:close` — took its snapshot
