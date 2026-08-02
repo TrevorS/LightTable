@@ -252,6 +252,33 @@ would create the second source of truth it exists to avoid.
 
 ## Closed
 
+**A language server was rooted at the nearest manifest, not at the project.**
+`project-root` walked up to the first directory carrying a marker, which is
+wrong for every monorepo. A Cargo workspace member says
+`edition.workspace = true` and cannot be read without the workspace above it —
+so rust-analyzer rooted at `mope/core` was rooted at a manifest it could not
+parse. It answered hover, which needs only the open file, and published no
+diagnostics at all, which needs the crate graph. Reported as "docs work,
+errors don't", with a screenshot of an unflagged typo.
+
+The outermost marker *inside the repository* now, bounded by the nearest
+`.git`. The bound is what makes "outermost" safe: without it one stray
+`Cargo.toml` in a home directory would capture every project beneath it, and
+with no repository around the file there is nothing to say how far out the
+project goes, so it falls back to nearest. Verified against the real project —
+the root moved from `mope/core` to `mope` — and against this repository, whose
+root is unchanged.
+
+**Routine server stderr was logged as if it mattered.** stderr is where a
+server explains itself when it will not start, and that is the only time it is
+worth reading — but several servers use it as an ordinary log. rust-analyzer
+emits `WARN notify error: No path was found` for each optional config file it
+looks for and does not find, three of them, on every start. A console that says
+that every boot is a console nobody reads on the day something is wrong.
+Filtered by what the line is rather than by which server sent it: INFO, DEBUG
+and TRACE levels, and that one WARN about a path that does not exist. ERROR is
+never dropped.
+
 **A right-click built two menus, and the second wiped the first's handlers.**
 An editor answers `:menu!` twice — `lt.objs.editor/menu!` from `:editor` and
 `lt.objs.menu/menu!` from `:tabset.tab` — so one right-click builds two menus.

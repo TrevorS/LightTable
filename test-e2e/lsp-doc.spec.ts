@@ -631,3 +631,45 @@ test('and a diagnostic is drawn once, not twice', async ({ window }) => {
         (do (doseq [ed (pool/by-path "${file}")] (object/raise ed :close)) :closed)`);
     fs.rmSync(path.dirname(path.dirname(file)), { recursive: true, force: true });
 });
+
+test('and a server is rooted at the project, not at the nearest manifest', async ({ window }) => {
+    // The outermost marker inside the repository, not the nearest one, and the
+    // difference is a working language server or a silent one in every
+    // monorepo. A Cargo workspace member says `edition.workspace = true` and
+    // cannot be read without the workspace above it — so rust-analyzer rooted
+    // at the nearest `Cargo.toml` is rooted at a manifest it cannot parse. It
+    // answers hover, which needs only the file, and publishes no diagnostics,
+    // which needs the crate graph. Reported as "docs work, errors do not".
+    const repo = scratchDir('lsproot');
+    fs.mkdirSync(path.join(repo, '.git'), { recursive: true });
+    fs.mkdirSync(path.join(repo, 'member', 'src'), { recursive: true });
+    fs.writeFileSync(path.join(repo, 'tsconfig.json'), '{}\n');
+    fs.writeFileSync(path.join(repo, 'member', 'tsconfig.json'), '{}\n');
+    const file = path.join(repo, 'member', 'src', 'probe.ts');
+    fs.writeFileSync(file, 'export const first = 1;\n');
+
+    expect(await evalData<string>(window, `
+        (lt.objs.editor.lsp/project-root "${file}" ["tsconfig.json"])`),
+           'the repository root, not member/').toBe(repo);
+
+    // The bound is what makes "outermost" safe: without a repository around
+    // the file there is nothing to say how far out the project goes, so the
+    // nearest marker is all there is to go on.
+    const loose = scratchDir('lsploose');
+    fs.mkdirSync(path.join(loose, 'inner'), { recursive: true });
+    fs.writeFileSync(path.join(loose, 'tsconfig.json'), '{}\n');
+    fs.writeFileSync(path.join(loose, 'inner', 'tsconfig.json'), '{}\n');
+    fs.writeFileSync(path.join(loose, 'inner', 'x.ts'), 'export const a = 1;\n');
+    expect(await evalData<string>(window, `
+        (lt.objs.editor.lsp/project-root "${path.join(loose, 'inner', 'x.ts')}" ["tsconfig.json"])`))
+        .toBe(path.join(loose, 'inner'));
+
+    // And a file with no marker anywhere is still nil rather than the
+    // filesystem, which is the answer that stops a server starting at all.
+    expect(await evalData<string | null>(window, `
+        (lt.objs.editor.lsp/project-root "${path.join(loose, 'inner', 'x.ts')}" ["nothing.here"])`))
+        .toBe(null);
+
+    fs.rmSync(repo, { recursive: true, force: true });
+    fs.rmSync(loose, { recursive: true, force: true });
+});

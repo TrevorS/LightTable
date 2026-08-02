@@ -124,18 +124,45 @@
   (let [s (str path)]
     (subs s (inc (.lastIndexOf s "/")))))
 
-(defn project-root
-  "The nearest directory at or above `path` containing one of `markers`.
+(defn- marker-here? [dir markers]
+  (some #(.existsSync bridge/files (str dir "/" %)) markers))
 
-  Nil when there is none, which is a real answer rather than a failure: a
-  loose file with no project around it has no sensible root, and starting a
-  server rooted at the filesystem is worse than not starting one."
+(defn project-root
+  "The directory a language server should be rooted at for `path`, or nil.
+
+  The *outermost* directory carrying one of `markers`, bounded by the
+  repository — not the nearest one. That distinction is the difference between
+  a working language server and a silent one in every monorepo.
+
+  A Cargo workspace is the clearest case. `mope/core/Cargo.toml` says
+  `edition.workspace = true`, which cannot be read without
+  `mope/Cargo.toml` — so rust-analyzer rooted at the nearest marker is rooted
+  at a manifest it cannot parse, and answers hover (which needs only the file)
+  while publishing no diagnostics at all (which needs the crate graph). The
+  same shape catches npm workspaces under one `tsconfig.json` and a `deps.edn`
+  above several source roots.
+
+  Bounded by the nearest `.git` directory, and that bound is what makes
+  \"outermost\" safe: without it, one stray `Cargo.toml` in a home directory
+  would capture every project under it. With no repository around the file the
+  rule falls back to the nearest marker, because there is nothing to say how
+  far out the project goes.
+
+  Nil when there is no marker at all, which is a real answer rather than a
+  failure: a loose file with no project around it has no sensible root, and a
+  server rooted at the filesystem is worse than no server."
   [path markers]
-  (loop [dir (parent path)]
-    (when dir
-      (if (some #(.existsSync bridge/files (str dir "/" %)) markers)
-        dir
-        (recur (parent dir))))))
+  (let [ancestors (take-while some? (iterate parent (parent path)))
+        repo-root (first (filter #(.existsSync bridge/files (str % "/.git")) ancestors))
+        ;; Nearest first, so `take-while` stops at the repository and the last
+        ;; match inside it is the outermost one.
+        within (if repo-root
+                 (concat (take-while #(not= % repo-root) ancestors) [repo-root])
+                 ancestors)
+        matching (filter #(marker-here? % markers) within)]
+    (if repo-root
+      (last matching)
+      (first matching))))
 
 ;;*********************************************************
 ;; Finding the server itself
@@ -1202,13 +1229,29 @@
                         ;; Everything else is noise until something renders it.
                         nil)))
 
+(def ^:private routine-stderr
+  "Lines a healthy server prints to stderr, which are not about you.
+
+  stderr is where a server explains itself when it will not start, and that is
+  the only time this is worth reading — but several servers also use it as
+  their ordinary log. rust-analyzer emits a `WARN notify error: No path was
+  found` for every optional config file it looks for and does not find, three
+  of them, every time it starts. A console that says that on every boot is a
+  console nobody reads the day something is actually wrong.
+
+  Matched narrowly and by what the line *is*, not by which server sent it: a
+  level tag of INFO, DEBUG or TRACE, or a WARN about a path that does not
+  exist. An ERROR is never dropped."
+  #"(?i)\s(INFO|DEBUG|TRACE)\s|notify error: No path was found")
+
 (behavior ::on-stderr
           :triggers #{:lsp.stderr}
           :desc "Language server: Log what the server printed"
           :reaction (fn [_ text _conn]
                       ;; Where a plugin author will look when a server will not
                       ;; start, which is the only time this matters.
-                      (when-not (string/blank? text)
+                      (when-not (or (string/blank? text)
+                                    (re-find routine-stderr text))
                         (js/lt.objs.console.log (str "language server: " (string/trim text))))))
 
 (behavior ::on-exit
