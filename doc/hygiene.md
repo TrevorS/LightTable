@@ -550,11 +550,21 @@ anywhere, left behind when the connect panel became a view. `python/canvas` and
 `canvas/canvas-elem` went with them.
 
 **`allowScripts` claimed a protection that was not happening** — `abe6ea3b`'s
-parent. Both `package.json` files carried an `allowScripts` map; npm has no such
+parent. Both `package.json` files carried an `allowScripts` map; npm had no such
 key, so sixteen tree-sitter grammars ran `node-gyp-build` on every install.
 `deploy/core/.npmrc` with `ignore-scripts=true` now, which is safe because those
 sixteen are the only packages there with an install script and Light Table reads
 grammars as `.wasm` rather than through the native binding.
+
+*And npm has the key now.* npm 12 blocks install scripts by default and reads
+`allowScripts` for the exceptions — the mechanism this repository invented for
+itself, arriving upstream. It warns once per unreviewed package, which is a
+prompt to decide rather than something to silence: `fsevents`, reached through
+`@playwright/test`, is denied in the root `package.json`. Denying costs nothing
+and the check was worth doing — fsevents has no `install`, `preinstall` or
+`postinstall` script at all (its `build` is for its own publish), ships
+`fsevents.node` prebuilt, loads, and is dev tooling that never reaches
+`deploy/core`. `npm install-scripts ls` is how to ask what is still unreviewed.
 
 **`make clean` cleaned five of nine modules** — same commit. `clojure.js`,
 `javascript.js`, `css.js`, `html.js` and `python.js` survived a clean.
