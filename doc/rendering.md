@@ -5,7 +5,7 @@ in, DOM out, plus a fine-grained binding layer (`bound`, `bound-coll`,
 `map-bound`, `subatom`) that writes into a node when an atom changes. 560 lines,
 in `src/singultus/`, unmaintained upstream. 116 `defui`, 67 `bound` and 27
 `subatom` across 37 namespaces in core, and a further 11 and 3 in the bundled
-plugins. 43, 26 and 27 across 14 today — so `defui` has more than halved,
+plugins. 35, 26 and 27 across 7 today — so `defui` has more than halved,
 `bound` has, and `subatom` has not moved at all. That is not a stall: what is
 left of it is layout, `#multi`'s insets and the sidebar widths and the
 bottombar height, which is the part that stays object-owned.
@@ -18,7 +18,7 @@ plugin that draws.
 **That is no longer a constraint.** This fork is one person's editor. The only
 plugins that matter are the ones in this repository, and those are ported as
 first-class citizens rather than supported as guests. So singultus is not a
-permanent tenant; it is the thing 14 remaining files still use, and the last
+permanent tenant; it is the thing 7 remaining files still use, and the last
 one to stop using it is the commit that deletes it.
 
 What that changes in practice: a file being touched for another reason should
@@ -31,7 +31,7 @@ worth converting because they are the last twelve.
 
 | | |
 |---|---|
-| singultus | everything, minus the list below. 43 `defui` across 14 files, from 116 across 37 |
+| singultus | everything, minus the list below. 35 `defui` across 7 files in `src`, from 116 across 37 — and none at all in the bundled plugins |
 | Replicant | the tab strip, the statusbar, the workspace tree, the connect panel, the modal, the welcome screen, the component kit, and the window as a view |
 
 The swap is one object at a time and the two render side by side in the same
@@ -150,29 +150,35 @@ if a thing should follow a redefinition, it wants a root of its own.
 `lt.util.dom/on` per event — so converting one is always the same question,
 *what re-renders this?*, and what is left sorts into four answers.
 
-| kind | n | answer |
-|---|---|---|
-| buttons | 9 | nothing does. One `[:div.button label]` and a click; not views, node factories |
-| decorations | 5 | nothing does, and there is no object to watch — CodeMirror or a `<ul>` owns the node |
-| panels | 33 | an object or the state does — `node` or `state-node` |
+Three of the four kinds are finished.
 
-The grips were the fourth kind and are done: the bottombar's, a sidebar's and a
-tabset's were the same HTML5 drag handle three times, and each is now an
-[[lt.ui/element]] spliced into singultus hiccup that still owns the geometry
-around it. That splice is the pattern for layout generally — the panel's width
-or height is bound to an atom and stays bound, and only what is inside it moves.
+**Grips** — the bottombar's, a sidebar's and a tabset's were the same HTML5
+drag handle three times, and each is now an [[lt.ui/element]] spliced into the
+singultus hiccup that still owns the geometry around it. That splice is the
+pattern for layout generally: the panel's width or height is bound to an atom
+and stays bound, and only what is inside it moves.
 
-The buttons are `deploy/button`, `document/button`, `version/check-button`,
-`find/replace-all-button`, `search/replace-all-button`, four in `plugins`,
-`doc/connect-button` and `command/header-button`. The decorations left are
-`eval/->underline-result`, the two `->helper` in `langs`, Python's `image` and
-`canvas`, and the Clojure plugin's `collapsible-exception-UI` — `->underline-result`
-is blocked on the rest of them, because they are what its `:result` *is*: a DOM
-node a caller passes in, which Replicant cannot render.
+**Decorations** — the widgets CodeMirror owns. `eval`'s three, the two
+`->helper` in `langs`, `console/->item`, the Clojure plugin's collapsible
+exception, Python's plot. Two shapes between them: one that opens when you
+click it, where the class on the *root* is what says so and goes through
+`node`'s `attrs`; and one that is drawn once, which is `element`.
 
-The panels are the work: `plugins` 12, `doc` 7, `search` 6, `browser` 5,
-`devtools` 3, and singletons elsewhere. All of it is tab *contents* rather than
-chrome — whole panels that want their own design pass, not a translation.
+`eval/->underline-result` was the knot. Its `:result` is whatever a caller
+passes, and both callers passed a DOM node built by `defui` — so the widget
+could not become hiccup until Python's plot and `doc-ui` did, and copying it
+read that node's element children. It reads what was drawn now, which also
+fixes a case that used to throw outright: a `:result` that is a plain string
+has no `.children`.
+
+**Buttons** — `eval/button`, `document/button` and `deploy/button` turned out
+to be three copies of the same dead function with no caller anywhere;
+`canvas/canvas-elem` was a macro wrapping `[:div#canvas]`. What is left of the
+kind lives inside panels and moves with them.
+
+The panels are what remain, all of it tab *contents* rather than chrome:
+`plugins` 12, `doc` 7, `search` 6, `browser` 5, `devtools` 3, `tabs` 2,
+`command` 2. Whole panels that want their own design pass, not a translation.
 
 **Deleting `defui` and deleting singultus are different finish lines.**
 `lt.ui/node`, `lt.ui/state-node`, `lt.ui.window`, `lt.ui.pane`,

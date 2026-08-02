@@ -143,3 +143,45 @@ test(`a long result is truncated until you click it, on ${engine}`, async ({ win
 
     await close(window, file);
 });
+
+test(`copying an underline result copies what it says, on ${engine}`, async ({ window }) => {
+    // `:result` used to be a DOM node a caller built, and copying it read that
+    // node's element children. It is hiccup now, so the copy reads what was
+    // drawn — and that fixes a case the old one never handled: for a result
+    // whose `:result` is a plain string there were no element children to read,
+    // and mapping over a string's `.children` threw.
+    //
+    // A file each, because the two paths do not clean up after one another:
+    // `lt.plugins.doc/inline-doc` puts its widget in the map without clearing
+    // whatever was already at that line, so a doc over an existing underline
+    // result leaves the old node on screen. That is a real if narrow leak and
+    // not what this is about.
+    for (const [what, name, raise, expected] of [
+        ['a string', 'copystr',
+         `(object/raise ed :editor.result.underline "a docstring" {:line 1 :ch 0} {})`,
+         'a docstring'],
+        ['hiccup', 'copydoc',
+         `(do (object/add-tags ed [:docable])
+              (object/raise ed :editor.doc.show!
+                            {:name "beta" :ns "probe" :doc "what beta does"
+                             :loc {:line 1 :ch 0}}))`,
+         'what beta does']] as const) {
+        const file = await open(window, engine, `${name}${engine.slice(1)}.txt`,
+            'alpha\nbeta\ngamma\n');
+
+        await evalClj(window, `
+            (do (lt.objs.platform/copy "")
+                (let [ed (first (pool/by-path "${file}"))] ${raise})
+                :shown)`);
+        await expect.poll(async () => (await inside(window, file, '.underline-result'))?.count,
+                          { message: what }).toBe(1);
+
+        await evalClj(window, `
+            (do (doseq [w (vals (:widgets @(first (pool/by-path "${file}"))))]
+                  (object/raise w :copy))
+                :copied)`);
+        expect(await evalClj(window, '(lt.objs.platform/paste)'), what).toContain(expected);
+
+        await close(window, file);
+    }
+});

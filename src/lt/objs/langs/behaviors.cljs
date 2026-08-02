@@ -7,8 +7,9 @@
             [lt.objs.editor :as editor]
             [clojure.string :as string]
             [lt.util.js]
-            [lt.objs.thread :as thread])
-  (:require-macros [lt.macros :refer [behavior defui]]))
+            [lt.objs.thread :as thread]
+            [lt.ui :as ui])
+  (:require-macros [lt.macros :refer [behavior]]))
 
 (def flat-parser (thread/job :parse-behaviors))
 
@@ -125,8 +126,15 @@
                                                  :line (editor/line-handle ed (:line opts))}))
 
 
-(defui ->helper [beh]
-  [:div
+(defn- ->helper
+  "The parameter hints drawn under a behavior you are editing.
+
+  A node, because `set-param` below moves an `:active` class between the spans
+  as you tab through the arguments — reaching into the DOM by index. That is
+  imperative and stays that way; what changed is only how the node is built."
+  [beh]
+  (ui/element
+   [:div
    [:h2 (:desc beh (:name beh))]
    (when (:params beh)
      [:div
@@ -134,7 +142,7 @@
         [:span.param (:label p)
          (when (:example p)
            (list " =>" [:pre.example (:example p)]))])
-      ])])
+      ])]))
 
 (defn set-param [this idx]
     (let [lis (dom/$$ "span.param" (object/->content this))]

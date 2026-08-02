@@ -7,13 +7,13 @@
             [lt.objs.editor :as editor]
             [lt.objs.files :as files]
             [lt.objs.tabs :as tabs]
-            [lt.objs.deploy :as deploy])
-  (:require-macros [lt.macros :refer [behavior defui]]))
+            [lt.objs.deploy :as deploy]
+            [lt.ui :as ui])
+  (:require-macros [lt.macros :refer [behavior]]))
 
-(defui check-button []
-       [:div.button "Check for updates"]
-       :click (fn []
-                (deploy/check-version true)))
+(defn- check-button []
+  (ui/element [:div.button {:on {:click (fn [] (deploy/check-version true))}}
+               "Check for updates"]))
 
 (behavior ::on-show-refresh-eds
           :triggers #{:show}

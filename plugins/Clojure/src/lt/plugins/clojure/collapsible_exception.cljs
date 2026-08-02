@@ -4,8 +4,8 @@
             [lt.object :as object]
             [lt.objs.editor :as ed]
             [lt.objs.notifos :as notifos]
-            [singultus.binding :refer [bound]])
-  (:require-macros [lt.macros :refer [defui behavior]]))
+            [lt.ui :as ui])
+  (:require-macros [lt.macros :refer [behavior]]))
 
 (def ^:private ^:const NOT_FOUND -1)
 
@@ -17,25 +17,32 @@
       (subs text 0 100); take 100 characters
       (first (string/split-lines text)))))
 
-(defn ->collapse-class [this summary]
+(defn ->collapse-class [this]
   (str "inline-exception result-mark"
         (when (:open this) " open")))
 
-(defui collapsible-exception-UI [this info]
-  (let [stacktrace (:result info)
-        summary    (str (:summary info) " ...")]
-    [:span {:class (bound this #(->collapse-class % summary))
-            :style "background: #73404c; color: #ffa6a6;
-                    max-width:initial; max-height:initial"}
-     [:span.truncated summary]
-     [:span.full stacktrace]])
-  :mousewheel (fn [e] (dom/stop-propagation e))
-  :click      (fn [e] (dom/prevent e)
-                      (object/raise this :click))
-  :contextmenu (fn [e] (dom/prevent e)
-                       (object/raise this :menu! e))
-  :dblclick    (fn [e] (dom/prevent e)
-                       (object/raise this :double-click)))
+(defn- collapsible-exception-ui [this]
+  (let [{:keys [result summary]} @this]
+    ;; A seq rather than a vector: Replicant renders one node or a list of
+    ;; them, and a vector of two would read as a tag and its children.
+    (list [:span.truncated (str summary " ...")]
+          [:span.full result])))
+
+(defn- collapsible-exception-UI
+  "The same shape as `lt.objs.eval/->inline-res`, and for the same reason: both
+  halves are always drawn and the class on the root decides which you see. So
+  the class goes through [[lt.ui/node]]'s `attrs` — Replicant renders inside
+  the element the object hands out, never the element itself."
+  [this]
+  (doto (ui/node this
+                 [:span {:style "background: #73404c; color: #ffa6a6;
+                                 max-width:initial; max-height:initial"}]
+                 collapsible-exception-ui
+                 (fn [obj] {:class (->collapse-class @obj)}))
+    (dom/on :mousewheel (fn [e] (dom/stop-propagation e)))
+    (dom/on :click (fn [e] (dom/prevent e) (object/raise this :click)))
+    (dom/on :contextmenu (fn [e] (dom/prevent e) (object/raise this :menu! e)))
+    (dom/on :dblclick (fn [e] (dom/prevent e) (object/raise this :double-click)))))
 
 (object/object* ::collapsible-exception
                 :triggers #{:click :double-click :clear!}
@@ -43,10 +50,13 @@
                 :init
   (fn [this info]
     (when-let [ed (ed/->cm-ed (:ed info))]
-      (let [content (collapsible-exception-UI this info)]
-        (object/merge! this (assoc info
-            :widget (ed/line-widget (ed/->cm-ed (:ed info)) (:line (:loc info))
-                                    content, {:coverGutter false})))
+      ;; Before the node, because the view is a function of the object and the
+      ;; summary and stack have to be on it before the first draw.
+      (object/merge! this info)
+      (let [content (collapsible-exception-UI this)]
+        (object/merge! this
+                       {:widget (ed/line-widget (ed/->cm-ed (:ed info)) (:line (:loc info))
+                                                content, {:coverGutter false})})
         content))))
 
 (behavior ::expandable-exceptions

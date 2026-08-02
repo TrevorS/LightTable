@@ -17,7 +17,7 @@
             [lt.objs.files :as files]
             [lt.objs.notifos :as notifos]
             [lt.objs.popup :as popup])
-  (:require-macros [lt.macros :refer [behavior defui]])
+  (:require-macros [lt.macros :refer [behavior]])
   (:refer-clojure :exclude [replace]))
 
 
@@ -107,12 +107,6 @@
   (if (and prev updated)
     (= (.-mtimeMs ^js prev) (.-mtimeMs ^js updated))
     true))
-
-(defui button [label & [cb]]
-       [:div.button.right label]
-       :click (fn []
-                (when cb
-                  (cb))))
 
 (defn overwrite-warn [cb]
   (popup/popup! {:header "This file was modified."

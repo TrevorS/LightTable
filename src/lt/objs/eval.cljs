@@ -18,7 +18,7 @@
             [cljs.reader :as reader]
             [lt.objs.platform :as platform]
             [lt.ui :as ui])
-  (:require-macros [lt.macros :refer [behavior defui]]))
+  (:require-macros [lt.macros :refer [behavior]]))
 
 (defn unescape-unicode [s]
   (string/replace s
@@ -358,19 +358,25 @@
     (-> (re-seq #"^\s+" text)
         (first))))
 
-(defui ->underline-result [this info]
-  [:div {:class (str "underline-result " (when (-> info :class) (:class info)))}
-   [:span.spacer (->spacing (ed/line (:ed info) (-> info :loc :line)))]
-   [:pre (:result info)]]
-  :click (fn [e]
-           (dom/prevent e)
-           (object/raise this :click))
-  :contextmenu (fn [e]
-                 (dom/prevent e)
-                 (object/raise this :menu! e))
-  :dblclick (fn [e]
-              (dom/prevent e)
-              (object/raise this :double-click)))
+(defn- ->underline-result
+  "A result drawn on its own line under the code, as a node.
+
+  `lt.ui/element` rather than [[lt.ui/node]] because nothing redraws it: unlike
+  an inline result there is no `open` to toggle, and the class comes from the
+  `:class` it was created with.
+
+  `:result` is hiccup, and that is what took the longest to be able to say. Its
+  two producers — a plot from IPython, a language's answer to \"toggle docs\" —
+  each used to hand over a DOM node built by `defui`, which Replicant cannot
+  render, so this widget could not become one until both of them moved."
+  [this info]
+  (ui/element
+   [:div {:class (str "underline-result " (when (-> info :class) (:class info)))
+          :on {:click (fn [e] (dom/prevent e) (object/raise this :click))
+               :contextmenu (fn [e] (dom/prevent e) (object/raise this :menu! e))
+               :dblclick (fn [e] (dom/prevent e) (object/raise this :double-click))}}
+    [:span.spacer (->spacing (ed/line (:ed info) (-> info :loc :line)))]
+    [:pre (:result info)]]))
 
 (object/object* ::underline-result
                 :tags #{:inline :inline.underline-result}
@@ -416,8 +422,14 @@
 (behavior ::copy-underline-result
           :triggers #{:copy}
           :reaction (fn [this]
-                      (platform/copy (string/join "\n"
-                                                  (map #(.-innerText %) (.-children (:result @this)))))))
+                      ;; Read off what was drawn rather than off `:result`.
+                      ;; That used to be a DOM node and the copy was its element
+                      ;; children joined with newlines — which threw outright
+                      ;; for the results whose `:result` is a plain string,
+                      ;; because a string has no `.children`. `innerText` of the
+                      ;; `pre` is what "copy the result" means for both.
+                      (platform/copy
+                       (or (some-> ^js (dom/$ :pre (object/->content this)) .-innerText) ""))))
 
 ;;****************************************************
 ;; inline exception

@@ -5,18 +5,18 @@
   (:require [lt.object :as object]
             [lt.objs.context :as ctx]
             [lt.util.dom :refer [$ append] :as dom])
-  (:require-macros [lt.macros :refer [behavior defui]]))
-
-(defui canvas-elem [obj]
-  [:div#canvas])
+  (:require-macros [lt.macros :refer [behavior]]))
 
 ;;*********************************************************
 ;; Object
 ;;*********************************************************
 
 (object/object* ::canvas
-                :init (fn [obj]
-                        (canvas-elem obj)))
+                ;; The one div everything else is appended into. No handlers,
+                ;; nothing to draw, and it never changes — so hiccup straight
+                ;; through `lt.object/->dom` is the whole of it, and the `defui`
+                ;; that used to wrap it added a macro and a function call.
+                :init (fn [_] [:div#canvas]))
 
 (def canvas (object/create ::canvas))
 (append ($ "#wrapper") (object/->content canvas))

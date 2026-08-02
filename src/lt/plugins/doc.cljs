@@ -66,7 +66,14 @@
                             )))
                       )})
 
-(defui doc-ui [doc]
+(defn- doc-ui
+  "What a language said about the thing under the cursor, as hiccup.
+
+  Handed to `lt.objs.eval/->underline-result` as its `:result`, which is why
+  this is hiccup rather than a node: the widget around it is drawn by
+  Replicant, and a DOM node spliced into hiccup is the one thing it cannot
+  render."
+  [doc]
   [:div.inline-doc
    [:h1 (:name doc)]
    [:h2 (:ns doc)]

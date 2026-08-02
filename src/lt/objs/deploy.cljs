@@ -15,7 +15,7 @@
             [lt.objs.app :as app]
             [lt.util.js :as js-util :refer [every]]
             [clojure.string :as string])
-  (:require-macros [lt.macros :refer [behavior defui]]))
+  (:require-macros [lt.macros :refer [behavior]]))
 
 (def home-path (files/lt-home ""))
 (def strict-ssl? true)
@@ -186,12 +186,6 @@
   only occur with electron updates."
   []
   (aget (.versions bridge/host) "electron"))
-
-(defui button [label & [cb]]
-       [:div.button.right label]
-       :click (fn []
-                (when cb
-                  (cb))))
 
 (defn alert-binary-update []
   (popup/popup! {:header "There's been a binary update!"

@@ -13,8 +13,9 @@
             [lt.plugins.watches :as watches]
             [lt.util.load :as load]
             [clojure.string :as string]
+            [lt.ui :as ui]
             [lt.util.dom :refer [$ append]])
-  (:require-macros [lt.macros :refer [behavior defui]]))
+  (:require-macros [lt.macros :refer [behavior]]))
 
 (def util-inspect (.-inspect (js/require "util")))
 
@@ -27,8 +28,8 @@
 (defn inspect [thing depth]
   (util-inspect thing false (or depth 5)))
 
-(defui script [src]
-  [:script {:src src :type "text/javascript"}])
+(defn- script [src]
+  (ui/element [:script {:src src :type "text/javascript"}]))
 
 (defn load-script [s]
   (append head (script s)))

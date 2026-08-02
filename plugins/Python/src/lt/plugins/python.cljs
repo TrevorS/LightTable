@@ -18,7 +18,7 @@
             [lt.objs.notifos :as notifos]
             [lt.util.load :as load]
             [lt.util.cljs])
-  (:require-macros [lt.macros :refer [behavior defui]]))
+  (:require-macros [lt.macros :refer [behavior]]))
 
 ;; Forward references: this namespace is written in call order — see
 ;; plugins/Python/VENDORED.md.
@@ -226,11 +226,15 @@
                                                                                :start-line (-> ex :meta :start)})
                               ))
 
-(defui image [src]
-  [:img {:src (str "data:image/png;base64," src)}])
+(defn- image
+  "A plot IPython sent back, as hiccup.
 
-(defui canvas []
-  [:canvas])
+  Hiccup and not a node: it is handed to `:editor.result.underline`, which
+  draws it inside a widget CodeMirror owns, and that widget is Replicant's
+  now — see `lt.objs.eval/->underline-result`. `canvas` was beside this and
+  had no caller at all."
+  [src]
+  [:img {:src (str "data:image/png;base64," src)}])
 
 (behavior ::python-image
                   :triggers #{:editor.eval.python.image}

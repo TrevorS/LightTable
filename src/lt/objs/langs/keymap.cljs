@@ -6,8 +6,9 @@
             [lt.util.dom :as dom]
             [lt.objs.langs.behaviors :as beh]
             [lt.objs.editor :as editor]
-            [clojure.string :as string])
-  (:require-macros [lt.macros :refer [behavior defui]]))
+            [clojure.string :as string]
+            [lt.ui :as ui])
+  (:require-macros [lt.macros :refer [behavior]]))
 
 
 (def completions {:tag (:tag beh/completions)
@@ -111,14 +112,19 @@
                                               :line (editor/line-handle ed (:line opts))}))
 
 
-(defui ->helper [keym]
-  [:div
-   [:h2 (:desc keym (:command keym))]
-   (when (:params keym)
-     (for [p (:params keym)]
+(defn- ->helper
+  "The parameter hints drawn under a keybinding you are editing. See
+  [[lt.objs.langs.behaviors]] — `set-param` moves a class between these spans
+  by index, which is why this is a node."
+  [keym]
+  (ui/element
+   [:div
+    [:h2 (:desc keym (:command keym))]
+    (when (:params keym)
+      (for [p (:params keym)]
         [:span (:label p)
          (when (:example p)
-           [:pre.example (:example p)])]))])
+           [:pre.example (:example p)])]))]))
 
 (defn set-param [this idx]
     (let [lis (dom/$$ "span" (object/->content this))]
