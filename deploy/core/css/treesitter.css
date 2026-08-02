@@ -126,6 +126,19 @@
 .cm-ts-markup-bold        { font-weight: 600; }
 .cm-ts-markup-italic      { font-style: italic; }
 
+/* ── One language inside another ────────────────────────────────────────── */
+/* What a grammar calls the seam: `#{…}` in Elixir, `${…}` in a shell word, the
+ * `<script>` body in HTML. The inner text is captured again by the inner
+ * grammar and wins by being narrower, so this only ever colours the seam
+ * itself — which wants to read as punctuation with a warning in it, because
+ * that is the character you get wrong. */
+.cm-ts-embedded           { color: #d7a0c8; }
+
+/* Neovim marks comments and strings `@spell` so its spell-checker knows where
+ * to look. It is not a colour and deliberately has no rule; it is listed here
+ * so that the next person to grep for an unstyled capture finds the reason
+ * rather than the gap. */
+
 /* ── Problems ───────────────────────────────────────────────────────────── */
 .cm-ts-error              { color: #e0908f; text-decoration: underline wavy; }
 .cm-ts-warning            { color: #d7c07a; }

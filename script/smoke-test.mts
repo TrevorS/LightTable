@@ -1214,9 +1214,10 @@ async function main(): Promise<void> {
             r.search.firstText === 'SMOKENEEDLE here'],
         ['the matches were rendered into the results list', r.search.rendered === 4],
         // plaintext is the one deliberate no-mode: it exists so a file can be
-        // opened with no highlighting at all. Zig and Elixir share it — they
-        // have a language server and no CodeMirror mode, so they are readable
-        // and not coloured until a grammar covers them.
+        // opened with no highlighting at all. Zig and Elixir share it and are
+        // no longer uncoloured for it — neither has a CodeMirror mode and both
+        // have a tree-sitter grammar, which is the arrangement this is heading
+        // for everywhere rather than a gap.
         ['every mapped file type builds without throwing', r.modes.broken.length === 0],
         // Four, and each is a gap on purpose: plain text, plus three markup
         // languages with no CodeMirror 6 grammar. Named in cm6-modes.ts and

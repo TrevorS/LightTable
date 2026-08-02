@@ -29,8 +29,16 @@
 //
 // Nothing here parses per line. A document is parsed once per change, into a
 // table of spans; drawing a line is a lookup in it.
+//
+// A document is also not always one language. The `<script>` in an HTML file is
+// JavaScript, a Rust macro body is Rust, a tagged template literal is whatever
+// its tag says — and the grammars ship queries saying so, in a vocabulary
+// shared with Helix and Neovim. See `injectionRegions` below: the injected
+// parse reads the same text through `includedRanges`, so its captures come back
+// in the host document's coordinates and merge into the same span table.
 
-import type { Language, Parser as ParserType, Tree, QueryCapture } from 'web-tree-sitter';
+import type { Language, Parser as ParserType, Tree, Node, Range, Query,
+              QueryCapture } from 'web-tree-sitter';
 
 /** One highlighted run within a line, in columns. */
 export interface Span {
@@ -58,7 +66,22 @@ export interface GrammarSpec {
     query: string;
     /** Path to the grammar's .wasm. */
     wasm: string;
+    /**
+     * Source of the grammar's injections.scm, when it ships one. Absent means
+     * this language never contains another, which is true of most of them.
+     */
+    injections?: string | null;
 }
+
+/**
+ * A tree-sitter language name — what an injection query calls the thing inside
+ * — to a grammar we can load, or null for one we do not bundle.
+ *
+ * Supplied by the caller because *which* languages exist is Light Table's
+ * registry, not this module's: a plugin bringing its own grammar has to be able
+ * to appear inside an HTML file like any other.
+ */
+export type LanguageResolver = (name: string) => GrammarSpec | null;
 
 /**
  * A capture name becomes every prefix of itself, so a theme can style broadly
@@ -126,7 +149,14 @@ export function bracketDepths(captures: QueryCapture[]): Map<number, number> {
 
     const depths = new Map<number, number>();
     let level = 0;
+    let previous = -1;
     for (const bracket of brackets) {
+        // The same bracket seen twice. An injection can cover text its host
+        // already highlighted — Rust injects Rust into a macro's token tree —
+        // so one `(` arrives from two grammars, and counting it twice would
+        // leave every colour after it one deeper than it should be.
+        if (bracket.at === previous) continue;
+        previous = bracket.at;
         const first = bracket.text.charAt(0);
         if (OPENERS.includes(first)) {
             level++;
@@ -266,23 +296,274 @@ export function runsForLine(spans: Span[] | undefined, length: number): Span[] {
     return out;
 }
 
+//*********************************************************
+// Injections
+//*********************************************************
+
+/**
+ * How deep a language inside a language inside a language goes.
+ *
+ * Three, which is CSS inside HTML inside a JavaScript template literal — the
+ * deepest arrangement anyone writes on purpose. The cap is there because a
+ * grammar that injects itself (Rust's macros do) would otherwise recurse until
+ * the ranges stopped shrinking, and "stopped shrinking" is not something a
+ * query can promise.
+ */
+export const MAX_INJECTION_DEPTH = 3;
+
+/** A stretch of the host document to be parsed as some other language. */
+export interface Region {
+    /** What the query called it: `javascript`, `css`, the text of a heredoc tag. */
+    language: string;
+    /** Where it is, in the *host document's* coordinates. */
+    ranges: Range[];
+}
+
+function rangeOf(node: Node): Range {
+    return {
+        startIndex: node.startIndex,
+        endIndex: node.endIndex,
+        startPosition: node.startPosition,
+        endPosition: node.endPosition
+    };
+}
+
+/**
+ * The ranges one `@injection.content` capture contributes.
+ *
+ * Without `injection.include-children`, the node's children are *holes*: what
+ * gets parsed as the other language is the text between them. That is what
+ * makes `` html`<p>${name}</p>` `` work — the `${name}` is JavaScript and must
+ * not be handed to the HTML parser, and it is a child of the template string.
+ * With the flag, the node is taken whole.
+ */
+export function contentRanges(node: Node, includeChildren: boolean): Range[] {
+    if (includeChildren || node.childCount === 0) return [rangeOf(node)];
+    const out: Range[] = [];
+    let index = node.startIndex;
+    let point = node.startPosition;
+    for (const child of node.children) {
+        if (!child) continue;
+        if (child.startIndex > index) {
+            out.push({ startIndex: index, startPosition: point,
+                       endIndex: child.startIndex, endPosition: child.startPosition });
+        }
+        index = child.endIndex;
+        point = child.endPosition;
+    }
+    if (node.endIndex > index) {
+        out.push({ startIndex: index, startPosition: point,
+                   endIndex: node.endIndex, endPosition: node.endPosition });
+    }
+    return out;
+}
+
+/**
+ * Every other-language region an injection query finds in a tree.
+ *
+ * The vocabulary is tree-sitter's, shared with Helix and Neovim, which is why
+ * the queries can be the grammars' own files rather than ours: `@injection.content`
+ * is the text, and the language is either `(#set! injection.language "css")` or
+ * whatever an `@injection.language` capture spells — a heredoc tag, the
+ * identifier tagging a template literal.
+ *
+ * `injection.combined` means every match of that pattern is one document: a
+ * template literal split across several `${}` holes is one CSS stylesheet, not
+ * one per fragment. Without it each match parses alone, which is what keeps two
+ * unrelated `<script>` blocks from being read as one program.
+ */
+export function injectionRegions(tree: Tree, query: Query): Region[] {
+    const out: Region[] = [];
+    const combined = new Map<string, Region>();
+
+    for (const match of query.matches(tree.rootNode)) {
+        const properties = match.setProperties ?? {};
+        let language = properties['injection.language'] ?? null;
+        const includeChildren = 'injection.include-children' in properties;
+        const ranges: Range[] = [];
+
+        for (const capture of match.captures) {
+            if (capture.name === 'injection.language') language = capture.node.text;
+            else if (capture.name === 'injection.content') {
+                for (const range of contentRanges(capture.node, includeChildren)) {
+                    if (range.endIndex > range.startIndex) ranges.push(range);
+                }
+            }
+        }
+        if (!language || ranges.length === 0) continue;
+        language = language.toLowerCase();
+
+        if ('injection.combined' in properties) {
+            // Per pattern as well as per language, so two different rules that
+            // happen to inject the same language stay separate documents.
+            const key = match.patternIndex + ' ' + language;
+            let region = combined.get(key);
+            if (!region) {
+                region = { language, ranges: [] };
+                combined.set(key, region);
+                out.push(region);
+            }
+            for (const range of ranges) region.ranges.push(range);
+        } else {
+            out.push({ language, ranges });
+        }
+    }
+
+    // `includedRanges` has to arrive ordered and disjoint or the parse throws,
+    // and neither is something a query guarantees: matches come in pattern
+    // order, and a combined region gathers ranges from all over the document.
+    for (const region of out) {
+        region.ranges.sort((a, b) => a.startIndex - b.startIndex);
+        let end = -1;
+        region.ranges = region.ranges.filter((range) => {
+            if (range.startIndex < end) return false;
+            end = range.endIndex;
+            return true;
+        });
+    }
+    return out.filter((region) => region.ranges.length > 0);
+}
+
+/** A grammar loaded to be parsed inside another one. */
+export interface InjectedLanguage {
+    parser: ParserType;
+    query: Query;
+    /** Its own injection query, so a language inside a language nests. */
+    injections: Query | null;
+}
+
+/**
+ * The languages available to appear inside another, loaded on first sighting.
+ *
+ * Lazy for the same reason the top-level grammars are: a `.wasm` is ~400KB and
+ * opening an HTML file with no `<style>` in it should not pay for CSS. The
+ * consequence is that the first parse of a file cannot highlight what has not
+ * arrived yet, which is what `onLoad` is for — the editor reparses and
+ * redraws when it does, and the only thing anyone sees is the injected block
+ * gaining colour a moment late.
+ *
+ * A name that resolves to nothing — `regex`, `jsdoc`, a template-literal tag
+ * that was never a language — is remembered as nothing, so a document full of
+ * them costs one lookup each rather than one per keystroke.
+ */
+export class Injections {
+    private readBytes: ByteReader;
+    private resolve: LanguageResolver;
+    private known = new Map<string, InjectedLanguage | null>();
+    private loading = new Set<string>();
+    private listeners = new Set<() => void>();
+
+    constructor(readBytes: ByteReader, resolve: LanguageResolver) {
+        this.readBytes = readBytes;
+        this.resolve = resolve;
+    }
+
+    /** Called when a language arrives that was not there before. */
+    onLoad(listener: () => void): () => void {
+        this.listeners.add(listener);
+        return () => { this.listeners.delete(listener); };
+    }
+
+    /**
+     * The language called `name` if it is ready, and null if it is not — either
+     * because we do not bundle it or because it is still loading. Asking is what
+     * starts the load.
+     */
+    get(name: string): InjectedLanguage | null {
+        const known = this.known.get(name);
+        if (known !== undefined) return known;
+        if (!this.loading.has(name)) {
+            this.loading.add(name);
+            void this.load(name);
+        }
+        return null;
+    }
+
+    private async load(name: string): Promise<void> {
+        let language: InjectedLanguage | null = null;
+        try {
+            const spec = this.resolve(name);
+            if (spec) {
+                const ts = await runtime!;
+                const loaded = await loadLanguage(this.readBytes, spec.wasm);
+                const parser = new ts.Parser();
+                parser.setLanguage(loaded);
+                language = {
+                    parser,
+                    query: new ts.Query(loaded, spec.query),
+                    injections: spec.injections ? new ts.Query(loaded, spec.injections) : null
+                };
+            }
+        } catch {
+            // A grammar that will not load costs its own language and nothing
+            // else: the host document is already highlighted.
+            language = null;
+        }
+        this.known.set(name, language);
+        this.loading.delete(name);
+        // Only an arrival worth redrawing for. Learning that `jsdoc` is not
+        // something we have changes nothing on screen.
+        if (language) for (const listener of this.listeners) listener();
+    }
+}
+
+/** What a highlighter needs to find other languages inside its own. */
+export interface InjectionSupport {
+    registry: Injections;
+    /** The host grammar's injection query. */
+    query: Query;
+}
+
 /** Everything needed to highlight one document. */
 export class Highlighter {
     private parser: ParserType;
-    private query: import('web-tree-sitter').Query;
+    private query: Query;
     private tree: Tree | null = null;
     private spans: Map<number, Span[]> = new Map();
+    private injections: InjectionSupport | null;
+    /**
+     * Held rather than deleted, because the captures handed to
+     * `spansFromCaptures` are nodes *of* these trees and reading a node of a
+     * deleted tree is a crash rather than a wrong answer. They live until the
+     * next refresh has replaced the spans that point into them.
+     */
+    private injected: Tree[] = [];
+    /** The text of the current parse, so an arriving grammar can be applied to it. */
+    private text: string | null = null;
+    private unsubscribe: (() => void) | null = null;
     /** Bumped on every reparse, so a mode can tell its cache is stale. */
     public generation = 0;
+    /**
+     * Called when the spans changed without anyone asking — which happens once
+     * per injected language, when it finishes loading. The editor reinstalls,
+     * because on both engines that is how "what you are drawing from is new" is
+     * said.
+     */
+    public onUpdate: (() => void) | null = null;
+    /**
+     * The other languages actually drawn inside this document, as the queries
+     * name them. For reporting: "is the CSS in this file being highlighted as
+     * CSS" is otherwise only answerable by looking at it.
+     */
+    public injectedLanguages: string[] = [];
 
-    constructor(parser: ParserType, query: import('web-tree-sitter').Query) {
+    constructor(parser: ParserType, query: Query, injections?: InjectionSupport | null) {
         this.parser = parser;
         this.query = query;
+        this.injections = injections ?? null;
+        if (this.injections) {
+            this.unsubscribe = this.injections.registry.onLoad(() => {
+                if (this.text === null) return;
+                this.refresh(this.text);
+                this.onUpdate?.();
+            });
+        }
     }
 
     /** Reparse `text` from scratch. */
     parse(text: string): void {
         this.tree = this.parser.parse(text, this.tree ?? undefined) ?? null;
+        this.text = text;
         this.refresh(text);
     }
 
@@ -302,8 +583,67 @@ export class Highlighter {
         // lines themselves are not wanted here.
         let lineCount = 1;
         for (let i = 0; i < text.length; i++) if (text.charCodeAt(i) === 10) lineCount++;
-        this.spans = spansFromCaptures(this.query.captures(this.tree.rootNode), lineCount);
+
+        // Nothing points into last refresh's injected trees once the spans
+        // below replace the ones that did.
+        const stale = this.injected;
+        this.injected = [];
+
+        let captures = this.query.captures(this.tree.rootNode);
+        this.injectedLanguages = [];
+        if (this.injections) {
+            // Appended, so injected captures carry the later ordinals and win
+            // the ties: an injected `@keyword` and the host's `@string` over the
+            // same characters are the same width, and the inner language is the
+            // one that actually knows what those characters are.
+            captures = captures.concat(
+                this.collectInjected(text, this.tree, this.injections.query, 0));
+        }
+        this.spans = spansFromCaptures(captures, lineCount);
+        for (const tree of stale) tree.delete();
         this.generation++;
+    }
+
+    /**
+     * Captures from every language injected into `tree`, in host coordinates.
+     *
+     * `includedRanges` is what makes the coordinates free: the injected parser
+     * is handed the *whole* document text and told which parts of it to read,
+     * so its nodes come back with positions in the host's numbering and nothing
+     * has to be offset. Parsing an extracted substring would work too, and then
+     * every row and column would need adjusting by hand.
+     *
+     * A fresh parse each time rather than an incremental one. The incremental
+     * path needs the previous tree for the same region, and a region moves,
+     * splits and vanishes as the host document is edited; injected blocks are
+     * small, and this is measured in tenths of a millisecond.
+     */
+    private collectInjected(text: string, tree: Tree, query: Query, depth: number): QueryCapture[] {
+        const out: QueryCapture[] = [];
+        if (depth >= MAX_INJECTION_DEPTH || !this.injections) return out;
+
+        for (const region of injectionRegions(tree, query)) {
+            const language = this.injections.registry.get(region.language);
+            if (!language) continue;
+            let sub: Tree | null = null;
+            try {
+                sub = language.parser.parse(text, null, { includedRanges: region.ranges });
+            } catch {
+                sub = null;
+            }
+            if (!sub) continue;
+            this.injected.push(sub);
+            if (!this.injectedLanguages.includes(region.language)) {
+                this.injectedLanguages.push(region.language);
+            }
+            for (const capture of language.query.captures(sub.rootNode)) out.push(capture);
+            if (language.injections) {
+                for (const capture of this.collectInjected(text, sub, language.injections, depth + 1)) {
+                    out.push(capture);
+                }
+            }
+        }
+        return out;
     }
 
     spansForLine(line: number): Span[] | undefined {
@@ -339,8 +679,14 @@ export class Highlighter {
     }
 
     dispose(): void {
+        this.unsubscribe?.();
+        this.unsubscribe = null;
+        this.onUpdate = null;
         this.tree?.delete();
         this.tree = null;
+        for (const tree of this.injected) tree.delete();
+        this.injected = [];
+        this.text = null;
         this.spans.clear();
     }
 }
@@ -394,11 +740,33 @@ export function loadLanguage(readBytes: ByteReader, wasmPath: string): Promise<L
     return cached;
 }
 
+let injectionRegistry: Injections | null = null;
+
+/**
+ * The window's one registry of injectable languages.
+ *
+ * Shared, because a grammar loaded for the CSS inside one HTML file is the same
+ * grammar the next one needs, and because the underlying `.wasm` cache is
+ * shared already. The first resolver wins; they all read the same registry, so
+ * a plugin adding a grammar is picked up by a resolver that has already been
+ * handed over — but a language looked up *before* that plugin loaded is
+ * remembered as absent, which is the one case that wants a reopened file.
+ */
+function registryFor(readBytes: ByteReader, resolve: LanguageResolver): Injections {
+    if (!injectionRegistry) injectionRegistry = new Injections(readBytes, resolve);
+    return injectionRegistry;
+}
+
 /** A parser and compiled query for one grammar, ready to highlight with. */
-export async function highlighterFor(readBytes: ByteReader, spec: GrammarSpec): Promise<Highlighter> {
+export async function highlighterFor(readBytes: ByteReader, spec: GrammarSpec,
+                                     resolve?: LanguageResolver | null): Promise<Highlighter> {
     const ts = await runtime!;
     const language = await loadLanguage(readBytes, spec.wasm);
     const parser = new ts.Parser();
     parser.setLanguage(language);
-    return new Highlighter(parser, new ts.Query(language, spec.query));
+    const injections = spec.injections && resolve
+        ? { registry: registryFor(readBytes, resolve),
+            query: new ts.Query(language, spec.injections) }
+        : null;
+    return new Highlighter(parser, new ts.Query(language, spec.query), injections);
 }

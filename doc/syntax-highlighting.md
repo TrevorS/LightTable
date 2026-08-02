@@ -21,7 +21,7 @@ real payoff: a theme becomes a stylesheet rather than a port.
 
 | | |
 |---|---|
-| Grammars bundled | JavaScript, TypeScript, TSX, JSX, **Clojure**, Python, Rust, Go, C, C++, Java, Ruby, PHP, JSON, YAML, TOML, CSS, HTML, Bash |
+| Grammars bundled | JavaScript, TypeScript, TSX, JSX, **Clojure**, Python, Rust, Go, C, C++, Java, Ruby, PHP, Elixir, Zig, JSON, YAML, TOML, CSS, HTML, Bash/Shell |
 | Runtime load | once, ~0ms after the first grammar |
 | Grammar load | ~46ms, once per language, on first use |
 | Parse | 0.8ms for a small file; 0.2ms incremental after an edit |
@@ -50,6 +50,52 @@ mode managed for the same file:
 
 The mime table still decides indentation, commenting, bracket matching and
 folding. Only the colouring changes, and only where a grammar exists.
+
+## A file is not always one language
+
+The `<script>` in an HTML file is JavaScript and the `<style>` is CSS. A Rust
+macro body is Rust. A tagged template literal is whatever its tag says. Every
+per-line tokenizer that ever handled this did it by hand — CodeMirror's
+`htmlmixed` is a mode written to know about two other modes — and it stops at
+whatever its author thought of.
+
+Tree-sitter says it in a query instead, and the grammars ship the query:
+
+```scheme
+((script_element (raw_text) @injection.content)
+ (#set! injection.language "javascript"))
+```
+
+So this is not a feature per language pair. It is one pass — `injectionRegions`
+in `src-window/treesitter.ts` — over queries that already exist, in the same
+vocabulary Helix and Neovim use. What makes it cheap is `includedRanges`: the
+inner parser is handed the *whole document* and told which parts of it to read,
+so its captures come back in the host document's coordinates and merge into the
+same span table. Nothing is extracted, nothing is offset.
+
+Three details are load-bearing.
+
+- **The inner language wins.** Injected captures are appended after the host's,
+  and equal-width ties go to the later one. HTML's `@string` over a `<script>`
+  body and JavaScript's `@keyword` over `const` are the same characters; only
+  one of them knows what they are.
+- **Children are holes.** Without `injection.include-children`, what gets parsed
+  as the other language is the text *between* the content node's children. That
+  is what makes `` html`<p>${name}</p>` `` work: `${name}` is JavaScript and must
+  not reach the HTML parser.
+- **A bracket is counted once.** Rust injects Rust into its own macro bodies, so
+  the same `(` arrives from two grammars. Counting it twice would leave every
+  rainbow colour after it one level out.
+
+Grammars load on first *sighting* rather than up front, so an HTML file with no
+`<style>` never pays for CSS — and the first parse of one that has it cannot
+highlight it yet. The highlighter reparses and repaints when the grammar
+arrives; what you see is the block gaining colour a moment late.
+
+Which languages can appear inside another is the same `grammars` map, read
+through `language-aliases` for the names that disagree (`sh` and `shell` are
+both the `bash` grammar). A plugin that adds a grammar therefore gets both at
+once: its language becomes highlightable *and* injectable.
 
 ## What decided it, having first decided the other way
 

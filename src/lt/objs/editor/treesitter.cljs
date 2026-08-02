@@ -20,9 +20,19 @@
   colours: it means a theme is a stylesheet rather than a port, and the
   selectors are a hierarchy instead of a flat list.
 
+  **A file is not always one language.** The `<script>` in an HTML file is
+  JavaScript and the `<style>` is CSS; a Rust macro body is Rust; a tagged
+  template literal is whatever its tag says. The grammars ship queries saying
+  so, so this is a matter of loading a second grammar and parsing the same text
+  through it — see `injectionRegions` in `src-window/treesitter.ts`. Which
+  languages can appear inside another is the same `grammars` map below, read
+  through [[language-aliases]], so a plugin that brings a grammar gets both at
+  once.
+
   **What it costs.** 4.8ms to parse a file cold, 0.2ms to reparse after one
   keystroke, both measured. Grammars are ~400KB of WebAssembly each and load on
-  first use, not at startup — opening a Python file should not pay for Rust.
+  first use, not at startup — opening a Python file should not pay for Rust,
+  and an HTML file with no `<style>` should not pay for CSS.
 
   Turn it off with the `::use-treesitter` behavior and the language's own
   colouring takes over again. Only the colouring is replaced: the language stays
@@ -68,19 +78,26 @@
    (let [npm  (fn [pkg file] (str "node_modules/" pkg "/" file))
          js   (npm "tree-sitter-javascript" "queries/highlights.scm")
          jsx  (npm "tree-sitter-javascript" "queries/highlights-jsx.scm")
+         js-in (npm "tree-sitter-javascript" "queries/injections.scm")
          tsq  (npm "tree-sitter-typescript" "queries/highlights.scm")
          cq   (npm "tree-sitter-c" "queries/highlights.scm")
          ;; A grammar whose npm package ships both a prebuilt .wasm and a
-         ;; highlights.scm needs nothing but these two lines.
+         ;; highlights.scm needs nothing but these two lines. `:injections` is
+         ;; taken when the package ships one and left out when it does not,
+         ;; which is most of them — see `read-query`, which treats a missing
+         ;; file as an empty one.
          simple (fn [pkg]
                   {:wasm (npm pkg (str pkg ".wasm"))
-                   :queries [(npm pkg "queries/highlights.scm")]})
+                   :queries [(npm pkg "queries/highlights.scm")]
+                   :injections [(npm pkg "queries/injections.scm")]})
          clojure {:wasm "grammars/tree-sitter-clojure.wasm"
                   :queries ["grammars/queries/clojure-highlights.scm"]}]
      {:editor.javascript {:wasm (npm "tree-sitter-javascript" "tree-sitter-javascript.wasm")
-                          :queries [js]}
+                          :queries [js]
+                          :injections [js-in]}
       :editor.jsx        {:wasm (npm "tree-sitter-javascript" "tree-sitter-javascript.wasm")
-                          :queries [js jsx]}
+                          :queries [js jsx]
+                          :injections [js-in]}
       ;; Two queries, in this order, and the order is the point. TypeScript's
       ;; own file is a 35-line supplement — types, parameters, its extra
       ;; keywords — written to sit on top of JavaScript's rather than replace
@@ -88,9 +105,11 @@
       ;; JavaScript's blanket `(identifier) @variable` for the same node, which
       ;; is what the query author meant by writing it second.
       :editor.typescript {:wasm (npm "tree-sitter-typescript" "tree-sitter-typescript.wasm")
-                          :queries [js tsq]}
+                          :queries [js tsq]
+                          :injections [js-in]}
       :editor.tsx        {:wasm (npm "tree-sitter-typescript" "tree-sitter-tsx.wasm")
-                          :queries [js jsx tsq]}
+                          :queries [js jsx tsq]
+                          :injections [js-in]}
 
       ;; Nobody publishes a prebuilt Clojure grammar, and no package ships
       ;; Clojure queries, so both are ours — see deploy/core/grammars/README.md.
@@ -117,18 +136,48 @@
       :editor.css        (simple "tree-sitter-css")
       :editor.html       (simple "tree-sitter-html")
       :editor.bash       (simple "tree-sitter-bash")
+      ;; The Shell plugin tags `.sh` and friends `:editor.shell`, which is the
+      ;; language's name here and `bash` in tree-sitter's. One grammar, two
+      ;; names for it, and the alias table below is the other half of this.
+      :editor.shell      (simple "tree-sitter-bash")
       :editor.c          (simple "tree-sitter-c")
       ;; C++ is C plus its own rules, the same shape as TypeScript over
       ;; JavaScript.
       :editor.cpp        {:wasm (npm "tree-sitter-cpp" "tree-sitter-cpp.wasm")
-                          :queries [cq (npm "tree-sitter-cpp" "queries/highlights.scm")]}
+                          :queries [cq (npm "tree-sitter-cpp" "queries/highlights.scm")]
+                          :injections [(npm "tree-sitter-cpp" "queries/injections.scm")]}
       :editor.java       (simple "tree-sitter-java")
       :editor.ruby       (simple "tree-sitter-ruby")
       :editor.php        (simple "tree-sitter-php")
+      :editor.elixir     (simple "tree-sitter-elixir")
       :editor.yaml       {:wasm (npm "@tree-sitter-grammars/tree-sitter-yaml" "tree-sitter-yaml.wasm")
                           :queries [(npm "@tree-sitter-grammars/tree-sitter-yaml" "queries/highlights.scm")]}
       :editor.toml       {:wasm (npm "@tree-sitter-grammars/tree-sitter-toml" "tree-sitter-toml.wasm")
-                          :queries [(npm "@tree-sitter-grammars/tree-sitter-toml" "queries/highlights.scm")]}})))
+                          :queries [(npm "@tree-sitter-grammars/tree-sitter-toml" "queries/highlights.scm")]}
+      :editor.zig        {:wasm (npm "@tree-sitter-grammars/tree-sitter-zig" "tree-sitter-zig.wasm")
+                          :queries [(npm "@tree-sitter-grammars/tree-sitter-zig" "queries/highlights.scm")]
+                          :injections [(npm "@tree-sitter-grammars/tree-sitter-zig" "queries/injections.scm")]}})))
+
+(def language-aliases
+  "What tree-sitter calls a language, to the editor tag Light Table calls it by.
+  Only the disagreements: everything else is `:editor.<name>` already.
+
+  An injection query names the language inside — `(#set! injection.language
+  \"javascript\")`, or the text of a heredoc tag, or the identifier tagging a
+  template literal — and those names come from other editors' ecosystems rather
+  than from this file-type table. Anything unlisted here is simply not one we
+  bundle, which is a fine answer: that block keeps its host's colouring."
+  (atom {"js" "javascript" "ecma" "javascript" "jsx" "jsx"
+         "ts" "typescript"
+         "sh" "bash" "shell" "bash" "zsh" "bash"
+         "py" "python"
+         "rs" "rust"
+         "rb" "ruby"
+         "c++" "cpp" "cc" "cpp"
+         "yml" "yaml"
+         "golang" "go"
+         "jsonc" "json" "json5" "json"
+         "ex" "elixir" "exs" "elixir"}))
 
 (defn grammar-for
   "The grammar for an editor's tags, or nil. First match wins, which only
@@ -154,15 +203,44 @@
     (when (.existsSync bridge/files path)
       (.readFileSync bridge/files path))))
 
-(defn- spec
-  "A grammar's wasm path and its query text, concatenated in declaration order.
+(defn- query-text
+  "Query files concatenated in declaration order, skipping any that are missing.
 
   Concatenation is how tree-sitter query files compose: a language's own file
   often supplements a base language's rather than standing alone. Order carries
   meaning, because later captures win."
-  [{:keys [wasm queries]}]
-  #js {:wasm (core-path wasm)
-       :query (->> queries (map read-query) (remove nil?) (string/join "\n"))})
+  [paths]
+  (->> paths (map read-query) (remove nil?) (string/join "\n")))
+
+(defn- spec
+  "A grammar as `src-window/treesitter.ts` wants it: where the wasm is, what to
+  highlight with, and what — if anything — this language can contain."
+  [{:keys [wasm queries injections]}]
+  (let [inner (query-text injections)]
+    #js {:wasm (core-path wasm)
+         :query (query-text queries)
+         ;; Nil rather than "" for a grammar that ships no injections.scm, so
+         ;; the other side can tell "nothing goes inside this" from "an empty
+         ;; query", and skips compiling one.
+         :injections (when-not (string/blank? inner) inner)}))
+
+(defn grammar-for-language
+  "The grammar for a tree-sitter language *name*, or nil.
+
+  The other lookup — [[grammar-for]] — goes from an editor's tags, which is how
+  a file gets its own grammar. This one goes from a name written inside a query,
+  which is how a language gets the grammars of the languages it contains."
+  [name]
+  (when-not (string/blank? name)
+    (let [n (string/lower-case name)]
+      (get @grammars (keyword (str "editor." (get @language-aliases n n)))))))
+
+(defn- resolve-language
+  "The resolver `highlighterFor` is handed, reading the live registry each time
+  so a plugin that adds a grammar can be injected into a file that was already
+  open."
+  [name]
+  (some-> (grammar-for-language name) spec))
 
 (defonce ^:private runtime
   ;; One runtime for the window, initialised on first use rather than at
@@ -170,7 +248,7 @@
   (delay (.initRuntime ts read-bytes (core-path "node_modules/web-tree-sitter/web-tree-sitter.wasm"))))
 
 (defn- highlighter-for [grammar]
-  (.then @runtime (fn [_] (.highlighterFor ts read-bytes (spec grammar)))))
+  (.then @runtime (fn [_] (.highlighterFor ts read-bytes (spec grammar) resolve-language))))
 
 (defn- install-highlighter!
   "Draw `ed` from `hl`, or from its own language again when `hl` is nil.
@@ -210,9 +288,16 @@
                         (when-not (= grammar (::grammar @this))
                           (object/merge! this {::grammar grammar})
                           (-> (highlighter-for grammar)
-                              (.then (fn [hl]
+                              (.then (fn [^js hl]
                                        (.parse hl (editor/->val this))
                                        (object/merge! this {::highlighter hl})
+                                       ;; A language *inside* this one — the
+                                       ;; JavaScript in a `<script>` — loads on
+                                       ;; first sighting, so the first parse
+                                       ;; cannot have it. This is how the spans
+                                       ;; say they changed with nobody typing.
+                                       (set! (.-onUpdate hl)
+                                             (fn [] (install-highlighter! this hl)))
                                        ;; Swapped only once there is something
                                        ;; to show, so the editor is never
                                        ;; briefly blank.
@@ -328,4 +413,9 @@
     {:tags (vec (:tags @ed))
      :grammar (grammar-name grammar)
      :active (boolean hl)
-     :generation (when hl (.-generation hl))}))
+     :generation (when hl (.-generation hl))
+     ;; The languages found inside this one and drawn with their own grammar.
+     ;; Empty for most files and for a file whose injected grammars have not
+     ;; finished loading, which are different things and both look like nothing
+     ;; on screen.
+     :injected (when hl (vec (.-injectedLanguages hl)))}))

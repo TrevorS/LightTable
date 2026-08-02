@@ -145,6 +145,84 @@ test('the theme that ships is dark, and colours the captures itself', async ({ w
     await close(window, file);
 });
 
+test('a language inside a language is drawn by its own grammar', async ({ window }) => {
+    // The whole of tree-sitter-html's highlight query is six capture names:
+    // tag, tag.error, constant, attribute, string, comment, punctuation.bracket.
+    // It has no idea what a keyword or a number is, because in HTML there are
+    // none — the `const` and the `42` below are JavaScript, and the `color` is
+    // a CSS property. So the assertion is not "more colours appeared": it is
+    // that captures this grammar *cannot produce* are on the screen, which only
+    // a second grammar parsing the same bytes can explain.
+    const file = path.join(scratchDir('inject'), 'page.html');
+    fs.writeFileSync(file, `<html>
+<head>
+<style>
+  .answer { color: red; }
+</style>
+<script>
+  const answer = 42;
+</script>
+</head>
+<body><p class="answer">hi</p></body>
+</html>
+`);
+    await evalClj(window, `(do (cmd/exec! :open-path "${file}") :opened)`);
+
+    // Two more grammars are fetched here, not one, and each is ~400KB of
+    // WebAssembly loaded on first sighting rather than up front. The report
+    // names them, so what is being waited for is the thing itself.
+    await expect.poll(async () => await evalClj(window, `
+        (let [ed (first (pool/by-path "${file}"))]
+          (vec (sort (:injected (lt.objs.editor.treesitter/report ed)))))`),
+    { timeout: 60000 }).toBe('["css" "javascript"]');
+
+    await expect.poll(async () => await paintedClasses(window, file), { timeout: 15000 })
+        .toContain('cm-ts-keyword');
+    const painted = await paintedClasses(window, file);
+
+    // From the JavaScript, and from nowhere else in this file.
+    expect(painted).toContain('cm-ts-keyword');
+    expect(painted).toContain('cm-ts-number');
+    // From the CSS.
+    expect(painted).toContain('cm-ts-property');
+    // And HTML is still drawing HTML — an injection adds a language, it does
+    // not replace the host.
+    expect(painted).toContain('cm-ts-tag');
+
+    await close(window, file);
+});
+
+test('the languages with a plugin and no CodeMirror mode are coloured too', async ({ window }) => {
+    // Elixir, Zig and Shell each ship a plugin — file types, a language server,
+    // a keymap — and until now the colouring was the one part missing: Elixir
+    // and Zig have no CodeMirror 6 mode at all, and Shell's tag is `editor.shell`
+    // where the grammar is called `bash`. Each is one line of registry, and this
+    // is what says the line is wired to something.
+    const cases: [string, string, string][] = [
+        ['a.ex', 'defmodule Foo do\n  def bar(x), do: x + 1\nend\n', 'tree-sitter-elixir'],
+        ['a.zig', 'const std = @import("std");\npub fn main() void {}\n',
+         '@tree-sitter-grammars/tree-sitter-zig'],
+        ['a.sh', '#!/bin/sh\nfor f in *.txt; do echo "$f"; done\n', 'tree-sitter-bash']
+    ];
+
+    for (const [name, source, grammar] of cases) {
+        // A directory each, because `close` takes the directory with it.
+        const file = path.join(scratchDir('langs'), name);
+        fs.writeFileSync(file, source);
+        await evalClj(window, `(do (cmd/exec! :open-path "${file}") :opened)`);
+        await expect.poll(async () => await evalClj(window, `
+            (let [ed (first (pool/by-path "${file}"))]
+              (:grammar (lt.objs.editor.treesitter/report ed)))`),
+        { timeout: 60000 }).toBe(`"${grammar}"`);
+
+        // And it painted, rather than merely loading: a grammar that parses to
+        // one big error node reports itself active and colours nothing.
+        await expect.poll(async () => (await paintedClasses(window, file)).length,
+                          { timeout: 15000 }).toBeGreaterThan(3);
+        await close(window, file);
+    }
+});
+
 test('installing a highlighter turns the language\'s own colouring off', async ({ window }) => {
     // Two things can colour the same characters, and only one may. They speak
     // different vocabularies — `cm-keyword` against `cm-ts-keyword` — and a
