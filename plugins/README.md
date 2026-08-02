@@ -301,6 +301,14 @@ inference existed would have meant every published plugin breaking on the day it
 shipped. What is missing is the enforcement gate itself, which is the point at
 which `:undeclared` stops being a report and starts being a refusal.
 
+That reason is weaker than it was. This fork is one person's editor: the
+plugins that matter are the ones in this repository, every one of them carries
+a manifest, and the smoke test checks each declares what it uses. So the thing
+holding the gate at `:warn` is no longer "somebody else's plugin breaks" — it
+is that nobody has decided the default should change. Level 1 stays described
+below because an installed plugin from the old ecosystem still loads, not
+because keeping it working is a constraint on anything.
+
 `TypeScript` was the first plugin to carry a manifest; every plugin in this
 repository carries one now, and the smoke test checks that what each declares
 and what each uses agree. It is also the case that made

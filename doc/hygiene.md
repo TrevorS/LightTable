@@ -122,36 +122,6 @@ the grep finds nothing and the step passes green with warnings present.
 
 ---
 
-### singultus cannot be deleted while `defui` is plugin API
-
-Half of it is gone — 116 `defui`/`defpartial` across 37 files when
-doc/rendering.md was written, 63 across 22 now, and the surfaces that moved
-took `bound` and `map-bound` with them. The rest cannot follow without a
-decision, because `lt.macros/defui` and `defpartial` compile to singultus calls
-and are published in `doc/api/lt.macros.md`, and `lt.compat` hands plugins
-`bound`, `map-bound`, `subatom` and `computed` by name.
-
-Three ways out, in increasing order of how much they cost somebody else:
-
-**Convert the remaining 22 core files and keep singultus for plugins.** No
-break, and the 544 lines stay in the bundle for a shrinking number of callers.
-This is what is happening by default.
-
-**Reimplement `defui` on Replicant, keeping the signature.** A `defui` returns
-a DOM node built once with parts bound to atoms; Replicant renders *into* a
-container and owns its children, so the obvious version returns a wrapper and
-changes the shape every stylesheet is written against — and taking
-`firstChild` out of a detached container is the exact failure doc/rendering.md
-describes, where the node stops updating the moment anything moves it. Possible,
-not free, and the tests that would catch getting it wrong do not exist for the
-plugin surface.
-
-**Break it.** `defui` becomes a compile error and third-party plugins are
-ported. Cheapest for this repository, and a real cost to anyone who wrote one.
-
-Worth deciding rather than drifting, because the answer changes how the
-remaining conversions are written.
-
 ## Open — coverage
 
 Ranked by what a failure would cost.
@@ -199,6 +169,14 @@ transpiler removes none of the type-checking, which is where the cost is.
 
 **Node's native type stripping for those five.** Same reason: they emit rather
 than erase. The two check-only configs already rely on it.
+
+**Keeping `defui` as a stable plugin API.** Decided the other way, 2026-08-01:
+this fork is one person's editor, the only plugins that matter are the ones in
+this repository, and those get ported rather than supported. So singultus is
+not permanent — 63 `defui` across 22 files remain, from 116 across 37 when
+doc/rendering.md was written, and the file that stops using the last one
+deletes `src/singultus`. A `defui` reimplemented on Replicant to keep the
+signature is no longer worth the trouble it would take to get right.
 
 **A `make`-based build system.** The `Makefile` is explicitly a wrapper, one
 line deep, deferring to `package.json` and `script/`. Reimplementing logic in it

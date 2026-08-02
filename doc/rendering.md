@@ -7,15 +7,28 @@ in `src/singultus/`, unmaintained upstream. 116 `defui`, 67 `bound` and 27
 `subatom` across 37 namespaces in core, and a further 11 and 3 in the bundled
 plugins.
 
-It is also part of the plugin API: `lt.macros/defui` and `defpartial` compile to
-singultus calls, and published plugins use them. So singultus stays in the
-bundle whatever else happens. The question is only what *new* UI is written in.
+It was also the plugin API — `lt.macros/defui` and `defpartial` compile to
+singultus calls — and for most of this migration that meant singultus stays in
+the bundle whatever else happens, because deleting it breaks every published
+plugin that draws.
+
+**That is no longer a constraint.** This fork is one person's editor. The only
+plugins that matter are the ones in this repository, and those are ported as
+first-class citizens rather than supported as guests. So singultus is not a
+permanent tenant; it is the thing 22 remaining files still use, and the last
+one to stop using it is the commit that deletes it.
+
+What that changes in practice: a file being touched for another reason should
+go to a view rather than being tidied in place, and `defui` is not a signature
+to preserve. What it does not change: the order. The chrome is worth converting
+because the design is worth having; the plugin manager's twelve `defui` are
+worth converting because they are the last twelve.
 
 ## What is where, today
 
 | | |
 |---|---|
-| singultus | everything, minus the list below. Stays: `defui` is plugin API |
+| singultus | everything, minus the list below. 63 `defui` across 22 files, from 116 across 37 |
 | Replicant | the tab strip, the statusbar, the workspace tree, the connect panel, the welcome screen, the component kit, and the window as a view |
 
 The swap is one object at a time and the two render side by side in the same
