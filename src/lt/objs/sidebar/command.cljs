@@ -49,9 +49,6 @@
     ""
     value))
 
-(defn input->value [this]
-  (dom/val (object/->content this)))
-
 (object/object* ::options-input
                 :tags #{:options-input}
                 :placeholder "search"
@@ -95,10 +92,6 @@
 
 (defn set-val [this v]
   (object/merge! this {:search v}))
-
-(defn set-and-select [this v]
-  (set-val this v)
-  (object/raise this :change! v))
 
 (defn ensure-visible
   "Scroll the selected row into view.
@@ -239,14 +232,6 @@
             score2 (.. score1 (slice 0 50) (map map-func2) (filter has-score) (sort score-sort2))]
         score2)
       (.. items (map #(array % (key %) nil nil))))))
-
-(defn current-selected [this]
-  (let [cur (indexed-results @this)
-        cnt (count cur)
-        idx (:selected @this)
-        i (mod idx (if (> cnt (:size @this)) (:size @this) cnt))]
-    (when (> cnt 0)
-      (aget (aget cur i) 0))))
 
 (defn- filter-ui
   "The list, from what the object knows.
@@ -450,13 +435,10 @@
 (defn show-and-focus [opts]
   (object/raise sidebar/rightbar :toggle sidebar-command opts))
 
-(defn pre-fill [v]
-  (dom/val (dom/$ :.search (object/->content sidebar-command)) v))
-
-(defn show-filled [fill opts]
-  (pre-fill fill)
-  (object/raise sidebar/rightbar :toggle sidebar-command (assoc opts :soft? true))
-  (object/raise sidebar-command :soft-focus!))
+;; `pre-fill` and `show-filled` lived here, and `pre-fill` wrote the `<input>`'s
+;; value with `dom/val`. `lt.ui.filter` draws that input from `:search` now, so
+;; the write would have survived exactly until the next render. Neither had a
+;; caller. Set `:search` on the object — see [[set-val]] — if either comes back.
 
 (def exec! cmd/exec!)
 

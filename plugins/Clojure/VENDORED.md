@@ -141,7 +141,7 @@ found these. Everything else is unmodified.
 
 | where | was | why |
 |---|---|---|
-| `clojure/collapsible_exception.cljs` | `crate.binding` | Light Table's hiccup library was forked and renamed `singultus`. `lt.compat` shims this at runtime for published plugins; a plugin compiled from source needs the real namespace. |
+| `clojure/collapsible_exception.cljs` | `crate.binding` | Light Table's hiccup library was `crate`, then a fork named `singultus`, and is now Replicant. This file draws through `lt.ui/node`. |
 | `clojure/nrepl.cljs` `decode` | `recur` inside `try` | rejected by the compiler. The attempt now yields the bytes still to decode and the loop recurs outside the `try`. |
 | `clojure/nrepl.cljs` `decode` | `(catch js/global.Error …)` | there is no `global` in the window under `contextIsolation`, so the catch matched nothing it was written for. |
 | `clojure/nrepl.cljs` `non-blocking-loop` | `js/global.setImmediate` | same `global`, and Chromium has no `setImmediate` either — the message pump threw on its second message, from inside a socket callback where nothing reported it. `setTimeout(…, 0)` is the same yield. |

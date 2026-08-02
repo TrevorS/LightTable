@@ -86,43 +86,12 @@
   (swap! watch-values update address
          (fn [w] {:value value :reads (inc (:reads w 0))})))
 
-(defn results-for
-  "Every result belonging to `path`, as `[line result]` pairs.
-
-  The key is what makes this a `filter` rather than a lookup table per file —
-  and what makes a result findable from a line number, which is how a band gets
-  drawn."
-  [state path]
-  (for [[[p line] r] (:results state)
-        :when (= p path)]
-    [line r]))
-
-(defn watches-for
-  "Every watch belonging to `path`, as `[line watch]` pairs."
-  [state path]
-  (for [[[p line _] w] (:watches state)
-        :when (= p path)]
-    [line w]))
-
-(defn edits-for
-  "Every unapplied edit any run proposes for `path`, as `[line edit]` pairs.
-
-  Assembled across runs rather than read out of the buffer, because the buffer
-  does not have them: that is the point of runs owning edits."
-  [state path]
-  (for [[_ run] (:runs state)
-        edit (:edits run)
-        :let [[p line] (:at edit)]
-        :when (and (= p path) (not (:applied? edit)))]
-    [line edit]))
-
-;; The window's own error ring already exists; this is the same idea for state.
-;; Anything that changes `app` outside an action is a bug, so there is exactly
-;; one writer and it is lt.actions/dispatch!.
-(defn reset-for-test!
-  "Put the atom back to `initial`. Only tests should call this."
-  []
-  (reset! app initial))
+;; `results-for`, `watches-for` and `edits-for` lived here — three readers of
+;; the keying decisions above, written when this namespace was the design and
+;; not yet the running editor. `lt.ui.bands` reads `:results`, `:watches` and
+;; `:runs` directly, so none of them ever acquired a caller. The keying they
+;; demonstrated is documented in the docstring at the top of the file, which is
+;; where the argument belonged in the first place.
 
 (defn watch-render!
   "Re-render `f` of the state whenever the state changes.
@@ -133,7 +102,3 @@
   [key f]
   (add-watch app key (fn [_ _ _ s] (f s)))
   (f @app))
-
-(defn stop-render!
-  [key]
-  (remove-watch app key))

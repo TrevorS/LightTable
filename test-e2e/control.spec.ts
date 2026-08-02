@@ -60,10 +60,14 @@ test('ClojureScript goes in and a value comes back', async ({ window }) => {
     expect((await evalClj(window, '(+ 1 2)')).result).toBe('3');
 
     // The prepared namespace: short aliases, so a caller does not spell
-    // lt.objs.editor.pool/by-path by hand every time.
-    const count = await evalClj(window, '(count (object/by-tag :editor))');
-    expect(count.status).toBe('completed');
-    expect(Number(count.result)).toBeGreaterThanOrEqual(0);
+    // lt.objs.editor.pool/by-path by hand every time. Asserted by spelling it
+    // both ways and comparing — a count on its own is a number no matter what
+    // it counted, which is what this used to check.
+    const aliased = await evalClj(window, '(count (object/by-tag :editor))');
+    const spelled = await evalClj(window, '(count (lt.object/by-tag :editor))');
+    expect(aliased.status).toBe('completed');
+    expect(aliased.result).toMatch(/^\d+$/);
+    expect(aliased.result).toBe(spelled.result);
 
     expect((await evalClj(window, '(files/basename "/a/b/c.txt")')).result).toBe('"c.txt"');
 });

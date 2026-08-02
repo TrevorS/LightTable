@@ -295,50 +295,12 @@
   (.refresh (->cm-ed e))
   e)
 
-(defn on-move
-  "Add function `func` to trigger when `onCursorActivity` event fires.
-  `func` should take two arguments, `ed` and `delta`. Returns `e`.
-
-  See [cursorActivity](http://codemirror.net/doc/manual.html#event_cursorActivity)"
-  [^js e func]
-  (.on e "onCursorActivity"
-       (fn [ed delta]
-         (func ed delta)))
-  e)
-
-(defn on-change
-  "Add function `func` to trigger when `onChange` event fires.
-  `func` should take two arguments, `ed` and `delta`. Returns `e`.
-
-  See [change](http://codemirror.net/doc/manual.html#event_change)"
-  [^js e func]
-  (.on e "onChange"
-       (fn [ed delta]
-         (func ed delta)))
-  e)
-
-(defn on-update
-  "Add function `func` to trigger when `onUpdate` event fires.
-  `func` should take two arguments, `ed` and `delta`. Returns `e`.
-
-  See [update](http://codemirror.net/doc/manual.html#event_update)"
-  [^js e func]
-  (.on e "onUpdate"
-       (fn [ed delta]
-         (func ed delta)))
-  e)
-
-(defn on-scroll
-  "Add function `func` to trigger when `onScroll` event fires.
-  `func` should take two arguments, `ed`. Returns `e`.
-
-  See [scroll](http://codemirror.net/doc/manual.html#event_scroll)"
-  [^js e func]
-  (.on e "onScroll"
-       (fn [ed]
-         (func ed)))
-
-  e)
+;; There were four named wrappers here — `on-move`, `on-change`, `on-update`
+;; and `on-scroll` — each subscribing to `onCursorActivity`, `onChange`,
+;; `onUpdate` or `onScroll`. `src-window/cm6-editor.ts` emits `cursorActivity`,
+;; `change`, `inputRead`, `focus`, `blur` and `scroll`, so all four registered a
+;; listener that could never fire. Nothing called them, which is the only reason
+;; that was never noticed. Use [[on]] with the name the engine actually emits.
 
 (defn replace
   "Replace text starting at position `from` for editor with text `v`. If provided, replace will stop at position `to`.

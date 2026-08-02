@@ -80,6 +80,36 @@ Found writing the copy test in `test-e2e/inline-results.spec.ts`, which is why
 that test opens a file per case. Narrow: it needs two different producers on
 one line.
 
+### The collapsible exception is a whole feature nothing can reach
+
+`plugins/Clojure/src/lt/plugins/clojure/collapsible_exception.cljs` is 111
+lines: an object, a view, and `::expandable-exceptions`, which draws a
+truncated exception you can click to expand. It is wired — `clojure.behaviors`
+gives `:editor.clj.common` that behavior and gives the `:collapsible.exception`
+tag seven more.
+
+What is not wired is the two behaviors that start it. `::clj-expandable-
+exception` and `::cljs-expandable-exception` trigger on
+`:editor.eval.clj.exception` and `:editor.eval.cljs.exception` and raise
+`:editor.exception.collapsible`, which is the only thing `::expandable-
+exceptions` listens for and which nothing else raises. Both triggers are taken
+instead by `lt.plugins.clojure/clj-exception` and `::cljs-exception`, which
+raise plain `:editor.exception` — so the older implementation answers and the
+newer one, along with the object, the view and the eight behavior lines
+downstream of it, is unreachable.
+
+Found by cross-checking every `(behavior ::…)` in the repository against every
+name in a `.behaviors` file: 37 are declared and unreferenced, 28 of which are
+`:type :user` and therefore the documented opt-in config surface. These two are
+in the other nine.
+
+Two ways to close it, and they are opposite. Wiring it means swapping the two
+`clojure.behaviors` lines that name `clj-exception` and `cljs-exception`, which
+turns a feature on and is a change to what evaluating broken Clojure looks
+like. Deleting it means the file, its module entry in `shadow-cljs.edn`, and
+nine lines of `clojure.behaviors`. Not decided here because turning it on is a
+product call rather than a hygiene one.
+
 ### Splits are half-projected
 
 Each tabset draws its own strip and the actions carry the tabset id, so the
@@ -144,6 +174,35 @@ the streaming append is the thing that would have to change.
 `script/build-app.sh` has real Windows-specific logic — `rcedit`, 7-Zip, the
 `.exe` rename — and no CI runner produces a Windows build, so that path is
 uncovered. A regression there ships to whoever builds one by hand.
+
+### `lt.objs.editor` still documents an engine that is gone
+
+79 vars, and ten of them have no caller anywhere in the repository: `->mode`,
+`add-gutter`, `remove-gutter`, `char-coords`, `get-history`, `set-history`,
+`lh->line`, `set-doc!`, `set-line` and `on-click`. Each works — the CM6 shim in
+`src-window/cm6-editor.ts` implements what they call — and each has a docstring
+linking to `codemirror.net/doc/manual.html`, which is CodeMirror 5's manual.
+
+Left alone deliberately. This is the plugin-facing API, `doc/api` is generated
+from it, and a function that works and is documented costs nothing to keep;
+what it costs is a reader believing the links. The four that were *also* broken
+are gone — see Closed.
+
+### Runs, reviews and agent edits are designed and not produced
+
+`lt.state/initial` has `:runs` and `:review`. `lt.actions` registers
+`:review/goto`, `:edit/apply` and `:run/grant` against them; `lt.ui.bands`
+draws bands from `:runs`; `lt.ui.view` draws a review list and an excerpt
+header with three origins; `lt.ui.chrome` and `lt.ui.row` draw `:origin :run`;
+`kit.css` has `.band--agent`, `.chip--agent`, `.pill--agent`, `.row--agent` and
+`.excerpt--agent`. Nothing writes a run. `:behavior/rebind` writes a `:keymap`
+key that `initial` does not have either.
+
+This is forward design rather than rot — `lt.ui.catalogue` draws all of it from
+literals, which is what a component kit is for, and `doc/direction.md` is about
+where the editor is going. Recorded because a reader who greps for what creates
+a run will not find it, and should not have to conclude the projection is
+broken.
 
 ### The ClojureScript warning gate is a grep
 
@@ -228,6 +287,58 @@ would create the second source of truth it exists to avoid.
 ---
 
 ## Closed
+
+**Four editor event wrappers listened for names the engine never emits.**
+`on-change`, `on-move`, `on-update` and `on-scroll` subscribed to `onChange`,
+`onCursorActivity`, `onUpdate` and `onScroll`. `src-window/cm6-editor.ts` emits
+`change`, `inputRead`, `cursorActivity`, `focus`, `blur` and `scroll` — so all
+four registered a listener that could not fire, and had been wrong since
+CodeMirror 5, whose names are also unprefixed. Nothing called them, which is
+the only reason nobody noticed. Deleted, with a comment where they were.
+
+**Two dead helpers wrote DOM the state had taken over.**
+`lt.objs.sidebar.command/input->value` read the `<input>`'s value and
+`pre-fill` wrote it; `lt.ui.filter` draws that input from `:search`, so a
+`pre-fill` with a caller would have been overwritten by the next render. Both
+gone, along with `show-filled`, `set-and-select` and `current-selected`.
+
+**`lt.state` had three readers of its own keying and no caller for any.**
+`results-for`, `watches-for` and `edits-for` demonstrated the two keying
+decisions the namespace argues for; `lt.ui.bands` reads `:results`, `:watches`
+and `:runs` directly and always did. `stop-render!` and `reset-for-test!` went
+with them — no test ever touched the atom, because the actions are pure and get
+called with a map.
+
+**The ordering fix from `838f8446` was written twice and pinned nowhere.**
+`lt.objs.editor.lsp/status-line` and `lt.state.objects/language-server` each
+had their own `cond` over the same status map, and each had had the same bug:
+the singular keys describe the last-declared server and the plural ones
+describe all of them, so a second declared-and-missing server reported over a
+live connection to the first. Both read `lt.objs.editor.lsp.status/phase` now —
+one `cond`, six phases, in one order — and `test/lt/objs/editor/lsp/
+status_test.cljs` asserts that order, including the sentence it used to print.
+The extraction is what made it testable: `status` reads an editor, `phase` and
+`line` read a map.
+
+**The ClojureScript lint gate named six plugin directories by hand.**
+`plugins/Clojure/src plugins/CSS/src …` in `lint:cljs`, exactly right today and
+silently wrong the first time a plugin adds ClojureScript. `plugins` lints the
+same nine files, finds any new ones, and takes the same second.
+
+**Four stale claims in files that are read before the code is.** `README.md`
+carved `src/singultus` out of the MIT license and linked to its README, which
+is a deleted path in a deleted directory; `shadow-cljs.edn` said singultus was
+"on its way out"; `plugins/Clojure/VENDORED.md` said `lt.compat` shims
+`crate.binding` at runtime, and `lt.compat` is deleted too. The fourth is code:
+`::build-cljs-plugin`'s `:ignore` list — what a plugin built from source should
+not bundle because the editor already has it — still named `crate.core`,
+`crate.util`, `fetch.core` and `fetch.util`, none of which have been in the
+bundle for two renames, and did not name `replicant.dom`, which draws.
+
+**A control-surface assertion that could not fail.** `control.spec.ts` checked
+`Number(count.result)` was `>= 0` to prove the prepared eval namespace aliases
+`object` to `lt.object`. A count is a non-negative number whatever it counted.
+It now evaluates the expression both ways and compares, which is the claim.
 
 **A DOM node left in hiccup was dropped without a word** — `70666c35`'s
 successor. Replicant renders hiccup; hand it a node among the children and it

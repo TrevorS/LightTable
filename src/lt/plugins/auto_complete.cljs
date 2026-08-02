@@ -106,9 +106,6 @@
 (defn text|completion [^js x]
   (or (.-text x) (.-completion x)))
 
-(defn text+completion [^js x]
-  (str (.-text x) (.-completion x)))
-
 (defn distinct-completions [hints]
   (let [seen #js {}]
     (filter (fn [^js hint]

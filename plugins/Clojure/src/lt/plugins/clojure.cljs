@@ -351,22 +351,28 @@
                                                                :mime (-> @this :info :mime)
                                                                :dir (:lt.objs.plugins/plugin-path @this)
                                                                :path (files/join (:lt.objs.plugins/plugin-path @this) "plugin.edn")
+                                                               ;; What the editor already has, so a plugin
+                                                               ;; built from source does not bundle a second
+                                                               ;; copy of it. `crate.core`, `crate.util`,
+                                                               ;; `fetch.core` and `fetch.util` were on this
+                                                               ;; list and have not been in the bundle for
+                                                               ;; two renames; `replicant.dom` is what draws
+                                                               ;; now and was missing from it.
                                                                :ignore ['goog
                                                                         'goog.array
+                                                                        'goog.string
                                                                         'lt.object
-                                                                        'crate.core
-                                                                        'crate.util
                                                                         'lt.util.load
                                                                         'lt.util.cljs
                                                                         'lt.util.dom
                                                                         'lt.util.js
-                                                                        'fetch.core
-                                                                        'fetch.util
+                                                                        'lt.ui
+                                                                        'replicant.dom
+                                                                        'replicant.alias
                                                                         'cljs.core
                                                                         'cljs.reader
                                                                         'clojure.string
-                                                                        'clojure.set
-                                                                        'goog.string]
+                                                                        'clojure.set]
                                                                :merge? true}
                                                         :origin this}))))
 

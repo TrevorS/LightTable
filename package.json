@@ -23,7 +23,7 @@
     "place:user-plugin": "node -e \"require('fs').copyFileSync('deploy/core/lighttable/user.js','deploy/core/User/user_compiled.js')\"",
     "build:plugins": "tsc -p plugins/TypeScript/tsconfig.json && npm run --silent deps:plugins && node script/place-plugins.mts",
     "deps:plugins": "node script/install-plugin-deps.mts",
-    "lint:cljs": "node script/fetch-clj-kondo.mts && .tools/clj-kondo --fail-level error --lint src test deploy/core/User/src plugins/Clojure/src plugins/CSS/src plugins/HTML/src plugins/Javascript/src plugins/Paredit/src plugins/Python/src",
+    "lint:cljs": "node script/fetch-clj-kondo.mts && .tools/clj-kondo --fail-level error --lint src test deploy/core/User/src plugins",
     "lint:js": "eslint script src-electron src-window src-worker src-browser test-electron test-e2e",
     "typecheck": "node script/typecheck.mts",
     "test": "npm run --silent test:cljs && npm run --silent test:electron",

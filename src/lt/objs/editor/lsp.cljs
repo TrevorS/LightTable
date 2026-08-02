@@ -39,6 +39,7 @@
             [lt.objs.command :as cmd]
             [lt.objs.editor :as editor]
             [lt.objs.editor.lsp.registry :as registry]
+            [lt.objs.editor.lsp.status :as status]
             [lt.objs.editor.pool :as pool]
             [lt.objs.jump-stack :as jump-stack]
             [lt.objs.notifos :as notifos]
@@ -1264,39 +1265,13 @@
                       :root (when path (project-root path (:root s)))}))
      :connections (count connected)}))
 
-(defn status-line
+(def status-line
   "One sentence saying which of the ways this can be quiet is the one in play.
 
-  What is connected is asked about before what is declared, and that order is
-  the fix for a sentence that used to describe the wrong server. The singular
-  keys — `:root`, `:found`, `:command` — are the *last-declared* server, which
-  is the one a single-server language has; with two declared and one connected,
-  diagnosing the other one reads as a broken language server when nothing is
-  wrong. \"No project root above … — looked for biome.json\" is a true sentence
-  about biome and a useless one when vtsls is answering."
-  [{:keys [path language-id command markers root found connected? ready?
-           diagnostics servers connections]}]
-  (cond
-    (nil? path) "This editor is not backed by a file."
-    (nil? language-id) "No language server is configured for this file type."
-    (and connected? (not ready?)) (str "Starting " (or found command) " …")
-
-    ;; Answering, which is asked before anything about what is declared. Two
-    ;; servers for one language is the case where "connected" on its own
-    ;; answers the wrong question, so both are named.
-    ready?
-    (let [drawn (str " — " diagnostics
-                     (if (= 1 diagnostics) " diagnostic" " diagnostics") " on screen")]
-      (if (> (count servers) 1)
-        (str "Connected to " connections " of " (count servers) " servers ("
-             (string/join ", " (map :command servers)) ")" drawn)
-        (str "Connected to " (or found command) drawn)))
-
-    (nil? root) (str "No project root above " path " — looked for "
-                     (string/join ", " markers))
-    (nil? found) (str "No " command " in " root "/node_modules/.bin, or on PATH. "
-                      "Install it in the project, or globally.")
-    :else (str "Found " found ", but this editor is not connected to it.")))
+  [[lt.objs.editor.lsp.status/line]], which is where it lives so that it can be
+  called with a map instead of an editor. This name is what the command below
+  and doc/lsp-architecture.md have always called it."
+  status/line)
 
 (cmd/command {:command :lsp.status
               :desc "Language server: Status for this editor"

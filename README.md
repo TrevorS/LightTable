@@ -224,9 +224,10 @@ is a good start.
 ## License
 
 All files in this project are under the [MIT license](LICENSE.md) unless
-otherwise stated in the file or by a dependency's license file. One directory is
-not: `src/singultus` is vendored third-party code under the EPL, and
-[its README](src/singultus/README.md) explains why.
+otherwise stated in the file or by a dependency's license file. There used to be
+an exception — `src/singultus`, a vendored EPL fork of `crate` — and there is
+not any more: Replicant replaced it and the directory is gone. Every plugin in
+`plugins/` carries its own `LICENSE.md`, and all of them are MIT.
 
 ## Credits
 
