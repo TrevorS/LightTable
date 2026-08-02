@@ -95,3 +95,69 @@ test(`Toggle docs shows the server's hover, on ${engine}`, async ({ window }) =>
         (do (doseq [ed (pool/by-path "${file}")] (object/raise ed :close)) :closed)`);
     fs.rmSync(path.dirname(path.dirname(file)), { recursive: true, force: true });
 });
+
+test('and a server that has not finished starting says so', async ({ window }) => {
+    // The reported failure, which was not "no docs" but "nothing at all".
+    // `request-at-cursor!` declined before the handshake and said nothing, and
+    // a language server takes seconds to minutes to index a project — so every
+    // press in that window did nothing, while the statusbar was separately
+    // reporting "Language server ready" about a different connection.
+    //
+    // Declining is still right: a cursor request answered thirty seconds later
+    // is about a cursor that has moved. Declining silently is not.
+    const file = project('lspnotready');
+
+    await evalClj(window, `
+        (do (lt.object/call-behavior-reaction
+              :lt.objs.editor.lsp/language-servers
+              lt.objs.editor.lsp/lsp-client
+              [{:tags [:editor.typescript]
+                :language-id "typescript"
+                :root ["tsconfig.json"]
+                :id "vtsls"
+                :command "node"
+                :args ["${FAKE_SERVER}"]}])
+            (cmd/exec! :open-path "${file}")
+            :opened)`);
+
+    await expect.poll(async () => await evalClj(window, `
+        (boolean (object/has-tag? (first (pool/by-path "${file}")) :docable))`),
+    { timeout: 30000 }).toBe('true');
+
+    await evalClj(window, `
+        (let [ed (first (pool/by-path "${file}"))]
+          (lt.objs.editor/focus ed)
+          (lt.objs.editor/move-cursor ed {:line 1 :ch 13})
+          :ready)`);
+
+    // Put the connection back where it was a moment after it started.
+    await evalClj(window, `
+        (do (doseq [c (lt.objs.editor.lsp/conns (first (pool/by-path "${file}")))]
+              (swap! c assoc :initialized? false))
+            :mid-handshake)`);
+
+    await evalClj(window, '(do (cmd/exec! :editor.doc.toggle) :toggled)');
+    await expect.poll(async () => await evalClj(window, '(:text (:message @lt.state/app))'))
+        .toContain('still starting');
+    // And nothing was drawn, which is what it was doing before — the change is
+    // that you are told.
+    expect(await window.locator('.inline-doc').count()).toBe(0);
+
+    // Jump to definition is the same request shape and had the same silence.
+    await evalClj(window, '(do (lt.objs.notifos/set-msg! "") (cmd/exec! :editor.jump-to-definition-at-cursor) :jumped)');
+    await expect.poll(async () => await evalClj(window, '(:text (:message @lt.state/app))'))
+        .toContain('still starting');
+
+    // Ready again, and the same keypress works.
+    await evalClj(window, `
+        (do (doseq [c (lt.objs.editor.lsp/conns (first (pool/by-path "${file}")))]
+              (swap! c assoc :initialized? true))
+            :ready)`);
+    await evalClj(window, '(do (cmd/exec! :editor.doc.toggle) :toggled)');
+    await expect.poll(async () => await window.locator('.inline-doc').count(),
+                      { timeout: 20000 }).toBe(1);
+
+    await evalClj(window, `
+        (do (doseq [ed (pool/by-path "${file}")] (object/raise ed :close)) :closed)`);
+    fs.rmSync(path.dirname(path.dirname(file)), { recursive: true, force: true });
+});

@@ -439,14 +439,40 @@
    surface))
 
 (defn- request-at-cursor!
-  "Send `method` about the cursor's position in `ed`, if a server is connected."
+  "Send `method` about the cursor's position in `ed`, and say what happened.
+
+  Returns `:sent`, `:not-ready` or `:no-server`, and the return value is the
+  point. This declines before the handshake — a cursor request answered thirty
+  seconds later is about a cursor that has moved, so [[lt.objs.clients.lsp]]'s
+  queue is the wrong behaviour here even though it is the right one for the
+  requests that are about a document.
+
+  Declining is fine. Declining *silently* is what made \"toggle docs isn't
+  working\" a real report: a language server takes seconds to minutes to
+  index a project, every keypress in that window did nothing at all, and the
+  statusbar was meanwhile saying \"Language server ready\" about some other
+  connection. So a caller that a person triggered on purpose says which of
+  these it was; the ones that fire while you type stay quiet."
   [ed method callback]
-  (when-let [conn (conn-for ed method)]
-    (when (lsp/ready? conn)
-      (lsp/request! conn method
-                    {:textDocument {:uri (:uri (::doc @ed))}
-                     :position (sync/->position (editor/->cursor ed))}
-                    callback))))
+  (if-let [conn (conn-for ed method)]
+    (if (lsp/ready? conn)
+      (do (lsp/request! conn method
+                        {:textDocument {:uri (:uri (::doc @ed))}
+                         :position (sync/->position (editor/->cursor ed))}
+                        callback)
+          :sent)
+      :not-ready)
+    :no-server))
+
+(defn- report-decline!
+  "Say why nothing is going to happen, for a command a person ran on purpose."
+  [outcome what]
+  (case outcome
+    :not-ready (notifos/set-msg! (str "The language server is still starting — "
+                                      what " once it is ready."))
+    :no-server (notifos/set-msg! (str "No language server for this file, so "
+                                      what " has nothing to ask."))
+    nil))
 
 ;;*********************************************************
 ;; Completion
@@ -554,16 +580,17 @@
                 there is only one doc bar."
           :reaction (fn [ed]
                       (when-not (answered-elsewhere? ed :doc)
-                        (request-at-cursor!
-                         ed "textDocument/hover"
-                         (fn [{:keys [result]}]
-                           (let [text (hover->text (:contents result))]
-                             (if (string/blank? text)
-                               (notifos/set-msg! "No documentation found.")
-                               (object/raise ed :editor.doc.show!
-                                             {:name (:string (editor/->token ed (editor/->cursor ed)))
-                                              :doc text
-                                              :loc (editor/->cursor ed)}))))))))
+                        (-> (request-at-cursor!
+                             ed "textDocument/hover"
+                             (fn [{:keys [result]}]
+                               (let [text (hover->text (:contents result))]
+                                 (if (string/blank? text)
+                                   (notifos/set-msg! "No documentation found.")
+                                   (object/raise ed :editor.doc.show!
+                                                 {:name (:string (editor/->token ed (editor/->cursor ed)))
+                                                  :doc text
+                                                  :loc (editor/->cursor ed)})))))
+                            (report-decline! "documentation")))))
 
 ;;*********************************************************
 ;; Jump to definition
@@ -589,13 +616,14 @@
                 rather than where it appears to have been."
           :reaction (fn [ed]
                       (when-not (answered-elsewhere? ed :jump)
-                        (request-at-cursor!
-                         ed "textDocument/definition"
-                         (fn [{:keys [result]}]
-                           (if-let [{:keys [uri range]} (->location result)]
-                             (object/raise jump-stack/jump-stack :jump-stack.push!
-                                           ed (sync/uri->path uri) (sync/range->loc range))
-                             (notifos/set-msg! "No definition found.")))))))
+                        (-> (request-at-cursor!
+                             ed "textDocument/definition"
+                             (fn [{:keys [result]}]
+                               (if-let [{:keys [uri range]} (->location result)]
+                                 (object/raise jump-stack/jump-stack :jump-stack.push!
+                                               ed (sync/uri->path uri) (sync/range->loc range))
+                                 (notifos/set-msg! "No definition found."))))
+                            (report-decline! "jump to definition")))))
 
 ;;*********************************************************
 ;; References
