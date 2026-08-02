@@ -130,6 +130,10 @@
 
 .pill--agent { background: var(--lt-agent); color: var(--lt-crust); }
 .pill--result { background: var(--lt-result); color: var(--lt-crust); }
+/* Not in the design's three tones, and the statusbar is why: the console's
+   unread count is the same number whether or not one of the things in it was
+   an error, and the count is where you find out. */
+.pill--error { background: var(--lt-error); color: var(--lt-crust); }
 
 /* A binding, never a button. Symbols only, never spelled out. */
 .kbd {
@@ -214,6 +218,31 @@
   flex-shrink: 0;
   color: var(--lt-overlay2);
   font-size: 11.5px;
+}
+
+/* A name truncates rather than wrapping: a row is one line, and a tree of rows
+ * that are sometimes two lines cannot be scanned down its left edge. */
+.tree__name {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.tree__name--dir { color: var(--lt-subtext1); }
+
+/* The row, being renamed. Sized to the row so the name does not move when it
+ * becomes editable — you are changing the text, not opening a dialog. */
+.row--renaming { padding-right: 8px; }
+.tree__rename {
+  width: 100%;
+  height: 20px;
+  padding: 0 4px;
+  border: none;
+  border-radius: var(--lt-radius-sm);
+  outline: 1px solid var(--lt-sky);
+  background: var(--lt-crust);
+  color: var(--lt-text);
+  font-family: var(--lt-mono);
+  font-size: 12.5px;
 }
 
 /* ---- chrome ------------------------------------------------------------ */
@@ -686,6 +715,35 @@
 .panel { margin-bottom: 18px; }
 .row__actions { color: var(--lt-overlay2); font-size: 11.5px; margin-left: auto; }
 
+/* The workspace tree. Only the list scrolls — the three actions above it stay
+ * put, because a control that scrolls away is one you have to go looking for. */
+.wstree {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+.wstree .actions { flex-shrink: 0; padding: 4px 4px 8px; }
+.wstree__tree,
+.wstree__recents {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.wstree__back {
+  padding: 4px 8px 10px;
+  color: var(--lt-overlay2);
+  font-family: var(--lt-mono);
+  font-size: 11.5px;
+  cursor: default;
+}
+.wstree__back::after { content: " ⇡"; }
+.wstree__recents .row { height: auto; padding: 8px; align-items: flex-start; }
+.wstree__recent-folder { color: var(--lt-subtext1); }
+.wstree__recent-file { color: var(--lt-overlay2); }
+
 .multibuffer {
   flex: 1;
   min-width: 0;
@@ -709,8 +767,21 @@
 }
 
 .statusbar__pos { color: var(--lt-subtext1); }
-.statusbar__message { color: var(--lt-overlay2); }
+.statusbar__message {
+  color: var(--lt-overlay2);
+  /* However long the message is, the counts on the right keep their place. */
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.statusbar__message--error { color: var(--lt-error); }
+
+/* Both push right, and the first one to do so takes the space — so they sit
+   together at the end in the order they are written. */
 .statusbar__waiting { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; }
+.statusbar__console { margin-left: auto; cursor: pointer; }
+.statusbar__waiting + .statusbar__console { margin-left: 0; }
 
 .commandbar {
   position: absolute;

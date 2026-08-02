@@ -162,33 +162,10 @@ body { -webkit-user-select: none; }
 #right-bar .command li { padding:5px 5px; line-height:1.2em; }
 #right-bar .command .binding { font-size:8pt; }
 
-#side .workspace { position:relative; height:100%; overflow:hidden; padding-top:0px; }
-#side .workspace > p { float:left; width:100%; }
-#side .workspace ul.buttons { float:left; white-space:nowrap; width:100%; min-width:250px; padding:0px 10px;}
-#side .workspace ul.buttons li { float:left; display:inline-block; padding:2px 5px; }
-#side .workspace ul.buttons li.sep { margin:0; }
-#side .workspace ul.root { position:absolute; height:auto; left:13px; right:7px; padding-right:10px; top:40px; bottom:10px; box-sizing:border-box; }
-#side .workspace ul.root { overflow:auto; }
-#side .workspace li { cursor:default; padding:0; border-radius:2px; white-space:nowrap; }
-#side .workspace li p { padding:1px; padding-left:5px; border-radius:2px; box-sizing:border-box; }
-#side .workspace ul.sub { margin-left:15px; display:none; }
-#side .workspace ul.sub.opened { display:block; }
-#side .workspace .folder, .folders { font-weight:bold; }
-#side .workspace > ul > li > div > ul.sub { margin:0; }
-#side .workspace ul.root > div > ul:empty:before { content:"Right click to add files or folders to the workspace or open a recent one to get started."; display:inline-block; text-align:center; width:100%; max-width:300px; margin-top:40px;  }
-#side .workspace input.rename { display:none; }
-#side .workspace li.renaming > input.rename { display:block; width:100%; }
-#side .workspace li.renaming > .tree-item > p { display:none; }
-#side .workspace.recents .wstree { display:none; }
-#side .workspace.recents .recent { display:block; width:100%; overflow:hidden; }
-#side .workspace .recent { display:none; }
-#side .workspace.recents { overflow-y:auto; padding:0 5px; }
-#side .workspace .recent > div > ul { position:absolute; top:35px; bottom:0px; left:5px; right:0px; padding-right:10px; overflow-y:auto; margin-top:0;}
-#side .workspace .recent > div > ul > li { padding:10px 10px; display:inline-block; width:100%; box-sizing:border-box; border-radius:2px; }
-#side .workspace .recent > div > ul > li:first-child { border:none; border-top-right-radius:2px; border-top-left-radius:2px; }
-#side .workspace .recent > div > ul > li:last-child { border-bottom:none; border-bottom-right-radius:2px; border-bottom-left-radius:2px;  }
-#side .workspace .recent h2 { width:100%;  padding:2px 5px; font-size:10pt;  border-radius:2px; box-sizing:border-box; }
-#side .workspace .recent h2:after { float:right; content: "⇡"; }
+/* The workspace panel, and nothing about what is in it. The tree is a view —
+   see `.wstree` in css/kit.css — and this only says that the panel fills the
+   sidebar it was put in. */
+#side .workspace { height:100%; overflow:hidden; }
 
 #right-bar .navigate { height:100%; overflow:auto; box-sizing:border-box; }
 #right-bar .navigate em { font-weight:normal; }
@@ -262,13 +239,11 @@ body { -webkit-user-select: none; }
 
 #statusbar-container { position:absolute; bottom:0; left:0; right:0; }
 
-#statusbar { position:relative; box-sizing:border-box; padding:7px 10px; vertical-align:middle;}
-#statusbar li { float:right; display:inline; margin-left:15px;}
-#statusbar li.left { float:left; margin-left:0;}
-#statusbar li.left + li.left { float:left; margin-left:5px;}
-#statusbar .log img { vertical-align:middle; }
-#statusbar .log .message { max-width: 80vw; display:inline-block; overflow:hidden; vertical-align:middle; white-space:nowrap; margin-left:0px; padding:0px 5px; border-radius:2px; }
-#statusbar .pos { display:inline-block; min-width:0px; text-align:right;}
+/* The strip, and nothing about what is in it. `#statusbar` is the node the
+   object hands out — the tabset sizes itself against it and `:show!`/`:hide!`
+   write its height — and the bar inside is `lt.ui.view/statusbar`, styled as
+   `.statusbar` in css/kit.css with the rest of the kit. */
+#statusbar { position:relative; overflow:hidden; }
 .load-wrapper { display:inline-block; height:18px; width:20px; vertical-align:middle; margin-right:5px; }
 .load-wrapper .img { display:inline-block; width:17px; height:17px; vertical-align:middle; }
 

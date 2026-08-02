@@ -79,9 +79,123 @@
 (deftest every-action-the-design-names-is-registered
   ;; The document lists seven. A missing one is a screen that renders and does
   ;; nothing when clicked, which no other test here would notice.
-  (is (= #{:review/goto :eval/form :watch/promote :edit/apply
-           :run/grant :ns/refresh :behavior/rebind}
-         (set (keys (actions/registered))))))
+  ;;
+  ;; The rest are not the design's; they are what a surface needed once it
+  ;; stopped being objects with nodes. They are here rather than in
+  ;; `lt.actions.effects` because every one of them changes state — the ones
+  ;; that only reach the object world live there, and are absent from this
+  ;; suite because that namespace needs a window, which is the point of this
+  ;; suite not having one.
+  (let [registered (set (keys (actions/registered)))]
+    (is (= #{:review/goto :eval/form :watch/promote :edit/apply
+             :run/grant :ns/refresh :behavior/rebind}
+           (into #{} (remove (comp #{"status" "console" "tree" "workspace"} namespace) registered))))
+    (testing "the statusbar's, from when the bar stopped being three objects"
+      (is (= #{:status/message :status/loading :console/unread}
+             (into #{} (filter (comp #{"status" "console"} namespace) registered)))))
+    (testing "and the tree's, from when it stopped being an object per file"
+      (is (= #{:tree/toggle :tree/loaded :tree/open :tree/roots :tree/changed
+               :tree/rename-start :tree/rename-cancel :tree/rename-submit
+               :workspace/show-tree :workspace/show-recents :workspace/recents-loaded}
+             (into #{} (filter (comp #{"tree" "workspace"} namespace) registered)))))))
+
+(deftest a-folder-is-read-once-and-remembered
+  ;; The reason the tree is a map of paths rather than a tree of nodes: opening
+  ;; a folder is one write, and closing it is another — what was in it stays,
+  ;; so reopening asks the disk nothing.
+  (let [state {:workspace {:roots ["/p"] :nodes {"/p" {:dir? true}}}}
+        opened (act state [:tree/toggle "/p"])]
+    (is (true? (get-in (:state opened) [:workspace :nodes "/p" :open?])))
+    (is (= [[:tree/read "/p"]] (:effects opened)) "the disk is read the first time")
+
+    (let [loaded (:state (act (:state opened)
+                              [:tree/loaded "/p" [["/p/src" true] ["/p/a.clj" false]]]))
+          closed (act loaded [:tree/toggle "/p"])
+          again (act (:state closed) [:tree/toggle "/p"])]
+      (is (= ["/p/src" "/p/a.clj"] (get-in loaded [:workspace :nodes "/p" :children])))
+      (is (true? (get-in loaded [:workspace :nodes "/p/src" :dir?])))
+      (is (false? (get-in (:state closed) [:workspace :nodes "/p" :open?])))
+      (is (= [] (:effects again)) "and never again, because it is still remembered")
+      (is (= ["/p/src" "/p/a.clj"] (get-in (:state again) [:workspace :nodes "/p" :children]))))))
+
+(deftest what-is-no-longer-in-a-folder-is-no-longer-in-the-tree
+  ;; Re-reading a directory is how the tree hears about a change, so a stale
+  ;; entry that survived one would be a path that is drawn and does not exist —
+  ;; and a folder that came back as a file would find the old folder's children.
+  (let [state {:workspace
+               {:roots ["/p"]
+                :nodes {"/p" {:dir? true :open? true :loaded? true :children ["/p/src" "/p/a.clj"]}
+                        "/p/src" {:dir? true :open? true :loaded? true :children ["/p/src/deep.clj"]}
+                        "/p/src/deep.clj" {:dir? false}
+                        "/p/a.clj" {:dir? false}}}}
+        after (:state (act state [:tree/loaded "/p" [["/p/a.clj" false]]]))]
+    (is (= ["/p/a.clj"] (get-in after [:workspace :nodes "/p" :children])))
+    (is (nil? (get-in after [:workspace :nodes "/p/src"])))
+    (is (nil? (get-in after [:workspace :nodes "/p/src/deep.clj"]))
+        "and its children with it, however deep")
+    (is (some? (get-in after [:workspace :nodes "/p/a.clj"])) "what is still there stays")))
+
+(deftest only-a-folder-that-is-open-is-worth-re-reading
+  ;; A watcher reports every change under everything it watches. Re-reading a
+  ;; folder nobody has opened would be reading a directory to draw nothing.
+  (let [state {:workspace {:nodes {"/p" {:dir? true :loaded? true}
+                                   "/q" {:dir? true}}}}]
+    (is (= [[:tree/read "/p"]] (:effects (act state [:tree/changed "/p"]))))
+    (is (= [] (:effects (act state [:tree/changed "/q"]))))))
+
+(deftest a-rename-that-was-cancelled-does-not-submit-itself
+  ;; Blur is what submits, and a cancelled rename removes the input — which
+  ;; blurs it. So the guard is what makes the two orders the same, and there is
+  ;; no other reason for it.
+  (let [renaming {:workspace {:renaming "/p/a.clj"}}
+        cancelled (:state (act renaming [:tree/rename-cancel]))
+        after-cancel (act cancelled [:tree/rename-submit "/p/a.clj" "b.clj"])]
+    (is (nil? (get-in cancelled [:workspace :renaming])))
+    (is (= [] (:effects after-cancel)) "nothing is moved on disk")
+
+    (let [submitted (act renaming [:tree/rename-submit "/p/a.clj" "b.clj"])]
+      (is (= [[:ctx/out :tree.rename] [:file/rename "/p/a.clj" "b.clj"]] (:effects submitted)))
+      (is (nil? (get-in (:state submitted) [:workspace :renaming])))
+      (testing "and an empty name is not a rename to nothing"
+        (is (= [[:ctx/out :tree.rename]]
+               (:effects (act renaming [:tree/rename-submit "/p/a.clj" ""]))))))))
+
+(deftest the-roots-are-the-workspace-and-nothing-underneath-survives-losing-one
+  (let [state {:workspace {:roots ["/p" "/q"]
+                           :nodes {"/p" {:dir? true :open? true :children ["/p/a.clj"]}
+                                   "/p/a.clj" {:dir? false}
+                                   "/q" {:dir? true}}}}
+        after (:state (act state [:tree/roots ["/p"] ["/notes.md"]]))]
+    (is (= ["/p" "/notes.md"] (get-in after [:workspace :roots])) "folders before files")
+    (is (true? (get-in after [:workspace :nodes "/p" :open?])) "a folder you had open stays open")
+    (is (false? (get-in after [:workspace :nodes "/notes.md" :dir?])))
+    (is (nil? (get-in after [:workspace :nodes "/q"])) "and one that left is gone")))
+
+(deftest the-statusbar-says-only-what-is-still-true
+  ;; The bar is a view, so every one of these used to be a write into an object
+  ;; and is now a value. Which means what the editor is telling you can be
+  ;; asserted by folding, with no window anywhere.
+  (testing "a message clears by being emptied, which is what the timeout does"
+    (is (= {:text "saved fuzzy.ts" :tone nil}
+           (:message (:state (act empty-state [:status/message "saved fuzzy.ts"])))))
+    (is (= :error (get-in (act empty-state [:status/message "boom" :error]) [:state :message :tone])))
+    (is (nil? (:message (:state (act {:message {:text "saved"}} [:status/message ""]))))))
+
+  (testing "working is a count, so the second task finishing is what stops it"
+    (let [state (reduce (fn [s a] (:state (act s a)))
+                        empty-state
+                        [[:status/loading :inc] [:status/loading :inc] [:status/loading :dec]])]
+      (is (= 1 (:loading state)))
+      (is (zero? (:loading (:state (act state [:status/loading :dec])))))
+      (testing "and it cannot go below nothing, so a stray :dec is not a negative bar"
+        (is (zero? (:loading (:state (act {:loading 0} [:status/loading :dec]))))))))
+
+  (testing "the console's count is cleared by looking, and its tone with it"
+    (let [state (reduce (fn [s a] (:state (act s a)))
+                        empty-state
+                        [[:console/unread :inc] [:console/unread :inc] [:console/unread :tone :error]])]
+      (is (= {:unread 2 :tone :error} (:console state)))
+      (is (= {:unread 0 :tone nil} (:console (:state (act state [:console/unread :clear]))))))))
 
 (deftest actions-fold-so-a-run-can-be-replayed
   ;; Several actions are one dispatch, and the state they produce is the fold.

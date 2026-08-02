@@ -139,10 +139,8 @@ test('and the folders that were expanded are expanded again', async () => {
     fs.writeFileSync(path.join(work, 'nested', 'deep.txt'), 'deep\n');
 
     const expandedIn = async (window: Page) => await window.evaluate(`(function () {
-        var kw = function (n) { return cljs.core.keyword.call(null, n); };
         return cljs.core.clj__GT_js(cljs.core.vec(
-            cljs.core.get.call(null, cljs.core.deref(lt.objs.sidebar.workspace.tree),
-                               kw('open-dirs'))));
+            lt.objs.sidebar.workspace.open_dirs.call(null)));
     })()`) as string[];
 
     const first = await launch({ LT_USER_DIR: home });
@@ -156,9 +154,7 @@ test('and the folders that were expanded are expanded again', async () => {
     }, [work]);
     await firstWindow.waitForTimeout(1500);
     await firstWindow.evaluate(([d]) => {
-        const lt = (globalThis as any).lt, cljs = (globalThis as any).cljs;
-        const item = lt.objs.sidebar.workspace.find_by_path(d);
-        lt.object.raise.call(null, item, cljs.core.keyword.call(null, 'open!'));
+        (globalThis as any).lt.objs.sidebar.workspace.expand_BANG_.call(null, d);
     }, [work]);
     await firstWindow.waitForTimeout(500);
     await open(firstWindow, path.join(work, 'nested', 'deep.txt'));

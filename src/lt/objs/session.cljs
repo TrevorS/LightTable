@@ -81,7 +81,7 @@
      ;; Which folders were expanded. Reopening to a collapsed tree in a
      ;; project you had opened four levels into is the same annoyance as
      ;; reopening to no tabs, and the tree already tracks this for watching.
-     :open-dirs (vec (:open-dirs @sidebar-ws/tree))
+     :open-dirs (vec (sidebar-ws/open-dirs))
      ;; What this session belongs to. Not decoration: it is what stops a
      ;; session being applied to a workspace it has nothing to do with.
      :folders (vec (:folders @workspace/current-ws))}))
@@ -147,8 +147,7 @@
         ;; they can be found.
         (doseq [dir (sort-by count (:open-dirs session))
                 :when (files/exists? dir)]
-          (when-let [item (sidebar-ws/find-by-path dir)]
-            (object/raise item :open!)))
+          (sidebar-ws/expand! dir))
         (when-let [{:keys [path]} (nth open (:active session) nil)]
           (when-let [ed (first (pool/by-path path))]
             (tabs/active! ed)))

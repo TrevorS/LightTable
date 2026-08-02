@@ -25,7 +25,7 @@ Source: [`src/lt/objs/notifos.cljs`](https://github.com/TrevorS/LightTable/blob/
 
 Hide working spinner with optional statusbar message
 
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/notifos.cljs#L43)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/notifos.cljs#L40)
 
 <a id="var-set-msg"></a>
 
@@ -41,7 +41,7 @@ Display message in bottom statusbar. Takes map of options with following keys:
 * :class - css class for message. Use 'error' to display error message
 * :timeout - Number of ms before message times out. Default is 10000 (10s)
 
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/notifos.cljs#L20)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/notifos.cljs#L17)
 
 <a id="var-working"></a>
 
@@ -54,4 +54,4 @@ Display message in bottom statusbar. Takes map of options with following keys:
 
 Display working spinner with optional statusbar message
 
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/notifos.cljs#L35)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/notifos.cljs#L32)

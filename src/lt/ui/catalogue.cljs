@@ -170,13 +170,14 @@
    (card {:ns "chrome/" :nm "count-pill" :width :narrow
           :desc "A count that belongs to the thing beside it. Never a notification."
           :props [[":count" "number" ""]
-                  [":tone" ":agent | :result | :neutral" "neutral by default"]]
-          :usage "row/list-row · chrome/tab · chrome/panel-header"}
+                  [":tone" ":agent | :result | :error | :neutral" "neutral by default"]]
+          :usage "row/list-row · chrome/tab · chrome/panel-header · view/statusbar"}
          [:div.kit__demo-row
           [::chrome/count-pill {:count 6 :tone :agent}]
           [::chrome/count-pill {:count 11 :tone :result}]
+          [::chrome/count-pill {:count 2 :tone :error}]
           [::chrome/count-pill {:count 34}]]
-         (note "mauve = proposed · sky = waiting on you · neutral = just a number"))
+         (note "mauve = proposed · sky = waiting on you · red = one of them went wrong · neutral = just a number"))
 
    (card {:ns "chrome/" :nm "kbd" :width :narrow
           :desc "A binding, never a button. Symbols only, never spelled out."
@@ -285,8 +286,10 @@
                   [":focused?" "boolean" "a keyboard has both"]
                   [":tone" ":warning | :error | :agent | :disabled" ""]
                   [":leading" "node?" "dot, disclosure or line number"]
-                  [":trailing" "node?" "count, time or hint"]]
-          :usage "view/sidebar · view/review-queue · view/command-bar · view/settings"}
+                  [":trailing" "node?" "count, time or hint"]
+                  [":on-select" "actions" "clicking it"]
+                  [":on-menu" "actions" "right-clicking it, which is the only other thing"]]
+          :usage "view/workspace · view/review-queue · view/command-bar · view/settings"}
          [::row/list-row {} "rest"]
          [::row/list-row {:selected? true} "selected — element.selected, sky @ 15%"]
          [::row/list-row {:focused? true} "focused — a ring, because focus is not selection"]
@@ -302,7 +305,7 @@
                   [":depth" "number" "14px each"]
                   [":open?" "boolean?" "folders only"]
                   [":dirty?" "boolean" "a dot, right-aligned"]]
-          :usage "the workspace tree in every window"}
+          :usage "view/workspace — the tree in the left sidebar"}
          [::row/tree-row {:depth 0 :open? true} "src-worker"]
          [::row/tree-row {:depth 1} "walkdir.ts"]
          [::row/tree-row {:depth 1 :dirty? true :selected? true} "fuzzy.ts"]
@@ -560,6 +563,12 @@
                                 {:at ["src-worker/fuzzy.ts" 22] :applied? false}
                                 {:at ["src-window/tabs.cljs" 44] :applied? false}]}}
    :cursor {:line 89 :ch 33}
+   :workspace {:roots ["src-worker" "notes.md"]
+               :nodes {"src-worker" {:dir? true :open? true :loaded? true
+                                     :children ["src-worker/lib" "src-worker/fuzzy.ts"]}
+                       "src-worker/lib" {:dir? true :open? false :loaded? false}
+                       "src-worker/fuzzy.ts" {:dir? false}
+                       "notes.md" {:dir? false}}}
    :command-bar {:open? true
                  :query "eva"
                  :at 0
@@ -570,7 +579,7 @@
 (defn- views []
   (section
    "04 · views" "Views"
-   (list "Three of the eight views in " [:span.kit__name "lt.ui.view"]
+   (list "Four of the nine views in " [:span.kit__name "lt.ui.view"]
          ", each a pure function of the whole state — not aliases, which is why
           the keyword says " [:span.kit__name "view/"]
          ". They are drawn here by calling them with a map, which is the same
@@ -585,6 +594,15 @@
           :usage "view/window, and every window"}
          (view/titlebar demo-state))
 
+   (card {:ns "view/" :nm "workspace" :width :narrow
+          :desc "The file tree, from a map of paths. A closed folder is not drawn rather than hidden."
+          :props [[":workspace" "{:roots :nodes :renaming :recents}" "path → what is known about it"]
+                  [":editors" "path → editor" "for the dirty dot"]
+                  [":tabsets" "the active one's tabs" "which row is the file you are in"]]
+          :usage "the left sidebar of this window — lt.objs.sidebar.workspace"}
+         (view/workspace demo-state)
+         (note "one row per visible path — a folder that is shut is not descended into"))
+
    (card {:ns "chrome/" :nm "panel-header" :width :narrow
           :desc "A label and a count. Panels do not get toolbars."
           :props [["body" "children" "the label"]
@@ -594,12 +612,19 @@
          [::chrome/panel-header {} "Connections"])
 
    (card {:ns "view/" :nm "statusbar" :width :wide
-          :desc "What is running and what is waiting on you, then position. 28px, mantle."
+          :desc "What is working, what it said, and what waits on you. 28px, mantle."
           :props [[":cursor" "{:line :ch}" "one-based on screen, zero-based in the data"]
                   [":runs" "id → run" "counts what is waiting on you"]
-                  [":message" "string?" ""]]
-          :usage "its own render root — the cursor is a different clock"}
-         (view/statusbar (assoc demo-state :message "saved src-worker/fuzzy.ts"))
+                  [":message" "{:text :tone}" "tone is :error or nothing"]
+                  [":loading" "number?" "how many things are working, not whether"]
+                  [":console" "{:unread :tone}" "absent when you are caught up"]]
+          :usage "the bar along the bottom of this window — lt.objs.statusbar"}
+         (view/statusbar (assoc demo-state
+                                :message {:text "saved src-worker/fuzzy.ts"}
+                                :loading 1))
+         (view/statusbar (assoc demo-state
+                                :message {:text "could not reach the language server" :tone :error}
+                                :console {:unread 3 :tone :error}))
          (note "a status bar that reports what is fine is a status bar nobody reads"))
 
    (card {:ns "view/" :nm "command-bar" :width :wide
@@ -669,10 +694,11 @@
   {:lt.ui.pane/pane "An editor, hosted. Replicant is told nothing about what is inside."})
 
 (def ^:private view-descriptions
-  "The eight, in the order [[lt.ui.view]] defines them."
+  "The nine, in the order [[lt.ui.view]] defines them."
   [["titlebar" "Drawn in 04. Tabs of the active tabset."]
    ["review-queue" "The edits a run proposes for this buffer."]
    ["connections" "Drawn in 02 as connection-row."]
+   ["workspace" "Drawn in 04. The file tree, in the left sidebar of this window."]
    ["sidebar" "review-queue then connections, in work order."]
    ["statusbar" "Drawn in 04. Its own render root — the cursor is a different clock."]
    ["command-bar" "Drawn in 04. A fuzzy search over the dispatch table."]

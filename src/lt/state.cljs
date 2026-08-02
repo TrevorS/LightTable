@@ -31,7 +31,26 @@
    ;; id -> {:label :status :grants :edits}
    :runs {}
    :review nil
-   :focus nil})
+   :focus nil
+   ;; The statusbar's own facts. They belong to the window rather than to any
+   ;; editor, which is why they are here and not projected: nothing in the
+   ;; object world owns "what the editor last said to you".
+   ;; {:text s :tone :error|:info|nil}
+   :message nil
+   ;; How many things are working. A count rather than a flag, because two
+   ;; overlapping tasks finishing must not turn the indicator off once.
+   :loading 0
+   :console {:unread 0 :tone nil}
+   ;; The file tree, as a map of paths rather than a tree of nodes.
+   ;;
+   ;; A tree of maps would have to be walked to change one folder, and every
+   ;; walk is a chance to lose a subtree. Flat, a path is a lookup: opening a
+   ;; folder writes one entry, and the shape on screen is `:children` read
+   ;; depth-first from `:roots`. It also means a folder that is closed still
+   ;; remembers what was in it, which is what makes reopening one instant.
+   ;;
+   ;; path -> {:dir? :open? :loaded? :children [path]}
+   :workspace {:roots [] :nodes {} :renaming nil :recents nil}})
 
 (defonce app (atom initial))
 

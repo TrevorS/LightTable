@@ -1,11 +1,8 @@
 (ns lt.objs.notifos
   "Provide fns for displaying messages and spinner in bottom statusbar"
-  (:require [lt.object :as object]
-            [lt.objs.statusbar :as statusbar]
+  (:require [lt.objs.statusbar :as statusbar]
             [lt.objs.command :as cmd]
-            [lt.util.js :refer [wait]]
-            [singultus.binding])
-  (:require-macros [lt.macros]))
+            [lt.util.js :refer [wait]]))
 
 (def ^:private standard-timeout 10000)
 
@@ -13,7 +10,7 @@
   (let [m (if (string? m)
             m
             (pr-str m))]
-    (object/merge! statusbar/statusbar-loader (merge {:message m :class ""} opts))))
+    (statusbar/message! m (:class opts))))
 
 (def ^:private cur-timeout nil)
 

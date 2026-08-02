@@ -123,38 +123,80 @@ test('an object that is destroyed lets go of what it was watching', async ({ win
 // The UI that has actually been moved over.
 // ---------------------------------------------------------------------------
 
-test('a Replicant-rendered statusbar item updates where it sits', async ({ window }) => {
-    // The regression that the obvious implementation has. Rendering into a
-    // detached holder and handing out its first child passes every test until
-    // the node is moved somewhere — which the statusbar does immediately — and
-    // then updates land in the holder and the item on screen never changes
-    // again. It fails silently, so it needs asserting rather than watching.
-    const message = () => window.textContent('#statusbar .log .message');
+test('the statusbar is a view of the state, in the window you use', async ({ window }) => {
+    // The first chrome that moved. `lt.ui.view/statusbar` is asserted from a
+    // map in test/lt/ui/view_test.cljs, which is most of what matters and
+    // cannot see whether the bar in this window is that function — so this
+    // says what the state is and reads the screen.
+    const message = () => window.textContent('#statusbar .statusbar__message');
 
     await evalClj(window, '(do (lt.objs.notifos/set-msg! "first thing") :said)');
     await expect.poll(message).toBe('first thing');
 
+    // The regression that the obvious implementation has. Rendering into a
+    // detached holder and handing out its first child passes every test until
+    // the node is moved somewhere — which the statusbar container does
+    // immediately — and then updates land in the holder and nothing on screen
+    // changes again. It fails silently, so it needs asserting rather than
+    // watching.
     await evalClj(window, '(do (lt.objs.notifos/set-msg! "second thing") :said)');
     await expect.poll(message).toBe('second thing');
 
     // And the node is the one the object is holding, not a replacement — the
-    // statusbar appended this and would not learn about a new one.
+    // container appended this and would not learn about a new one.
     expect(await evalClj(window, `
-        (= (object/->content lt.objs.statusbar/statusbar-loader)
-           (.closest (js/document.querySelector "#statusbar .log") "li"))`)).toBe('true');
+        (= (object/->content lt.objs.statusbar/statusbar)
+           (js/document.querySelector "#statusbar"))`)).toBe('true');
 });
 
-test('and its class changes with the state it is rendered from', async ({ window }) => {
-    const toggle = () => window.getAttribute('#statusbar .console-toggle', 'class');
-    const count = () => window.textContent('#statusbar .console-toggle');
+test('and what it shows is state, so nothing reaches into it', async ({ window }) => {
+    // Every one of these was an object/merge! into a statusbar item and is now
+    // an action over the state atom. The bar draws from that atom, so a count
+    // that is not there is a fact that is not true rather than a node hidden
+    // in CSS — which is what the old console toggle was.
+    const pill = window.locator('#statusbar .statusbar__console .pill');
 
     await evalClj(window, '(do (lt.objs.statusbar/clean) :clean)');
-    await expect.poll(count).toBe('0');
-    expect(await toggle()).not.toContain('dirty');
+    await expect(pill).toHaveCount(0);
 
     await evalClj(window, '(do (lt.objs.statusbar/dirty) (lt.objs.statusbar/dirty) :dirtied)');
-    await expect.poll(count).toBe('2');
-    expect(await toggle()).toContain('dirty');
+    await expect(pill).toHaveText('2');
+    expect(await pill.getAttribute('class')).not.toContain('pill--error');
+
+    // An error changes the colour of the count and nothing else: it is still
+    // the same number of things you have not read.
+    await evalClj(window, '(do (lt.objs.statusbar/console-class "error") :tinted)');
+    await expect(pill).toHaveClass(/pill--error/);
+    await expect(pill).toHaveText('2');
+
+    // Clicking it is the one thing in the bar you can do, and the handler is a
+    // vector — so this is also the only place that proves `actions/install!`
+    // ran in a real window. Opening the console is what clears the count.
+    await pill.click();
+    await expect(pill).toHaveCount(0);
+    expect(await evalClj(window, '(:console @lt.state/app)')).toBe('{:unread 0, :tone nil}');
+    expect(await evalClj(window,
+        '(lt.objs.bottombar/active? lt.objs.console/console)')).toBe('true');
+});
+
+test('and the working indicator counts rather than flips', async ({ window }) => {
+    // Two overlapping tasks and one finishing must not turn it off. The old
+    // loader had this right and it was the only thing in the bar that did;
+    // it is a property of the action now, so it is also asserted without a
+    // window in test/lt/actions_test.cljs.
+    const dot = window.locator('#statusbar .dot--executing');
+
+    await evalClj(window, '(do (lt.objs.statusbar/loader-set) :reset)');
+    await expect(dot).toHaveCount(0);
+
+    await evalClj(window, '(do (lt.objs.notifos/working) (lt.objs.notifos/working) :two)');
+    await expect(dot).toHaveCount(1);
+
+    await evalClj(window, '(do (lt.objs.notifos/done-working) :one-left)');
+    await expect(dot).toHaveCount(1);
+
+    await evalClj(window, '(do (lt.objs.notifos/done-working) :none)');
+    await expect(dot).toHaveCount(0);
 });
 
 test('the welcome screen renders and its buttons still do something', async ({ window }) => {

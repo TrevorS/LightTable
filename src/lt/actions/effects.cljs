@@ -15,6 +15,7 @@
   (:require [lt.actions :as actions]
             [lt.object :as object]
             [lt.objs.command :as cmd]
+            [lt.objs.context :as ctx]
             [lt.objs.editor :as editor]
             [lt.objs.editor.pool :as pool]
             [lt.objs.tabs :as tabs]
@@ -48,6 +49,7 @@
                    (fn [state k & args]
                      {:state state
                       :effects [(into [:cmd/exec k] args)]}))
+
 
 ;;*********************************************************
 ;; Carrying them out
@@ -97,6 +99,19 @@
 (actions/register-effect! :client/refresh
                           (fn []
                             (cmd/exec! :behaviors.reload)))
+
+;; Opening a file is the opener's, which is where the mime, the tags and
+;; therefore the mode and the language server are already decided. A view that
+;; opened a file another way would be a second kind of open.
+(actions/register-effect! :file/open
+                          (fn [path]
+                            (object/raise (first (object/by-tag :opener)) :open! path)))
+
+;; A context is what the keymap dispatches through, and an action that puts you
+;; in one — renaming a file in the tree — is asking for `esc` and `enter` to
+;; mean something else for a moment.
+(actions/register-effect! :ctx/in (fn [c] (ctx/in! c)))
+(actions/register-effect! :ctx/out (fn [c] (ctx/out! c)))
 
 (actions/register-effect! :client/watch
                           (fn [path line into-value]

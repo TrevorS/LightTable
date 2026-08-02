@@ -22,13 +22,18 @@
 ;; name is silently dropped. [[tree-row]] passed its indent that way and had
 ;; been drawing a flat tree ever since.
 (defalias list-row
-  [{:keys [selected? focused? tone origin leading trailing style on-select]} body]
+  [{:keys [selected? focused? tone origin leading trailing style on-select on-menu]} body]
   [:div.row
    {:class [(when selected? "row--selected")
             (when focused? "row--focus")
             (when tone (str "row--" (name tone)))]
     :style style
-    :on {:click on-select}}
+    ;; `:on-menu` is the second thing you can do to a row and the only other
+    ;; one: right-clicking it. It is a separate prop rather than something the
+    ;; row decides, because what is in the menu is a question about what the
+    ;; row is, and the row does not know.
+    :on {:click on-select
+         :contextmenu on-menu}}
    (when leading [:span.row__leading leading])
    body
    (when (= origin :run) [:span.dot.dot--agent])

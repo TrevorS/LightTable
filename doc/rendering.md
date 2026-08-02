@@ -16,7 +16,7 @@ bundle whatever else happens. The question is only what *new* UI is written in.
 | | |
 |---|---|
 | singultus | everything, minus the list below. Stays: `defui` is plugin API |
-| Replicant | the three statusbar items, the welcome screen, the component kit, and the window as a view |
+| Replicant | the statusbar, the workspace tree, the welcome screen, the component kit, and the window as a view |
 
 The swap is one object at a time and the two render side by side in the same
 document, which is what makes it safe to do gradually rather than as one
@@ -64,15 +64,12 @@ onto rather than a second thing to replace at the same time.
 [[lt.ui/node]] takes the object, the root element as static hiccup, and a view:
 
 ```clojure
-(defn- console-toggle-ui [this]
-  (let [{:keys [dirty] :as state} @this]
-    [:span {:class (toggle-class state)
-            :on {:click (fn [_] (cmd/exec! :toggle-console))}}
-     dirty]))
+(defn- probe-ui [this]
+  [:div.inner {:class (when (:busy @this) "working")}
+   (count (:items @this))])
 
-(object/object* ::statusbar.console-toggle
-                :init (fn [this]
-                        (ui/node this [:li {:class ""}] console-toggle-ui)))
+(object/object* ::probe
+                :init (fn [this] (ui/node this [:div.probe] probe-ui)))
 ```
 
 The root is separate from the view because the rest of the editor holds a
@@ -87,6 +84,12 @@ longer the holder's child, so the next render patches nothing and the panel
 stops updating. That is what `test-e2e/renderer.spec.ts` asserts against by
 setting a status message twice.
 
+[[lt.ui/state-node]] is the same thing for a view: the node belongs to an
+object, but what it draws from is state the object does not own, and it may be
+more than one atom. The statusbar is both — the strip is an object, because the
+tabs above it size themselves against it, and the bar inside it is a function
+of `lt.state/app` and `lt.state/cursor`.
+
 The view re-runs on every change to the object. `bound` was finer than that —
 it wrote one attribute when one path changed — so a view over an object that
 changes on every keystroke is worth measuring before converting.
@@ -94,10 +97,33 @@ changes on every keystroke is worth measuring before converting.
 ## What cannot be swapped one-for-one
 
 **Anything composing another object's content.** `map-bound` over a collection
-of objects, splicing `(object/->content %)` — the tabs, the statusbar's own
-list, the sidebar, the client list. Replicant renders hiccup, and a DOM node
-another object owns is not hiccup. Those stay on singultus until the thing
-they are composing is a view rather than an object with a node.
+of objects, splicing `(object/->content %)` — the tabs, the client list, the
+right bar's panels. Replicant renders hiccup, and a DOM node another object
+owns is not hiccup. Those stay on singultus until the thing they are composing
+is a view rather than an object with a node.
+
+The way out is not to swap them, and two surfaces have now gone the other way
+instead. The statusbar's three items — a cursor, a loader, a console toggle —
+were deleted rather than converted, and `lt.ui.view/statusbar` draws the whole
+bar from the state. The workspace tree was an object per file and an object per
+folder, 677 lines and 28 behaviors, and is now `[:workspace :nodes]` in the
+state: a map from path to what is known about that path, drawn by
+`lt.ui.view/workspace`.
+
+Both deleted more than they moved, and both left the container behind. The
+statusbar strip is still an object because the find bar is in it too and the
+tabs above give back its height; the workspace panel is still an object because
+`lt.objs.sidebar` holds its node. What used to be `object/merge!` into an item
+is an action in each case, so what those surfaces show is asserted by folding
+actions over a map.
+
+The tree is the one worth reading twice, because it is where the shape paid.
+Every folder was a `ul` whose closed state was `display:none`, so opening a
+directory of four hundred files created four hundred objects with four hundred
+nodes and four hundred watches, and closing it kept all of them. Flat, a closed
+folder is one that is not descended into — it is not on screen because it is
+not drawn, and what was read stays in the map, so reopening it asks the disk
+nothing.
 
 That is most of the composition in the editor, and it is the reason this is a
 migration rather than a swap.
@@ -113,11 +139,12 @@ the architecture:
 |---|---|---|
 | alias | 17, in `row` and `chrome` | markup, no state, no data access |
 | band | 6, in `band` | the same, but rendered into a node the editor owns |
-| view | none yet | a function of the whole state, composing aliases |
+| view | 9, in `view` | a function of the whole state, composing aliases |
 
 Only views read state, so every question about correctness is a question about
-however many views there are. There are none yet — the existing UI is still
-objects — which is the honest state of the migration.
+however many views there are. Nine, and two of them — the statusbar and the
+workspace tree — are on screen in the editor you are using. The rest of the
+chrome is still objects, which is the honest state of the migration.
 
 **Light Table: Component kit** opens
 [the catalogue](../src/lt/ui/catalogue.cljs): every component, in every state
@@ -135,7 +162,8 @@ the markup. The palette is Catppuccin Mocha.
 
 [`lt.ui.view`](../src/lt/ui/view.cljs) is the eight the design names — titlebar,
 review queue, connections, sidebar, statusbar, command bar, multibuffer,
-settings — and `window` composes them. Each is `(defn view [state] hiccup)`
+settings — plus `workspace`, which it does not: the document draws the chrome
+around a run and takes the file tree as given. `window` composes them. Each is `(defn view [state] hiccup)`
 over the *whole* state, so the slicing happens in the open rather than in a
 subscription nobody can see.
 
@@ -146,8 +174,12 @@ and reads hiccup back: which tab is active, whether a conflicted edit is toned
 that an empty queue says what would fill it. Milliseconds, no editor, no DOM.
 
 **Light Table: Window as a view** opens it, rendering from the live state
-beside the real chrome. It is not the chrome you use yet — moving it there is
-moving the root, which is the point of having exactly one.
+beside the real chrome. Moving a surface there is moving its root, which is the
+point of having exactly one — and [`lt.objs.statusbar`](../src/lt/objs/statusbar.cljs)
+and [`lt.objs.sidebar.workspace`](../src/lt/objs/sidebar/workspace.cljs) are
+that done twice. The bar along the bottom of the real editor and the tree down
+its left side are `view/statusbar` and `view/workspace`, the same functions
+this tab draws and the same ones `test/lt/ui/view_test.cljs` asks with a map.
 
 ## Where the state comes from
 

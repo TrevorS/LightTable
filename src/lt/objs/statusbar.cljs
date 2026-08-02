@@ -1,17 +1,30 @@
 (ns lt.objs.statusbar
-  "Provide statusbar functionality e.g. current line and column.
-  Statusbar is close to the bottom but above bottombar"
-  (:require [lt.object :as object]
+  "The statusbar, which is the first chrome you use that is a view.
+
+  It was three objects — a cursor, a loader and a console toggle — each with a
+  node, spliced into a `ul` by `map-bound`. That is the shape doc/rendering.md
+  names as the one thing that cannot be swapped one component at a time: a
+  list composed of other objects' DOM. So it is not swapped, it is replaced.
+  `lt.ui.view/statusbar` draws the whole bar from the state, and what used to
+  be an `object/merge!` into an item is now an action.
+
+  What is left here is the strip itself: where it sits, how tall it is, and
+  that the tabs above it end where it starts. That part is still the object
+  model's, because the layout around it is.
+
+  **Two clocks.** The bar shows the cursor, which moves on every keypress, and
+  the cursor has its own atom for exactly that reason — a projection into
+  `state/app` per keystroke would be a window render per keystroke. So this
+  root watches both and is the only thing that does. See [[lt.state]]."
+  (:require [lt.actions :as actions]
+            [lt.object :as object]
             [lt.objs.tabs :as tabs]
-            [lt.objs.canvas :as canvas]
-            [lt.objs.command :as cmd]
-            [lt.objs.bottombar :as bottombar]
-            [lt.objs.editor :as ed]
-            [lt.util.dom :as dom]
-            [lt.util.cljs :as cljs]
+            [lt.state :as state]
             [lt.ui :as ui]
-            [singultus.binding :refer [map-bound]])
-  (:require-macros [lt.macros :refer [behavior defui]]))
+            [lt.ui.view :as view]
+            [lt.util.cljs :as cljs]
+            [lt.util.dom :as dom])
+  (:require-macros [lt.macros :refer [behavior]]))
 
 ;;**********************************************************
 ;; statusbar container
@@ -21,22 +34,30 @@
                 :tags #{:statusbar}
                 :items (sorted-set-by #(-> % deref :order))
                 :init (fn [this]
-                        [:div#statusbar-container
-                         ]))
+                        [:div#statusbar-container]))
 
 (def container (object/create ::statusbar-container))
 
 (defn add-container
-  "Add an object to the statusbar container. When you wish the object to be displayed or hidden,
-  raise :show! or :hide! respectively. Objects must have :order and :height keys in order to determine
-  the space required for the object."
+  "Put `obj` in the strip along the bottom, in `:order`.
+
+  Still here, and still an object splicing another object's node, because that
+  is what the strip is: the find bar is in it too, at `:order -1`, and a find
+  bar is not a statusbar item that happens to be tall. `:order` and `:height`
+  are the contract — raise `:show!` or `:hide!` and the tabs above give the
+  space back."
   [obj]
   (object/add-tags obj [:statusbar-item])
   (object/update! container [:items] conj obj)
-  (let [i (cljs/index-of obj (:items @container))]
-    (if (= i 0)
+  (let [items (vec (:items @container))
+        i (cljs/index-of obj items)]
+    (if (zero? i)
       (dom/prepend (object/->content container) (object/->content obj))
-      (dom/after (object/->content (get (:items @container) i)) (object/->content obj)))))
+      ;; After the one before it. The original indexed the sorted set by
+      ;; position with `get`, which on a set is a lookup by value and returns
+      ;; nil — unreachable with two items, and wrong the moment there is a
+      ;; third.
+      (dom/after (object/->content (nth items (dec i))) (object/->content obj)))))
 
 (behavior ::on-show!
           :triggers #{:show!}
@@ -60,20 +81,24 @@
                       (dom/append (object/->content tabs/multi) (object/->content container))))
 
 ;;**********************************************************
-;; statusbar
+;; the bar
 ;;**********************************************************
 
-(defui statusbar-item [content class]
-  [:li {:class class} content])
+(defn- bar-ui
+  "The whole bar, from the two atoms it reads.
+
+  The cursor is merged in rather than read by the view, because the view takes
+  one value — that is what makes it testable with a map — and which atom each
+  key came from is this namespace's problem."
+  []
+  (view/statusbar (assoc @state/app :cursor @state/cursor)))
 
 (object/object* ::statusbar
-                :items []
-                :height 34
+                :height 28
                 :order 0
                 :init (fn [this]
-                        [:ul#statusbar
-                         (map-bound #(object/->content (deref %)) this {:path [:items]})]
-                        ))
+                        (ui/state-node this [:div#statusbar] bar-ui
+                                       [state/app state/cursor])))
 
 (def statusbar (object/create ::statusbar))
 
@@ -86,114 +111,44 @@
           :reaction (fn [this]
                       (object/raise statusbar :show!)))
 
-(defn add-statusbar-item [item]
-  (object/update! statusbar [:items] conj item))
-
 ;;**********************************************************
-;; cursor
+;; what the rest of the editor puts in it
 ;;**********************************************************
 
-(defn ->cursor-str [{:keys [pos]}]
-  [:span.pos (str "" (inc (:line pos)) " / " (inc (:ch pos)))])
+;; Every one of these is a dispatch rather than a write into an item. Callers
+;; are unchanged in shape — `notifos/working` still says "something is working"
+;; — but there is one writer of the state now and the bar is a function of it,
+;; so what the statusbar shows can be asserted by folding actions over a map.
+;; See `test/lt/actions_test.cljs`.
 
-(behavior ::update-cursor-location
-          :triggers #{:update!}
-          :reaction (fn [this pos]
-                      (object/merge! this {:pos pos})))
-
-(defn- cursor-ui [this]
-  (->cursor-str @this))
-
-(object/object* ::statusbar.cursor
-                :triggers #{}
-                :behaviors #{::update-cursor-location}
-                :pos {:line 0 :ch 0}
-                :init (fn [this]
-                        (ui/node this [:li {:class ""}] cursor-ui)))
-
-(def statusbar-cursor (object/create ::statusbar.cursor))
-(add-statusbar-item statusbar-cursor)
-
-(behavior ::report-cursor-location
-                  :triggers #{:move :active}
-                  :reaction (fn [this]
-                              (object/raise statusbar-cursor :update! (ed/->cursor this))))
-
-
-;;**********************************************************
-;; loader
-;;**********************************************************
-
-(defn loader-disp [this]
-  (if (> (:loaders this) 0)
-    ""
-    "none"))
-
-(defn arrow-disp [this]
-  (if (> (:loaders this) 0)
-    "none"
-    ""))
-
-
-(defn ->message-class [m]
-  (str "message " (or m "")))
-
-(defn- loader-ui [this]
-  (let [{:keys [class message] :as state} @this]
-    [:div.log
-     [:span.load-wrapper {:style {:display (loader-disp state)}
-                          :on {:click (fn [_] (object/raise this :toggle))}}
-      [:span.img]]
-     [:span {:class (->message-class class)} message]]))
-
-(object/object* ::statusbar.loader
-                :tags #{:statusbar.console}
-                :loaders 0
-                :message ""
-                :init (fn [this]
-                        (ui/node this [:li {:class "left"}] loader-ui)))
-
-(def statusbar-loader (object/create ::statusbar.loader))
-(add-statusbar-item statusbar-loader)
+(defn message!
+  "Say `m` in the bar. `class` is the old vocabulary — \"error\", \"tip\" — and
+  is narrowed to a tone here, which is the last place it is a string."
+  ([m] (message! m nil))
+  ([m class]
+   (actions/dispatch! [[:status/message m (when (= class "error") :error)]])))
 
 (defn loader-set []
-  (object/merge! statusbar-loader {:loaders 0}))
+  (actions/dispatch! [[:status/loading :set]]))
 
 (defn loader-inc []
-  (object/update! statusbar-loader [:loaders] inc))
+  (actions/dispatch! [[:status/loading :inc]]))
 
 (defn loader-dec []
-  (if (> (:loaders @statusbar-loader) 0)
-    (object/update! statusbar-loader [:loaders] dec)))
+  (actions/dispatch! [[:status/loading :dec]]))
 
-;;**********************************************************
-;; console list
-;;**********************************************************
+(defn dirty
+  "The console said something you have not looked at."
+  []
+  (actions/dispatch! [[:console/unread :inc]]))
 
-(defn toggle-class [{:keys [dirty class]}]
-  (str "console-toggle " (when class (str class " ")) (when (> dirty 0) "dirty")))
+(defn clean
+  "You looked."
+  []
+  (actions/dispatch! [[:console/unread :clear]]))
 
-(defn- console-toggle-ui [this]
-  (let [{:keys [dirty] :as state} @this]
-    [:span {:class (toggle-class state)
-            :on {:click (fn [_] (cmd/exec! :toggle-console))}}
-     dirty]))
-
-(object/object* ::statusbar.console-toggle
-                :dirty 0
-                :tags [:statusbar.console-toggle]
-                :init (fn [this]
-                        (ui/node this [:li {:class ""}] console-toggle-ui)))
-
-(def console-toggle (object/create ::statusbar.console-toggle))
-(add-statusbar-item console-toggle)
-
-(defn dirty []
-  (object/update! console-toggle [:dirty] inc))
-
-(defn clean []
-  (object/merge! console-toggle {:dirty 0
-                                 :class nil}))
-
-(defn console-class [class]
-  (object/merge! console-toggle {:class class}))
+(defn console-class
+  "The tone of what the console last said. Only an error changes the count's
+  colour; everything else is a number of things to read."
+  [class]
+  (actions/dispatch! [[:console/unread :tone (when (= class "error") :error)]]))

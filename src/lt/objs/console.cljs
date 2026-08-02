@@ -195,28 +195,29 @@
                                         (cmd/exec! :toggle-console)
                                         (cmd/exec! :console-tab))}))))
 
-;; @FIXME: rename to statusbar ?
-(behavior ::statusbar-console-toggle
+;; These three were on the statusbar's console-toggle object, which is what the
+;; `@FIXME: rename to statusbar?` beside each of them was asking about. The
+;; answer turned out to be neither: the toggle is not an object any more — the
+;; statusbar is a view and its unread count is state — so showing and hiding the
+;; console belongs to the console.
+
+(behavior ::toggle-console
           :triggers #{:toggle}
           :reaction (fn [this]
                       (object/raise bottombar/bottombar :toggle console)
                       (when (bottombar/active? console)
                         (dom/scroll-top (object/->content console) 10000000000)
-                        (statusbar/clean))
-                      ))
+                        (statusbar/clean))))
 
-;; @FIXME: rename to statusbar ?
-(behavior ::statusbar-console-show
+(behavior ::show-console
           :triggers #{:show!}
           :reaction (fn [this]
                       (object/raise bottombar/bottombar :show! console)
                       (when (bottombar/active? console)
                         (dom/scroll-top (object/->content console) 10000000000)
-                        (statusbar/clean))
-                      ))
+                        (statusbar/clean))))
 
-;; @FIXME: rename to statusbar ?
-(behavior ::statusbar-console-hide
+(behavior ::hide-console
           :triggers #{:hide!}
           :reaction (fn [this]
                       (object/raise bottombar/bottombar :hide! console)))
@@ -228,7 +229,7 @@
               :desc "Console: Open the console in a tab"
               :exec (fn []
                       (when (not= :tab (:current-ui @console)) ; Running the command when tab is already opened in a tab was creating another new tab each time.
-                        (object/raise statusbar/console-toggle :hide!)
+                        (object/raise console :hide!)
                         (object/merge! console {:current-ui :tab})
                         (tabs/add! console)
                       ))})
@@ -240,7 +241,7 @@
               :exec (fn []
                       (if (= (:current-ui @console) :tab)
                         (do (tabs/active! console) (statusbar/clean))
-                        (object/raise statusbar/console-toggle :show!)))})
+                        (object/raise console :show!)))})
 
 (cmd/command {:command :console.hide
               :desc "Console: Hide console"
@@ -248,14 +249,14 @@
               :exec (fn []
                       (if (= (:current-ui @console) :tab)
                         (object/raise console :close)
-                        (object/raise statusbar/console-toggle :hide!)))})
+                        (object/raise console :hide!)))})
 
 (cmd/command {:command :toggle-console
               :desc "Console: Toggle console"
               :exec (fn []
                       (if (= (:current-ui @console) :tab)
                         (do (tabs/active! console) (statusbar/clean))
-                        (object/raise statusbar/console-toggle :toggle)))})
+                        (object/raise console :toggle)))})
 
 (cmd/command {:command :clear-console
               :desc "Console: Clear console"

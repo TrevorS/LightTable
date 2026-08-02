@@ -101,6 +101,26 @@
         (@report (str "No handler for effect " (pr-str effect)))))
     nil))
 
+(def ^:private from-event
+  "The placeholders an action may carry in place of an argument.
+
+  A handler is a value, which means it cannot read the event — and some of
+  them have to: renaming a file needs what you typed. So the argument is named
+  rather than fetched, and the one place that has both the action and the event
+  fills it in. `[:tree/rename-submit path :event/value]` is still data, still
+  loggable, still replayable — the placeholder is what was replayed."
+  {:event/value (fn [e] (.. e -target -value))
+   :event/checked (fn [e] (.. e -target -checked))})
+
+(defn- fill
+  "`action` with its placeholders replaced by what the event holds."
+  [action e]
+  (mapv (fn [arg]
+          (if-let [f (and e (get from-event arg))]
+            (f e)
+            arg))
+        action))
+
 (defn install!
   "Teach Replicant that a handler may be data.
 
@@ -109,10 +129,12 @@
   a value that can be read."
   []
   (r/set-dispatch!
-   (fn [_event-data handler-data]
-     (dispatch! (if (vector? (first handler-data))
-                  handler-data
-                  [handler-data])))))
+   (fn [event-data handler-data]
+     (let [e (:replicant/js-event event-data)
+           actions (if (vector? (first handler-data))
+                     handler-data
+                     [handler-data])]
+       (dispatch! (mapv #(fill % e) actions))))))
 
 ;;*********************************************************
 ;; The actions the design names
@@ -168,3 +190,153 @@
 (register! :behavior/rebind
            (fn [state key actions]
              (assoc-in state [:keymap key] actions)))
+
+;;*********************************************************
+;; The file tree
+;;*********************************************************
+
+;; A path is a lookup rather than a position in a tree, so every one of these
+;; is one `assoc-in` — see [[lt.state]] for why the shape is flat. Reading a
+;; directory is an effect; what was read comes back as `:tree/loaded`.
+
+(defn- node [state path]
+  (get-in state [:workspace :nodes path]))
+
+(defn- subtree
+  "`path` and everything under it that the tree has an entry for.
+
+  Closing a folder keeps its children, which is what makes reopening one
+  instant. Deleting one must not, or a path that comes back as a file would
+  find the folder it used to be."
+  [nodes path]
+  (cons path (mapcat #(subtree nodes %) (:children (get nodes path)))))
+
+;; state + effect — the only one of these that reads the disk, and only the
+;; first time. A folder you have opened before opens from what it remembers.
+(register! :tree/toggle
+           (fn [state path]
+             (let [{:keys [open? loaded?]} (node state path)]
+               {:state (assoc-in state [:workspace :nodes path :open?] (not open?))
+                :effects (when-not (or open? loaded?) [[:tree/read path]])})))
+
+;; state only — what a directory turned out to contain. Children arrive sorted
+;; because sorting is a decision about what to show and the view is not where
+;; decisions go.
+(register! :tree/loaded
+           (fn [state path children]
+             (let [nodes (get-in state [:workspace :nodes])
+                   gone (remove (set (map first children)) (:children (get nodes path)))
+                   dropped (mapcat #(subtree nodes %) gone)]
+               (assoc-in state [:workspace :nodes]
+                         (-> (apply dissoc nodes dropped)
+                             (assoc-in [path :children] (mapv first children))
+                             (assoc-in [path :loaded?] true)
+                             (merge (into {} (for [[child dir?] children
+                                                   :when (not (get nodes child))]
+                                               [child {:dir? dir?}]))))))))
+
+;; state + effect — a file is opened by the opener, which is where the mode,
+;; the tags and the language server are already decided.
+(register! :tree/open
+           (fn [state path]
+             {:state state :effects [[:file/open path]]}))
+
+;; state only — the roots of the tree, from the workspace object that owns
+;; them. Folders before files, which is the order everything else in the tree
+;; is in.
+(register! :tree/roots
+           (fn [state folders files]
+             (let [roots (vec (concat folders files))]
+               (update state :workspace merge
+                       {:roots roots
+                        :nodes (let [nodes (get-in state [:workspace :nodes])]
+                                 (into (select-keys nodes (mapcat #(subtree nodes %) roots))
+                                       (for [f roots :when (not (get nodes f))]
+                                         [f {:dir? (boolean ((set folders) f))}])))}))))
+
+;; state + effect — something appeared or went away under a path we are
+;; watching. Re-reading the parent rather than splicing the one child in: the
+;; directory is the answer, and a sorted insert is a second implementation of
+;; what `:tree/read` already does.
+(register! :tree/changed
+           (fn [state dir]
+             {:state state
+              :effects (when (:loaded? (node state dir)) [[:tree/read dir]])}))
+
+;; state + effect — the row becomes an input, and `esc` and `enter` become the
+;; two commands the keymap already binds in `:tree.rename`. The context is the
+;; effect; the input focusing itself is the view's, because the view is what
+;; creates it.
+(register! :tree/rename-start
+           (fn [state path]
+             {:state (assoc-in state [:workspace :renaming] path)
+              :effects [[:ctx/in :tree.rename]]}))
+
+(register! :tree/rename-cancel
+           (fn [state]
+             {:state (assoc-in state [:workspace :renaming] nil)
+              :effects [[:ctx/out :tree.rename]]}))
+
+;; state + effect — and a no-op unless this is the row that is being renamed.
+;; Blur is what submits, so a rename that was cancelled must not submit itself
+;; on the way out, and the guard is what makes those two orders the same.
+(register! :tree/rename-submit
+           (fn [state path name-of]
+             (if (= path (get-in state [:workspace :renaming]))
+               {:state (assoc-in state [:workspace :renaming] nil)
+                :effects (into [[:ctx/out :tree.rename]]
+                               (when (seq (str name-of)) [[:file/rename path (str name-of)]]))}
+               {:state state :effects []})))
+
+;;*********************************************************
+;; The workspace the tree is of
+;;*********************************************************
+
+;; The panel shows one of two things and this is which. `nil` recents is the
+;; tree — an empty list of saved workspaces is something to say rather than a
+;; reason to show something else.
+(register! :workspace/show-tree
+           (fn [state]
+             (assoc-in state [:workspace :recents] nil)))
+
+(register! :workspace/show-recents
+           (fn [state]
+             {:state state :effects [[:workspace/read-recents]]}))
+
+(register! :workspace/recents-loaded
+           (fn [state recents]
+             (assoc-in state [:workspace :recents] (vec recents))))
+
+;;*********************************************************
+;; The statusbar's own facts
+;;*********************************************************
+
+;; The bar is a view, so what it shows has to be state, and everything that
+;; used to reach into a statusbar object now goes through here instead. All
+;; three are state only: telling you something is not an effect.
+
+;; state only — what the editor last said. `nil` clears it, which is what the
+;; timeout in [[lt.objs.notifos]] does.
+(register! :status/message
+           (fn [state text & [tone]]
+             (assoc state :message (when (seq (str text)) {:text (str text) :tone tone}))))
+
+;; state only — a count and not a flag, because two overlapping tasks
+;; finishing must not turn the indicator off once. `:set` is the reset the
+;; command offers for when a task died without saying so.
+(register! :status/loading
+           (fn [state op]
+             (update state :loading
+                     (fn [n] (case op
+                               :inc (inc (or n 0))
+                               :dec (max 0 (dec (or n 0)))
+                               :set 0)))))
+
+;; state only — how much the console has said that you have not looked at, and
+;; in what tone. Cleared by looking, which is the console's own doing.
+(register! :console/unread
+           (fn [state op & [tone]]
+             (case op
+               :inc (update-in state [:console :unread] (fnil inc 0))
+               :tone (assoc-in state [:console :tone] tone)
+               :clear (assoc state :console {:unread 0 :tone nil}))))

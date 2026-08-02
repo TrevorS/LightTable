@@ -50,9 +50,9 @@ test.describe('the component kit', () => {
         expect(undrawn, 'aliases in the registry with no cell, or cells with no alias').toEqual([]);
 
         const registered = Number(await evalClj(window, '(count (lt.ui.kit/aliases))'));
-        // Twenty-five of the kit, the hosted pane, and the eight views.
+        // Twenty-five of the kit, the hosted pane, and the nine views.
         expect(registered).toBe(26);
-        expect(await window.locator('.kit__table-row').count()).toBe(registered + 8);
+        expect(await window.locator('.kit__table-row').count()).toBe(registered + 9);
     });
 
     test('and every cell is the component, not a picture of it', async ({ window }) => {
@@ -78,14 +78,20 @@ test.describe('the component kit', () => {
     });
 
     test('the views draw themselves from a map, in the page', async ({ window }) => {
-        // Three of the eight are drawn by calling them, which is the same thing
+        // Four of the nine are drawn by calling them, which is the same thing
         // the test file does — so a view that throws on a shape takes this down
         // rather than waiting to be noticed in a window.
         // Three from two tabs: a run that is not in the tab list is still a tab,
         // which is the rule the view exists to make true on screen.
         await expect(window.locator('.kit .titlebar .tab')).toHaveCount(3);
-        await expect(window.locator('.kit .statusbar')).toHaveCount(1);
+        // Two: quiet with something working, and one that failed. The bar has
+        // states now that the bar at the bottom of this window is in.
+        await expect(window.locator('.kit .statusbar')).toHaveCount(2);
+        await expect(window.locator('.kit .statusbar__console .pill--error')).toHaveCount(1);
         await expect(window.locator('.kit .commandbar')).toHaveCount(1);
+        // The tree, drawn from a map: two roots, one folder open with two
+        // children in it, and the shut folder's contents nowhere.
+        await expect(window.locator('.kit .wstree .row')).toHaveCount(4);
     });
 
     test('props and usage turn off for a clean visual pass', async ({ window }) => {

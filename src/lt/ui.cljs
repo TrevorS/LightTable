@@ -30,7 +30,11 @@
   ;; destroyed is dropped on the next pass rather than held.
   (atom #{}))
 
-(defonce ^:private redraws (atom {}))
+(defonce ^:private redraws
+  ;; Object -> the redraws of every root it owns. A vector rather than one
+  ;; function because an object may have more than one: the statusbar is a
+  ;; different clock from the window, so the window has two.
+  (atom {}))
 
 (defn redraw-all!
   "Ask every object rendering through [[node]] to draw itself from scratch.
@@ -46,8 +50,7 @@
   []
   (swap! rendered (fn [objs] (into #{} (filter deref) objs)))
   (doseq [obj @rendered
-          :let [redraw (get @redraws obj)]
-          :when redraw]
+          redraw (get @redraws obj)]
     (redraw)))
 
 (defn node
@@ -83,10 +86,40 @@
                   (r/render el (view obj))))]
     (draw!)
     (add-watch obj ::render (fn [_ _ _ _] (draw!)))
-    (swap! redraws assoc obj (fn []
-                               (when @obj
-                                 (r/unmount el)
-                                 (draw!))))
+    (swap! redraws update obj (fnil conj []) (fn []
+                                               (when @obj
+                                                 (r/unmount el)
+                                                 (draw!))))
+    el))
+
+(defn state-node
+  "A DOM node for `obj`, rendered from `atoms` rather than from the object.
+
+  [[node]] watches the object, which is right when the object is where the
+  facts are. A view is the other case: it is a function of the state, so the
+  thing to watch is the state — and possibly more than one of them, because
+  the statusbar reads the cursor on one clock and everything else on another.
+  See doc/rendering.md.
+
+  `view` takes no arguments and returns hiccup; it reads the atoms itself,
+  which keeps the slicing in the view where the rest of it is. The watches are
+  removed when `obj` is destroyed, unlike [[node]]'s — these atoms outlive it,
+  so nothing else would ever take them off."
+  [obj root view atoms]
+  (swap! rendered conj obj)
+  (let [el (crate/html root)
+        key [::state (hash el)]
+        draw! (fn [] (when @obj (r/render el (view))))]
+    (draw!)
+    (doseq [a atoms]
+      (add-watch a key (fn [_ _ _ _] (draw!))))
+    (add-watch obj key (fn [_ _ _ new-value]
+                         (when-not new-value
+                           (doseq [a atoms] (remove-watch a key)))))
+    (swap! redraws update obj (fnil conj []) (fn []
+                                               (when @obj
+                                                 (r/unmount el)
+                                                 (draw!))))
     el))
 
 (defn watch

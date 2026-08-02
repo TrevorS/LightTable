@@ -128,6 +128,116 @@
       (let [quiet (assoc state :runs {})]
         (is (empty? (find-all (view/statusbar quiet) :lt.ui.chrome/count-pill)))))))
 
+(deftest the-statusbar-is-the-bar-at-the-bottom-of-the-window
+  ;; The three facts that used to be three objects with three nodes. They are
+  ;; state now, so what the real bar shows is answerable here rather than only
+  ;; in a window — which is the whole reason the surface moved.
+  (let [quiet (assoc state :runs {})]
+    (testing "working is a count, so two tasks finishing does not stop it once"
+      (is (empty? (find-all (view/statusbar quiet) :lt.ui.chrome/status-dot)))
+      (is (= 1 (count (find-all (view/statusbar (assoc quiet :loading 2))
+                                :lt.ui.chrome/status-dot))))
+      (is (empty? (find-all (view/statusbar (assoc quiet :loading 0))
+                            :lt.ui.chrome/status-dot))))
+
+    (testing "a message is shown, and an error one is toned rather than reworded"
+      (let [said (view/statusbar (assoc quiet :message {:text "saved fuzzy.ts"}))
+            failed (view/statusbar (assoc quiet :message {:text "no language server" :tone :error}))]
+        (is (re-find #"saved fuzzy.ts" (text-of said)))
+        (is (nil? (:class (attrs-of (first (find-all said :span.statusbar__message))))))
+        (is (= "statusbar__message--error"
+               (:class (attrs-of (first (find-all failed :span.statusbar__message))))))))
+
+    (testing "the console appears only when it has something you have not read"
+      (is (empty? (find-all (view/statusbar quiet) :span.statusbar__console)))
+      (is (empty? (find-all (view/statusbar (assoc quiet :console {:unread 0})) :span.statusbar__console)))
+      (let [unread (view/statusbar (assoc quiet :console {:unread 4}))]
+        (is (= 4 (:count (attrs-of (first (find-all unread :lt.ui.chrome/count-pill))))))
+        (testing "and clicking it runs the command rather than reaching for the console"
+          (is (= [[:cmd/exec :toggle-console]]
+                 (get-in (attrs-of (first (find-all unread :span.statusbar__console))) [:on :click]))))))
+
+    (testing "an error in it colours the count and nothing else"
+      (let [bad (view/statusbar (assoc quiet :console {:unread 2 :tone :error}))]
+        (is (= :error (:tone (attrs-of (first (find-all bad :lt.ui.chrome/count-pill))))))))))
+
+(def ^:private with-tree
+  (assoc state :workspace
+         {:roots ["/p" "/notes.md"]
+          :nodes {"/p" {:dir? true :open? true :loaded? true
+                        :children ["/p/src" "/p/deps.edn"]}
+                  "/p/src" {:dir? true :open? false :loaded? true
+                            :children ["/p/src/core.cljs"]}
+                  "/p/src/core.cljs" {:dir? false}
+                  "/p/deps.edn" {:dir? false}
+                  "/notes.md" {:dir? false}}}))
+
+(deftest the-tree-draws-what-is-open-and-nothing-else
+  ;; The reason to draw from the state rather than to keep a node per file: a
+  ;; closed folder is not hidden, it is not there. `/p/src` is loaded and shut,
+  ;; so what is in it is remembered and undrawn.
+  (let [rows (find-all (view/workspace with-tree) :lt.ui.row/tree-row)
+        paths (map (comp :replicant/key attrs-of) rows)]
+    (is (= ["/p" "/p/src" "/p/deps.edn" "/notes.md"] paths))
+
+    (testing "depth is the tree, and the row is what turns it into an indent"
+      (is (= [0 1 1 0] (map (comp :depth attrs-of) rows))))
+
+    (testing "a file has no twist and a folder has one either way"
+      (is (= [true false nil nil] (map (comp :open? attrs-of) rows)))
+      (is (nil? (:open? (attrs-of (last rows)))) "nil reserves the column without drawing in it"))
+
+    (testing "clicking a folder opens it and clicking a file opens the file"
+      (is (= [[:tree/toggle "/p"]] (:on-select (attrs-of (first rows)))))
+      (is (= [[:tree/open "/p/deps.edn"]] (:on-select (attrs-of (nth rows 2))))))
+
+    (testing "and the file you are looking at is the row that is selected"
+      (is (empty? (filter (comp :selected? attrs-of) rows)))
+      (let [here (find-all (view/workspace
+                            (assoc-in with-tree [:tabsets 0 :tabs] ["/p/deps.edn"]))
+                           :lt.ui.row/tree-row)]
+        (is (= ["/p/deps.edn"] (map (comp :replicant/key attrs-of)
+                                    (filter (comp :selected? attrs-of) here))))))))
+
+(deftest opening-a-folder-shows-what-was-already-read
+  (let [opened (assoc-in with-tree [:workspace :nodes "/p/src" :open?] true)
+        paths (map (comp :replicant/key attrs-of)
+                   (find-all (view/workspace opened) :lt.ui.row/tree-row))]
+    (is (= ["/p" "/p/src" "/p/src/core.cljs" "/p/deps.edn" "/notes.md"] paths))))
+
+(deftest a-row-being-renamed-is-an-input-rather-than-a-row
+  ;; And only that row: renaming one file must not take the rest of the tree
+  ;; with it, which a modal dialog would.
+  (let [renaming (assoc-in with-tree [:workspace :renaming] "/p/deps.edn")
+        drawn (view/workspace renaming)]
+    (is (= ["/p" "/p/src" "/notes.md"]
+           (map (comp :replicant/key attrs-of) (find-all drawn :lt.ui.row/tree-row))))
+    (let [input (first (find-all drawn :input.tree__rename))]
+      (is (= "deps.edn" (:value (attrs-of input))))
+      (testing "and what you typed reaches the action, which is what a placeholder is for"
+        (is (= [[:tree/rename-submit "/p/deps.edn" :event/value]]
+               (get-in (attrs-of input) [:on :blur])))))))
+
+(deftest an-empty-workspace-says-what-would-fill-it
+  (let [empty-ws (assoc state :workspace {:roots [] :nodes {}})]
+    (is (seq (find-all (view/workspace empty-ws) :lt.ui.chrome/empty-state)))
+    (is (empty? (find-all (view/workspace empty-ws) :lt.ui.row/tree-row)))))
+
+(deftest the-panel-shows-the-tree-or-the-workspaces-and-nil-is-which
+  ;; `nil` recents rather than an empty list, because having saved no
+  ;; workspaces is something to say and not a reason to show the tree.
+  (is (empty? (find-all (view/workspace with-tree) :div.wstree__back)))
+  (let [switching (assoc-in with-tree [:workspace :recents]
+                            [{:path "/ws/a.clj" :folders ["/p"] :files []}])
+        drawn (view/workspace switching)]
+    (is (= 1 (count (find-all drawn :div.wstree__back))) "and a way back to the tree")
+    (is (empty? (find-all drawn :lt.ui.row/tree-row)) "the tree is not underneath it")
+    (is (= [[:workspace/open "/ws/a.clj"]]
+           (:on-select (attrs-of (first (find-all drawn :lt.ui.row/list-row))))))
+    (testing "and none saved is a thing to say"
+      (is (seq (find-all (view/workspace (assoc-in with-tree [:workspace :recents] []))
+                         :lt.ui.chrome/empty-state))))))
+
 (deftest the-command-bar-is-a-view-over-the-table
   (let [with-bar (assoc state :command-bar
                         {:open? true :query "eva" :at 0

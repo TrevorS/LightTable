@@ -155,6 +155,9 @@
  [:console :lt.objs.console/on-close]
  [:console :lt.objs.menu/menu!]
  [:console :lt.objs.console/menu+]
+ [:console :lt.objs.console/toggle-console]
+ [:console :lt.objs.console/show-console]
+ [:console :lt.objs.console/hide-console]
 
  [:context :lt.objs.context/log]
 
@@ -256,8 +259,6 @@
  [:editor :lt.plugins.auto-complete/remove-on-move-line]
  [:editor :lt.plugins.auto-complete/remove-on-scroll-inactive]
  [:editor :lt.plugins.auto-complete/auto-show-on-input]
-
- [:editor.active :lt.objs.statusbar/report-cursor-location]
 
  [:editor.behaviors :lt.objs.settings/on-behaviors-editor-save]
  [:editor.behaviors :lt.objs.settings/eval-settings]
@@ -540,11 +541,6 @@
  [:popup :lt.objs.popup/change-active-button]
  [:popup :lt.objs.popup/exec-active]
 
- [:recent-workspace :lt.objs.sidebar.workspace/on-menu]
- [:recent-workspace :lt.objs.sidebar.workspace/recent-menu]
- [:recent-workspace :lt.objs.sidebar.workspace/recent.delete!]
- [:recent-workspace :lt.objs.sidebar.workspace/recent.select!]
-
  [:searcher :lt.objs.search/clear!]
  [:searcher :lt.objs.search/search!]
  [:searcher :lt.objs.search/done-searching]
@@ -588,18 +584,10 @@
  [:sidebar.docs.search :lt.plugins.doc/cur-from-last-editor]
 
  [:sidebar.workspace :lt.objs.sidebar.workspace/sidebar-menu]
- [:sidebar.workspace :lt.objs.sidebar.workspace/on-menu]
- [:sidebar.workspace :lt.objs.sidebar.workspace/on-drop]
- [:sidebar.workspace :lt.objs.sidebar.workspace/recent!]
- [:sidebar.workspace :lt.objs.sidebar.workspace/tree!]
+ [:sidebar.workspace :lt.objs.sidebar.workspace/tree-menu-items]
 
  [:statusbar-item :lt.objs.statusbar/on-show!]
  [:statusbar-item :lt.objs.statusbar/on-hide!]
- [:statusbar-item :lt.objs.statusbar/init-statusbar]
-
- [:statusbar.console-toggle :lt.objs.console/statusbar-console-toggle]
- [:statusbar.console-toggle :lt.objs.console/statusbar-console-hide]
- [:statusbar.console-toggle :lt.objs.console/statusbar-console-show]
 
  [:tab-label :lt.objs.menu/menu!]
  [:tab-label :lt.objs.tabs/tab-label-menu+]
@@ -638,13 +626,6 @@
 
  [:tcp.client :lt.objs.clients.tcp/send!]
 
- [:tree-item :lt.objs.sidebar.workspace/rename-submit]
- [:tree-item :lt.objs.sidebar.workspace/rename-focus]
- [:tree-item :lt.objs.sidebar.workspace/start-rename]
- [:tree-item :lt.objs.sidebar.workspace/duplicate]
- [:tree-item :lt.objs.sidebar.workspace/rename-cancel]
- [:tree-item :lt.objs.sidebar.workspace/rename-blur]
-
  [:version :lt.objs.version/destroy-on-close]
  [:version :lt.objs.version/on-show-refresh-eds]
 
@@ -678,6 +659,7 @@
  [:workspace :lt.objs.sidebar.workspace/on-ws-add]
  [:workspace :lt.objs.workspace/watch-on-set]
  [:workspace :lt.objs.sidebar.workspace/on-ws-remove]
+ [:workspace :lt.objs.sidebar.workspace/on-ws-rename]
  [:workspace :lt.objs.workspace/set!]
  [:workspace :lt.objs.sidebar.workspace/watched.delete]
  [:workspace :lt.objs.workspace/new!]
@@ -687,37 +669,6 @@
  [:workspace :lt.objs.opener/watch-open-files]
  [:workspace :lt.objs.sidebar.workspace/watch-open-dirs-paths]
  [:workspace :lt.objs.workspace/remove-folder!]
-
- [:workspace.file :lt.objs.sidebar.workspace/on-open-file]
- [:workspace.file :lt.objs.sidebar.workspace/rename-file]
- [:workspace.file :lt.objs.sidebar.workspace/subfile-menu]
- [:workspace.file :lt.objs.sidebar.workspace/delete-file]
- [:workspace.file :lt.objs.sidebar.workspace/force-delete-file]
- [:workspace.file :lt.objs.sidebar.workspace/on-menu]
-
- [:workspace.file.root :lt.objs.sidebar.workspace/on-root-menu]
-
- [:workspace.folder :lt.objs.sidebar.workspace/new-folder!]
- [:workspace.folder :lt.objs.sidebar.workspace/subfolder-menu]
- [:workspace.folder :lt.objs.sidebar.workspace/destroy-sub-tree]
- [:workspace.folder :lt.objs.sidebar.workspace/on-open-ls]
- [:workspace.folder :lt.objs.sidebar.workspace/delete-folder]
- [:workspace.folder :lt.objs.sidebar.workspace/on-close]
- [:workspace.folder :lt.objs.sidebar.workspace/rename-folder]
- [:workspace.folder :lt.objs.sidebar.workspace/refresh]
- [:workspace.folder :lt.objs.sidebar.workspace/on-menu]
- [:workspace.folder :lt.objs.sidebar.workspace/force-delete-folder]
- [:workspace.folder :lt.objs.sidebar.workspace/track-and-watch-open-dirs]
- [:workspace.folder :lt.objs.sidebar.workspace/untrack-closed-dirs]
- [:workspace.folder :lt.objs.sidebar.workspace/new-file!]
-
- [:workspace.folder.root :lt.objs.sidebar.workspace/on-root-menu]
- [:workspace.folder.root :lt.objs.sidebar.workspace/on-menu]
-
- [:workspace.root :lt.objs.sidebar.workspace/on-remove]
- [:workspace.root :lt.objs.sidebar.workspace/add-ws-folder]
- [:workspace.root :lt.objs.sidebar.workspace/on-clear]
- [:workspace.root :lt.objs.sidebar.workspace/add-ws-file]
 
  [:ws.client :lt.objs.clients.ws/send!]
 ]

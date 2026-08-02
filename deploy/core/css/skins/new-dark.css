@@ -259,32 +259,8 @@ input {
   background: #606970;
   border: 1px solid #606970;
 }
-#side .workspace ul.buttons li:hover:not(.sep) {
-  color: #f4f4f4;
-  background: #616161;
-}
-#side .workspace li:hover > div > p {
-  color: #f4f4f4;
-}
-#side .workspace li p:hover {
-  background: #616161;
-  color: #f4f4f4;
-}
-#side .workspace .recent > div > ul > li + li {
-  border-top: 0px solid #888;
-}
-#side .workspace .recent > div > ul > li:hover {
-  border-color: #888;
-  background: #616161;
-  color: #f4f4f4;
-}
-#side .workspace .recent > div > ul > li:hover + li {
-  border-top-color: #888;
-}
-#side .workspace .recent h2:hover {
-  background: #616161;
-  color: #f4f4f4;
-}
+/* The workspace tree is not skinned here. It is a view, and every colour in it
+   is a role the token sheet resolves — see css/kit.css. */
 #right-bar .content {
   background: #3b3f41;
 }
@@ -419,41 +395,9 @@ input {
   color: #ccc;
   border-color: #888;
 }
-#statusbar {
-  color: #bbb;
-}
-#statusbar .console-toggle {
-  cursor: default;
-  background: #404040;
-  color: #ccc;
-  min-width: 12px;
-  padding: 0 4px;
-  width: auto;
-  display: none;
-  text-align: center;
-  margin-left: 0px;
-  border-radius: 2px;
-}
-#statusbar .console-toggle:hover {
-  background: #666;
-  color: #f4f4f4;
-}
-#statusbar .console-toggle.dirty {
-  background: #505d6b;
-  color: #c7e6ff;
-  display: inline-block;
-}
-#statusbar .console-toggle.error {
-  color: #ffa6a6;
-  background: #73404c;
-}
-#statusbar .log .error {
-  color: #ffa6a6;
-  background: #73404c;
-}
-#statusbar .log .tip {
-  color: #c7e6ff;
-}
+/* The statusbar is not skinned here any more. It is a view, and every colour
+   in it is a role the token sheet resolves — see css/kit.css. A skin that
+   restated them would be the second answer this fork is getting rid of. */
 #find-bar input {
   border-top: 2px solid #3b3f41;
   background: #202020;
@@ -776,9 +720,6 @@ input {
   background: #741;
   color: #fb0;
 }
-.workspace .buttons {
-  display: none;
-}
 #multi .list {
   margin: 0;
 }
@@ -796,9 +737,6 @@ input {
   right: 0;
   padding: 5px;
   padding-bottom: 5px;
-}
-#side .workspace ul.root {
-  top: 0px;
 }
 #right-bar .filter-list input {
   padding: 6px 10px;
