@@ -3,8 +3,10 @@
  ;; them ahead of the plugin. Core bundles current ones now — see
  ;; plugins/HTML/VENDORED.md.
  [:app :lt.objs.plugins/load-js "html_compiled.js"]
- [:app :lt.objs.editor/load-addon "edit/closetag.js"]
- [:app :lt.objs.editor/load-addon "edit/matchtags.js"]
+ ;; Two `lt.objs.editor/load-addon` lines were here, naming CodeMirror 5's
+ ;; edit/closetag.js and edit/matchtags.js. There has been no `load-addon` for
+ ;; some time, so they resolved to nothing and said nothing about it — and the
+ ;; `set-codemirror-flags` line below is what actually turns both features on.
  [:app :lt.objs.plugins/load-keymap "html.keymap"]
 
  [:editor.html :lt.plugins.html/eval-on-save]

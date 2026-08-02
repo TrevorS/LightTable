@@ -122,6 +122,36 @@ the grep finds nothing and the step passes green with warnings present.
 
 ---
 
+### singultus cannot be deleted while `defui` is plugin API
+
+Half of it is gone — 116 `defui`/`defpartial` across 37 files when
+doc/rendering.md was written, 63 across 22 now, and the surfaces that moved
+took `bound` and `map-bound` with them. The rest cannot follow without a
+decision, because `lt.macros/defui` and `defpartial` compile to singultus calls
+and are published in `doc/api/lt.macros.md`, and `lt.compat` hands plugins
+`bound`, `map-bound`, `subatom` and `computed` by name.
+
+Three ways out, in increasing order of how much they cost somebody else:
+
+**Convert the remaining 22 core files and keep singultus for plugins.** No
+break, and the 544 lines stay in the bundle for a shrinking number of callers.
+This is what is happening by default.
+
+**Reimplement `defui` on Replicant, keeping the signature.** A `defui` returns
+a DOM node built once with parts bound to atoms; Replicant renders *into* a
+container and owns its children, so the obvious version returns a wrapper and
+changes the shape every stylesheet is written against — and taking
+`firstChild` out of a detached container is the exact failure doc/rendering.md
+describes, where the node stops updating the moment anything moves it. Possible,
+not free, and the tests that would catch getting it wrong do not exist for the
+plugin surface.
+
+**Break it.** `defui` becomes a compile error and third-party plugins are
+ported. Cheapest for this repository, and a real cost to anyone who wrote one.
+
+Worth deciding rather than drifting, because the answer changes how the
+remaining conversions are written.
+
 ## Open — coverage
 
 Ranked by what a failure would cost.
@@ -216,6 +246,23 @@ the views emit rather than holding a list of it.
 **`lt.ui.row/list-row` dropped every attribute it did not name** — `64979e12`.
 Replicant merges none of an alias's call-site attrs onto what it returns, so
 the workspace tree had been drawing flat.
+
+**Five behavior entries named things that do not exist** — the HTML plugin
+asked for `lt.objs.editor/load-addon` twice for CodeMirror 5's closetag and
+matchtags, which has had no such function for some time and was superseded by
+the `set-codemirror-flags` line below it; `default.behaviors` asked for
+`check-metadata-sha`, renamed to `get-latest-metadata-sha` without the config
+following; and the Clojure plugin bound `nrepl/client.settings` twice, which is
+a private function rather than a behavior. All silent.
+
+**Twenty-nine unused images, ~270KB** — the CodeMirror 5 show-invisibles
+sprites and three loaders, of which two were reachable only through CSS that
+was itself dead.
+
+**Dead CSS for four features that no longer exist** — `#filer`,
+`#markdown-preview`, `.behavior-helper-result`, `#multi-container`, plus the
+CodeMirror 5 addon classes and `.load-wrapper`, whose last markup went with the
+connect panel.
 
 **Two CSS blocks for the tab strip had drifted apart** — `5977a8b8`, along with
 a `.dirty.ui-sortable-placeholder:after` rule naming a jQuery-UI class nothing

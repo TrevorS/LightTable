@@ -23,7 +23,11 @@
                                     (object/merge! editor {:dirty false
                                                            :editor.generation (ed/->generation editor)})
                                     (object/raise editor :saved)
-                                    ;; TODO: :clean trigger unused internally. Consider removing
+                                    ;; `:clean` had a TODO here saying nothing
+                                    ;; listened for it. Something does now —
+                                    ;; `lt.ui.window/sync-from-objects` — so a
+                                    ;; save is what tells the projection the
+                                    ;; dirty dot can go.
                                     (object/raise editor :clean))))))
 
 (behavior ::dirty-on-change

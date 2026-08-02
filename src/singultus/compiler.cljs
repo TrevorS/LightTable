@@ -156,13 +156,8 @@
       [nsp tag (merge tag-attrs (normalize-map-attrs map-attrs)) (next content)]
       [nsp tag tag-attrs content])))
 
-(defn parse-content [elem content]
-  (let [attrs (first content)]
-  (if (map? attrs)
-    (do
-      (dom-attr elem attrs)
-      (rest content))
-    content)))
+;; `parse-content` was here, and had no caller: `parse-tag` above does the
+;; attribute-map split that this duplicated.
 
 ;; The feature test is per call rather than once at load, and deliberately.
 ;; Reading `js/document` while this namespace loads makes the namespace — and

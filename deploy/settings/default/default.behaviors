@@ -530,7 +530,6 @@
  [:plugin-manager :lt.objs.plugins/render-server-plugins]
  [:plugin-manager :lt.objs.plugins/draw-plugins-on-updated]
  [:plugin-manager :lt.objs.plugins/get-latest-metadata-sha]
- [:plugin-manager :lt.objs.plugins/check-metadata-sha]
  [:plugin-manager :lt.objs.plugins/check-local-metadata-cache]
 
  [:plugin.file :lt.objs.editor.file/on-save :build]

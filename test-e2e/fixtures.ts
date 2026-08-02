@@ -200,11 +200,6 @@ export async function cljs<T = unknown>(window: Page, expression: string): Promi
     return await window.evaluate(expression) as T;
 }
 
-/** `pr-str` of a ClojureScript value, which is the readable form for an assertion. */
-export async function prStr(window: Page, expression: string): Promise<string> {
-    return await window.evaluate(`cljs.core.pr_str(${expression})`) as string;
-}
-
 /**
  * Connect the "Light Table UI" client, the way the Connect bar does.
  *

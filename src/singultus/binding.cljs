@@ -60,22 +60,6 @@
   (swap! (.-atm sa) assoc-in (.-path sa) new-value)
   new-value)
 
-(defn sub-swap!
-  "Atomically swaps the value of atom to be:
-  (apply f current-value-of-atom args). Note that f may be called
-  multiple times, and thus should be free of side effects.  Returns
-  the value that was swapped in."
-  ([sa f]
-     (sub-reset! sa (f @sa)))
-  ([sa f x]
-     (sub-reset! sa (f @sa x)))
-  ([sa f x y]
-     (sub-reset! sa (f @sa x y)))
-  ([sa f x y z]
-     (sub-reset! sa (f @sa x y z)))
-  ([sa f x y z & more]
-     (sub-reset! sa (apply f @sa x y z more))))
-
 (defn sub-destroy! [^js sa]
   (remove-watch (.-atm sa) (.-key sa))
   (set! (.-watches sa) nil)
@@ -137,11 +121,11 @@
        (-depend neue atm))
      neue))
 
-(defn compute [compu]
-  (-compute compu))
-
-(defn depend-on [compu atm]
-  (-depend compu atm))
+;; `compute` and `depend-on` were here — one-line wrappers over the `-compute`
+;; and `-depend` protocol methods, which every caller calls directly. So was
+;; `sub-swap!`, the swap counterpart to `sub-reset!` that nothing ever swapped
+;; with. None had a call site in the editor, the plugins, or the compat shim
+;; `lt.compat` publishes to plugins.
 
 ;;*********************************************************
 ;;rest

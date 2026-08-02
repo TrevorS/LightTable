@@ -98,7 +98,6 @@
                                     {:exts [:cljs], :mime "text/x-clojurescript", :tags [:editor.cljs :editor.clojurescript], :name "ClojureScript"}
                                     {:exts [:cljc], :mime "text/x-clojure", :tags [:editor.clj :editor.clojure], :name "Clojure/ClojureScript"}]]
 
- [:nrepl.client :lt.plugins.clojure.nrepl/client.settings]
  [:nrepl.client :lt.plugins.clojure.nrepl/init-session]
  [:nrepl.client :lt.object/add-tag :nrepl.client.common]
 
@@ -113,7 +112,6 @@
  [:nrepl.client.common :lt.plugins.clojure/clj-result]
  [:nrepl.client.common :lt.plugins.clojure/clj-exception]
 
- [:nrepl.client.remote :lt.plugins.clojure.nrepl/client.settings.remote]
  [:nrepl.client.remote :lt.plugins.clojure.nrepl/init-remote-session]
  [:nrepl.client.remote :lt.object/add-tag :nrepl.client.common]
 

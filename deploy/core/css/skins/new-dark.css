@@ -108,9 +108,6 @@ input {
 .inline-result .inspector-object h2:before {
   color: #ccfcff;
 }
-#multi-container {
-  background: #3b3f41;
-}
 #multi .tabset + .tabset {
   border-left: 2px solid #3b3f41;
 }
@@ -326,77 +323,6 @@ input {
 .behavior-helper-line {
   z-index: 10 !important;
 }
-.behavior-helper-result {
-  padding-left: 10px;
-  margin: 0;
-  z-index: 10;
-  display: inline-block;
-  width: 0;
-  height: 10px;
-  overflow: visible;
-}
-.behavior-helper-result div {
-  z-index: 10;
-  white-space: nowrap;
-  display: inline-block;
-  padding-top: 0px;
-  padding-bottom: 0px;
-  margin-left: 0px;
-  padding-left: 0px;
-  box-sizing: border-box;
-  background: none;
-  color: #7ffffd;
-}
-.behavior-helper-result div {
-  display: inline-block;
-  white-space: nowrap;
-  width: -webkit-fit-content;
-  background: #3e6b6b;
-  padding: 2px 5px;
-  border-radius: 0px;
-  margin-top: 0px;
-  border-radius: 3px;
-}
-.behavior-helper-result div > * {
-  border-radius: 0px;
-  padding: 0px !important;
-  vertical-align: middle;
-}
-.behavior-helper-result h2 {
-  display: inline-block;
-  width: -webkit-fit-content;
-  white-space: nowrap;
-}
-.behavior-helper-result div > span.param {
-  display: inline-block;
-  margin-left: 8px;
-  padding: 2px 5px !important;
-  border: 1px solid #7ffffd;
-  border-radius: 3px;
-}
-.behavior-helper-result div > span.spacer {
-  display: inline-block;
-  margin: 0 5px;
-}
-.behavior-helper-result .active {
-  background: #7ffffd;
-  color: #3e6b6b;
-  border-radius: 0px;
-  display: inline-block;
-}
-.behavior-helper-result .example {
-  display: inline-block;
-  width: auto;
-  vertical-align: middle;
-  padding: 0 !important;
-  margin: 0;
-  margin-left: 5px;
-  border: none;
-  color: #7ffffd;
-}
-.behavior-helper-result .active .example {
-  color: #3e6b6b;
-}
 .plugin-manager .version {
   margin-left: 10px;
   color: #bbb;
@@ -536,27 +462,8 @@ input {
 /**********************************************************
 * Theme specific
 ***********************************************************/
-.cm-visible-space {
-  background: url("../../img/visible-space11.png");
-  background-size: 100%;
-  background-position: center;
-  background-repeat: no-repeat;
-}
-.cm-visible-tab {
-  background: url("../../img/visible-tab7.png");
-  background-size: 100% 1em;
-  background-position: center;
-  background-repeat: no-repeat;
-}
-.load-wrapper .img {
-  background: url("../../img/loaderdark.gif");
-}
 .timed {
   border-bottom: 1px solid #fa5;
-}
-.timed-result {
-  background: #741;
-  color: #fb0;
 }
 #multi .content {
   background: #202020;
@@ -587,11 +494,6 @@ button {
 /* Shown when moving in bi-directional text */
 .CodeMirror div.CodeMirror-secondarycursor {
   border-left: 1px solid #c0c0c0;
-}
-.CodeMirror.cm-keymap-fat-cursor div.CodeMirror-cursor {
-  width: auto;
-  border: none !important;
-  background: rgba(0,200,200,0.4);
 }
 .CodeMirror-gutters {
   background: #202020;
