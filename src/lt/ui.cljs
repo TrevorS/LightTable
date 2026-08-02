@@ -144,25 +144,43 @@
     (redraw)))
 
 (defn- apply-attrs!
-  "Write `attrs` onto `el`. The root's own class and style, and nothing else.
+  "Write `attrs` onto `el` — the root element itself, not its contents.
 
-  Replicant renders *into* the root and so never owns the root's attributes,
-  which is the one thing `bound` did that no view can: `[:span {:class (bound
-  this ->result-class)}]` is a class on the element the object hands out. It
-  comes up wherever the root is the styled thing — an inline result that opens
-  when you click it, the bottombar's height, a tabset's width — so it is here
-  rather than a watch written out again in each of them.
+  Replicant renders *into* the root and so never owns the root's own
+  attributes, which is the one thing `bound` did that no view can: `[:span
+  {:class (bound this ->result-class)}]` is a class on the element the object
+  hands out. It comes up wherever the root is the styled thing — an inline
+  result that opens when you click it, a tabset's width — and sometimes the
+  root *is* the whole thing, as with the command bar's options input, whose
+  content is one `input` with a placeholder and a value.
 
-  Only `:class` and `:style`, because that is what the roots use and because a
-  general attribute writer here would be a second renderer beside the one this
-  namespace exists to use."
-  [^js el {:keys [class style]}]
-  (when class
-    (set! (.-className el) (if (coll? class)
-                             (string/join " " (remove nil? class))
-                             (str class))))
-  (when style
-    (dom/css el style)))
+  Attributes only, and only on the root. That is the boundary: children and
+  handlers are Replicant's, and a writer here that took those on would be a
+  second renderer beside the one this namespace exists to use.
+
+  `previous` is what was written last time, and only the differences are
+  applied — which is what makes this a renderer rather than a writer. It
+  matters for one attribute in particular: `value`. Writing it back on every
+  draw means the field is reset whenever anything else about the object
+  changes, so typing in the command bar's options input while its placeholder
+  changed would lose what you typed. Comparing against the DOM instead does not
+  fix that, because after you type the two genuinely differ; comparing against
+  the last *drawn* value does, and says the right thing — the view is
+  authoritative when its own answer changes, and not otherwise."
+  [^js el previous attrs]
+  (doseq [[k v] attrs
+          :when (not= v (get previous k ::absent))]
+    (case k
+      :class (set! (.-className el) (if (coll? v)
+                                      (string/join " " (remove nil? v))
+                                      (str v)))
+      :style (dom/css el v)
+      ;; Properties rather than attributes: setting the `value` attribute
+      ;; seeds a field and does not change what is in it.
+      (:value :checked) (aset el (name k) v)
+      (if (nil? v)
+        (.removeAttribute el (name k))
+        (.setAttribute el (name k) v)))))
 
 (defn node
   "A DOM node for `obj`, whose contents Replicant renders from `view`.
@@ -198,11 +216,15 @@
   ([obj root view attrs]
    (swap! rendered conj obj)
    (let [el (crate/html root)
+         drawn (volatile! nil)
          draw! (fn []
                  ;; A destroyed object is nil, and the watch fires on the way
                  ;; there. Rendering nothing is right: the node is about to go.
                  (when @obj
-                   (when attrs (apply-attrs! el (attrs obj)))
+                   (when attrs
+                     (let [a (attrs obj)]
+                       (apply-attrs! el @drawn a)
+                       (vreset! drawn a)))
                    (render-safely! el (::object/type @obj) #(view obj))))]
      (draw!)
      (add-watch obj ::render (fn [_ _ _ _] (draw!)))

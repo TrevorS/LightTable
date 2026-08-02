@@ -702,16 +702,22 @@
    :lt.ui.band/diagnostic "An LSP diagnostic, in the buffer."})
 
 (def ^:private hosted
-  "The alias that is registered and is not one of the twenty-five.
+  "The aliases that are registered and are not among the twenty-five.
 
-  The document's closing note says the editor pane is deliberately not a
-  component, and it is not — nothing inside it belongs to Replicant. It is
-  still an alias, and for a reason worth the line: [[lt.ui.view]] names it by
-  keyword rather than requiring it, because requiring it would load an editor
-  and everything under one into a namespace whose whole value is being a pure
-  function of a map. So the registry has twenty-six entries and the kit has
-  twenty-five, and this is the difference rather than a discrepancy."
-  {:lt.ui.pane/pane "An editor, hosted. Replicant is told nothing about what is inside."})
+  Both are the same idea and the document's closing note names it: DOM
+  Replicant must never diff. Nothing inside either belongs to it, so neither is
+  a component — they are the seam where something else's element is placed into
+  hiccup, and what is on the other side is an editor or another object.
+
+  They are aliases rather than functions for a reason worth the line:
+  [[lt.ui.view]] names the pane by keyword rather than requiring it, because
+  requiring it would load an editor and everything under one into a namespace
+  whose whole value is being a pure function of a map.
+
+  So the registry has two more entries than the kit has components, and this is
+  the difference rather than a discrepancy."
+  {:lt.ui.pane/pane "An editor, hosted. Replicant is told nothing about what is inside."
+   :lt.ui.host/host "DOM another object owns, placed rather than described."})
 
 (def ^:private view-descriptions
   "The nine, in the order [[lt.ui.view]] defines them."

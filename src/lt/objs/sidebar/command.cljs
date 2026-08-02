@@ -13,9 +13,9 @@
             [lt.util.dom :as dom]
             [lt.util.cljs]
             [clojure.string :as string]
-            [singultus.core :as crate]
-            [singultus.binding :refer [subatom bound computed]])
-  (:require-macros [lt.macros :refer [behavior defui]]))
+            [lt.ui.host :as host]
+            [singultus.binding :refer [subatom computed]])
+  (:require-macros [lt.macros :refer [behavior]]))
 
 
 
@@ -53,25 +53,29 @@
 (defn input->value [this]
   (dom/val (object/->content this)))
 
-(defui op-input [this]
-  [:input.option {:type "text" :placeholder (bound this :placeholder) :value (bound this ->value)}]
-  :focus (fn [e]
-           (ctx/in! :options-input this)
-           (object/raise this :active))
-  :blur (fn [e]
-          (ctx/out! :options-input this)
-          (object/raise this :inactive))
-  :keyup (fn [e]
-           (this-as me
-                    (object/raise this :change! (dom/val me)))
-           ))
-
 (object/object* ::options-input
                 :tags #{:options-input}
                 :placeholder "search"
+                ;; The one object whose content *is* one element: there is
+                ;; nothing to render inside it, and the placeholder and value
+                ;; that used to be `bound` are the root's own attributes. See
+                ;; [[lt.ui/node]]'s `attrs`.
                 :init (fn [this opts]
                         (object/merge! this opts)
-                        (op-input this)))
+                        (doto (ui/node this [:input.option {:type "text"}]
+                                       (constantly nil)
+                                       (fn [obj]
+                                         {:placeholder (:placeholder @obj)
+                                          :value (->value @obj)}))
+                          (dom/on :focus (fn [_]
+                                           (ctx/in! :options-input this)
+                                           (object/raise this :active)))
+                          (dom/on :blur (fn [_]
+                                          (ctx/out! :options-input this)
+                                          (object/raise this :inactive)))
+                          (dom/on :keyup (fn [e]
+                                           (object/raise this :change!
+                                                         (dom/val (.-target ^js e))))))))
 
 (defn options-input [opts]
   (let [lst (object/create ::options-input opts)]
@@ -364,11 +368,6 @@
                       (object/merge! this {:active nil})
                       (object/raise this :focus!)))
 
-(defui header-button [this]
-  [:h2 (bound this #(-> % :active :desc))]
-  :click (fn []
-           (object/raise this :cancel!)))
-
 (defn ->options [this active]
   (when (:options active)
     (object/->content (:options active))))
@@ -398,6 +397,23 @@
         (when-let [binding (seq (keyboard/cmd->bindings (item :command)))]
           [:p.binding (string/join " | " (map ->binding (reverse binding)))])))
 
+(defn- command-ui
+  "The bar, which is two other objects' DOM and a header between them.
+
+  The selector is a filter-list object made once in `:init`; the options slot
+  is whichever object the active command brought with it, and changes. Both are
+  hosted rather than described — see [[lt.ui.host]]. This is the shape
+  doc/rendering.md called the one that cannot be swapped a component at a time,
+  and hosting is what makes it swappable without the things it composes having
+  to move first."
+  [this]
+  (let [{:keys [selector active]} @this]
+    (list
+     [::host/host {:class "selector" :content (object/->content selector)}]
+     [:div.options
+      [:h2 {:on {:click (fn [] (object/raise this :cancel!))}} (:desc active)]
+      [::host/host {:content (->options this active)}]])))
+
 (object/object* ::sidebar.command
                 :tags #{:sidebar.command}
                 :label "command"
@@ -415,15 +431,8 @@
                                                :empty-why "Nothing in the table has that name — the table is `lt.objs.command/manager`."})]
                           (object/merge! this {:selector s2})
                           (object/add-tags s2 [:command.selector])
-                          [:div {:class (bound this ->command-class)}
-                           [:div.selector
-                            (object/->content s2)]
-                           [:div.options
-                            (header-button this)
-                            [:div
-                             (bound (subatom this :active) #(->options this %))]]
-                           ]
-                          )))
+                          (ui/node this [:div] command-ui
+                                   (fn [obj] {:class (->command-class @obj)})))))
 
 (behavior ::init-commands
           :triggers #{:post-init}

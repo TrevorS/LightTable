@@ -31,8 +31,10 @@ test.describe('the component kit', () => {
         expect(undrawn, 'aliases in the registry with no cell, or cells with no alias').toEqual([]);
 
         const registered = Number(await evalClj(window, '(count (lt.ui.kit/aliases))'));
-        // Twenty-five of the kit, the hosted pane, and the nine views.
-        expect(registered).toBe(26);
+        // Twenty-five of the kit, plus the two that host foreign DOM rather
+        // than describing it — the editor pane and `lt.ui.host/host`. The nine
+        // views are functions rather than aliases and are listed separately.
+        expect(registered).toBe(27);
         expect(await window.locator('.kit__table-row').count()).toBe(registered + 9);
     });
 
