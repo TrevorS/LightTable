@@ -18,9 +18,8 @@
             [lt.objs.clients.devtools :as devtools]
             [lt.util.dom :as dom]
             [clojure.string :as string]
-            [singultus.core :as crate]
-            [singultus.binding :refer [bound]])
-  (:require-macros [lt.macros :refer [behavior defui]]))
+            [lt.ui :as ui])
+  (:require-macros [lt.macros :refer [behavior]]))
 
 (def utils (js-obj))
 
@@ -84,33 +83,35 @@
     (tabs/active! browser)
     browser))
 
-(defui url-bar [this]
-  [:input.url-bar {:type "text" :placeholder "url" :value (bound this :url)}]
-  :focus (fn []
-           (ctx/in! :browser.url-bar this)
-           (object/raise this :active))
-  :blur (fn []
-          (object/raise this :inactive)
-          (ctx/out! :browser.url-bar)))
+(defn- url-bar [this]
+  ;; `:value` is the object's `:url`, so navigating rewrites the bar. It is safe
+  ;; to draw it that way here and not in the find bar or the searcher: typing in
+  ;; this one changes nothing on the object, so nothing re-renders under you —
+  ;; only `::navigate!` sets `:url`, and having the bar follow it is the point.
+  [:input.url-bar {:type "text" :placeholder "url" :value (:url @this)
+                   :on {:focus (fn []
+                                 (ctx/in! :browser.url-bar this)
+                                 (object/raise this :active))
+                        :blur (fn []
+                                (object/raise this :inactive)
+                                (ctx/out! :browser.url-bar))}}])
 
-(defui backward [this]
-  [:button {:value "<"} "<"]
-  :click (fn []
-           (object/raise this :back!)))
+(defn- nav-button [label value f]
+  [:button {:value value :on {:click f}} label])
 
-(defui forward [this]
-  [:button {:value ">"} ">"]
-  :click (fn []
-           (object/raise this :forward!)))
+(declare webview)
 
-(defui refresh [this]
-  [:button {:value "re"} "↺"]
-  :click (fn []
-           (object/raise this :refresh!)))
+(defn- browser-ui [this]
+  (list
+   [:div.frame-shade]
+   (webview this)
+   [:nav
+    (nav-button "<" "<" (fn [] (object/raise this :back!)))
+    (nav-button ">" ">" (fn [] (object/raise this :forward!)))
+    (url-bar this)
+    (nav-button "↺" "re" (fn [] (object/raise this :refresh!)))]))
 
-
-
-(defui webview [this]
+(defn- webview [this]
   ;; No :preload attribute: the guest's preload is pinned by the main process,
   ;; which is the only side that should decide what runs inside an arbitrary
   ;; web page. See secureWebContents() in src-electron/main.ts.
@@ -120,12 +121,16 @@
   ;; actually loaded — so assigning to it later is overwritten by the page that
   ;; is already there, and the tab sits on about:blank. Navigation goes through
   ;; loadURL instead; see navigate!.
-  [:webview {:src "about:blank"
-             :id (browser-id this)}]
-  :focus (fn []
-           (object/raise this :active))
-  :blur (fn []
-          (object/raise this :inactive)))
+  ;;
+  ;; Keyed, which is the other half of that: a key is what tells Replicant this
+  ;; is the same element across renders, so the URL bar above it can be redrawn
+  ;; without the guest being torn down and reloaded. Same mechanism as
+  ;; `lt.ui.pane` uses to host a CodeMirror.
+  [:webview {:replicant/key (browser-id this)
+             :src "about:blank"
+             :id (browser-id this)
+             :on {:focus (fn [] (object/raise this :active))
+                  :blur (fn [] (object/raise this :inactive))}}])
 
 ;;*********************************************************
 ;; Object
@@ -139,15 +144,7 @@
                         (object/merge! this {:client (connect-client this)
                                              :devtools-client (object/create :lt.objs.clients.devtools/devtools-client (:url @this))})
                         (object/raise (:devtools-client @this) :reconnect!)
-                        [:div#browser
-                         [:div.frame-shade]
-                         (webview this)
-                         [:nav
-                          (backward this)
-                          (forward this)
-                          (url-bar this)
-                          (refresh this)]
-                         ]))
+                        (ui/node this [:div#browser] browser-ui)))
 
 
 ;;*********************************************************
