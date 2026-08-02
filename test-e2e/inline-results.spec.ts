@@ -185,3 +185,36 @@ test(`copying an underline result copies what it says, on ${engine}`, async ({ w
         await close(window, file);
     }
 });
+
+test(`a result that is a DOM node is hosted, not dropped, on ${engine}`, async ({ window }) => {
+    // `:result` is whatever the language handed over. Usually a string,
+    // sometimes hiccup — and sometimes a node another object owns: evaluating
+    // JavaScript against a connected browser answers an object with the
+    // devtools inspector, and `lt.objs.browser/eval-js-form` passes that node
+    // straight through to `:editor.result`.
+    //
+    // Converting the widget to Replicant broke that and said nothing. The mark
+    // was drawn with nothing inside it and no error was reported, which needs a
+    // browser client to reach — so this raises the trigger with a node
+    // directly, which is the same path without the connection.
+    const file = await open(window, engine, `hosted${engine.slice(1)}.txt`, 'alpha\nbeta\n');
+
+    await evalClj(window, `
+        (let [ed (first (pool/by-path "${file}"))
+              n (js/document.createElement "span")]
+          (set! (.-className n) "probe-hosted")
+          (set! (.-textContent n) "an object somebody owns")
+          (object/raise ed :editor.result n {:line 0 :ch 1})
+          :raised)`);
+
+    await expect.poll(async () => (await inside(window, file, '.result-mark .probe-hosted'))?.count)
+        .toBe(1);
+    expect((await inside(window, file, '.result-mark'))?.text).toContain('an object somebody owns');
+
+    // Hosted as a span: a div in the middle of a line of code is a line break.
+    expect(await insideEditor<string>(window, file,
+        '(some-> ^js (.querySelector root ".result-mark .probe-hosted") .-parentNode .-tagName)'))
+        .toBe('SPAN');
+
+    await close(window, file);
+});

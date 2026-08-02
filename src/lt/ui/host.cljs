@@ -28,8 +28,11 @@
   it, and destroying it is `object/destroy!`'s job."
   (:require [replicant.alias :refer-macros [defalias]]))
 
-(defalias host [{:keys [content class style]}]
-  [:div
+(defalias host [{:keys [content class style tag]}]
+  ;; `:tag` because where a host may appear is not up to it: an inline result
+  ;; is a `span` inside a `span` and a block one is a `div`, and a `div` in the
+  ;; middle of a line of code is a line break.
+  [(or tag :div)
    {:class class
     :style style
     ;; `on-render` rather than `on-mount`, because the content can change

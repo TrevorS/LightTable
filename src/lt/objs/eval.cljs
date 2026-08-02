@@ -17,7 +17,8 @@
             [clojure.string :as string]
             [cljs.reader :as reader]
             [lt.objs.platform :as platform]
-            [lt.ui :as ui])
+            [lt.ui :as ui]
+            [lt.ui.host :as host])
   (:require-macros [lt.macros :refer [behavior]]))
 
 (defn unescape-unicode [s]
@@ -180,6 +181,23 @@
          (str (subs r 0 len)  " …")
          r)))))
 
+(defn- ->body
+  "A result as something that can be drawn.
+
+  `:result` is whatever the language handed over. Usually a string, sometimes
+  hiccup — and sometimes a DOM node another object owns, which is what a
+  JavaScript evaluation against a connected browser produces: the devtools
+  client answers an object with an expandable inspector, and
+  `lt.objs.browser/eval-js-form` passes that node straight through.
+
+  Replicant does not render a node, and it does not complain about one either.
+  It drew the result mark with nothing inside and reported no error, which is
+  the failure this whole migration keeps turning up. Hosted, it is placed."
+  [result]
+  (if (and (some? result) (number? (.-nodeType ^js result)))
+    [::host/host {:tag :span :content result}]
+    result))
+
 (defn- inline-res-ui
   "What is inside an inline result.
 
@@ -192,7 +210,7 @@
     ;; A seq rather than a vector: Replicant renders either one node or a list
     ;; of them, and a vector of two would be read as a tag and its children.
     (remove nil? (list (when truncated [:span.truncated truncated])
-                       [:span.full result]))))
+                       [:span.full (->body result)]))))
 
 (defn- ->inline-res
   "The node for an inline result.
@@ -376,7 +394,7 @@
                :contextmenu (fn [e] (dom/prevent e) (object/raise this :menu! e))
                :dblclick (fn [e] (dom/prevent e) (object/raise this :double-click))}}
     [:span.spacer (->spacing (ed/line (:ed info) (-> info :loc :line)))]
-    [:pre (:result info)]]))
+    [:pre (->body (:result info))]]))
 
 (object/object* ::underline-result
                 :tags #{:inline :inline.underline-result}

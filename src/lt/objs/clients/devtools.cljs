@@ -8,13 +8,13 @@
             [lt.objs.console :as console]
             [lt.objs.app :as app]
             [lt.objs.clients :as clients]
-            [singultus.core :as crate]
+            [lt.ui :as ui]
+            [lt.ui.host :as host]
             [lt.util.dom :as dom]
             [lt.util.js :as js-util :refer [every wait]]
             [lt.util.bridge :as bridge]
-            [singultus.binding :refer [bound subatom]]
             [clojure.string :as string])
-  (:require-macros [lt.macros :refer [behavior defui]]))
+  (:require-macros [lt.macros :refer [behavior]]))
 
 (declare local)
 
@@ -83,13 +83,23 @@
   (when url
     (files/basename url)))
 
-(defn msg->log [this m]
+(defn msg->log
+  "What the page logged, as hiccup for a console line.
+
+  An object among the arguments is an expandable inspector, which is an object
+  of its own and so a node rather than hiccup — hosted, because the console
+  line around it is drawn by Replicant now and a node spliced into hiccup is
+  the one thing it cannot draw. It drew nothing and said nothing about it."
+  [this m]
   (let [params (:parameters m)]
     (for [p params]
       [:span.log-val (cond
-                        (and (= (:type p) "object") (:value p) (not (-> p :value :value))) "null"
-                        (= (:type p) "object") (object/->content (object/create ::inspector-object this {:value p}))
-                        :else (:value p (:text p)))])))
+                       (and (= (:type p) "object") (:value p) (not (-> p :value :value))) "null"
+                       (= (:type p) "object")
+                       [::host/host {:tag :span
+                                     :content (object/->content
+                                               (object/create ::inspector-object this {:value p}))}]
+                       :else (:value p (:text p)))])))
 
 (defn msg->string [m]
   (let [params (:parameters m)]
@@ -321,25 +331,55 @@
      (> (.indexOf n "e.fn.e.init") -1) (str "jQuery" (subs n 11))
      :else n)))
 
-(defui desc [this obj]
-  [:h2 [:em (->name obj)] (when (:value obj) (str ": " (-> obj :value :description)))]
-  :click (fn []
-           (if (:open @this)
-             (object/merge! this {:open false})
-             (do
-               (object/merge! this {:open true})
-               (when-not (seq (:children @this))
-                 (send (:client @this) {:id 1 :method "Runtime.getProperties" :params {:objectId (or (-> obj :value :objectId) (:objectId obj)) :ownProperties true}}
-                       (fn [d]
-                         (object/merge! this {:children (-> d :result :result)}))))))))
+(defn- expandable?
+  "Whether a property is an object worth opening rather than a value to print."
+  [c]
+  (boolean (and (= (-> c :value :type) "object")
+                (-> c :value :objectId))))
 
-(defui props [this children]
-  [:ul
-   (for [c (sort-by :name i-compare children)]
-     (if (and (= (-> c :value :type) "object")
-              (-> c :value :objectId))
-       [:li (object/->content (object/create ::inspector-object (:client @this) c))]
-       [:li [:em (:name c)] ": " (or (-> c :value :description) (str (-> c :value format-value)))]))])
+(defn receive-children!
+  "Keep what the page said this object's properties are, and an inspector for
+  each one that can be opened.
+
+  Made once and kept, which is the part that changed. `props` used to call
+  `object/create` while drawing, and got away with it because `bound` re-ran it
+  only when `:children` arrived. A view re-runs whenever anything about the
+  object changes — opening it, for one — so drawing would have built a fresh
+  inspector every time, each losing whatever the last one had been expanded to.
+  That is also why `clear-unused-inspectors` exists; it has less to do now."
+  [this children]
+  (object/merge! this
+                 {:children children
+                  :child-objects (into {} (for [c children
+                                                :when (expandable? c)]
+                                            [(:name c)
+                                             (object/create ::inspector-object (:client @this) c)]))}))
+
+(defn- desc [this]
+  (let [obj (:info @this)]
+    [:h2 {:on {:click (fn []
+                        (if (:open @this)
+                          (object/merge! this {:open false})
+                          (do
+                            (object/merge! this {:open true})
+                            (when-not (seq (:children @this))
+                              (send (:client @this)
+                                    {:id 1 :method "Runtime.getProperties"
+                                     :params {:objectId (or (-> obj :value :objectId) (:objectId obj))
+                                              :ownProperties true}}
+                                    (fn [d] (receive-children! this (-> d :result :result))))))))}}
+     [:em (->name obj)]
+     (when (:value obj) (str ": " (-> obj :value :description)))]))
+
+(defn- props [this]
+  (let [{:keys [children child-objects]} @this]
+    [:ul
+     (for [c (sort-by :name i-compare children)]
+       [:li {:replicant/key (:name c)}
+        (if-let [child (get child-objects (:name c))]
+          [::host/host {:tag :span :content (object/->content child)}]
+          (list [:em (:name c)] ": "
+                (or (-> c :value :description) (str (-> c :value format-value)))))])]))
 
 (defn ->open [this]
   (if (:open this)
@@ -376,12 +416,14 @@
                                         (-> @this :info :objectId))]
                         (send (:client @this) {:id (next-id) :method "Runtime.releaseObject" :params {:objectId id}}))))
 
+(defn- inspector-ui [this]
+  (list (desc this)
+        [:div (props this)]))
+
 (object/object* ::inspector-object
                 :tags #{:inspector.object}
                 :init (fn [this client m]
                         (object/merge! this {:client client
                                              :info m})
-                        [:div {:class (bound this ->open)}
-                         (desc this m)
-                         [:div
-                          (bound (subatom this :children) (partial props this))]]))
+                        (ui/node this [:div] inspector-ui
+                                 (fn [obj] {:class (->open @obj)}))))
