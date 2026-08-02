@@ -17,7 +17,6 @@
             [lt.objs.notifos :as notifos]
             [lt.objs.clients.devtools :as devtools]
             [lt.util.dom :as dom]
-            [clojure.string :as string]
             [lt.ui :as ui])
   (:require-macros [lt.macros :refer [behavior]]))
 

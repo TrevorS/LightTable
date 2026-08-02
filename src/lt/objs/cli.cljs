@@ -6,7 +6,6 @@
             [lt.objs.files :as files]
             [lt.objs.workspace :as workspace]
             [lt.objs.command :as cmd]
-            [clojure.string :as string]
             [lt.util.bridge :as bridge]
             [lt.objs.opener :as opener])
   (:require-macros [lt.macros :refer [behavior]]))

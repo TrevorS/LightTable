@@ -4,8 +4,9 @@
  ;; official merge of ElixirLS, Lexical and Next LS and is worth switching to
  ;; when it ships; changing this is one line in user.behaviors.
  ;;
- ;; There is no CodeMirror mode for Elixir, so a .ex file has a language
- ;; server and no highlighting until a grammar is added.
+ ;; There is no CodeMirror mode for Elixir and it does not need one: the
+ ;; highlighting is tree-sitter's, from the grammar registered against
+ ;; :editor.elixir in lt.objs.editor.treesitter.
  :+ {:lsp.client [(:lt.objs.editor.lsp/language-servers
                    [{:tags [:editor.elixir]
                      :language-id "elixir"

@@ -12,7 +12,6 @@
             [lt.util.dom :as dom]
             [lt.util.js :as util]
             [lt.util.cljs :refer [str-contains?]]
-            [clojure.set :as set]
             [lt.objs.command :as cmd]
             [lt.ui :as ui])
   (:require-macros [lt.macros :refer [behavior]]))

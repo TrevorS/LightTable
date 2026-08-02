@@ -5,7 +5,6 @@
             [lt.objs.platform :as platform]
             [lt.objs.command :as cmd]
             [lt.objs.context :as ctx]
-            [clojure.string :as string]
             [lt.util.js]
             [lt.util.dom :refer [$] :as dom]
             [lt.util.bridge :as bridge])

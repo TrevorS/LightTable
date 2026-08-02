@@ -1,12 +1,10 @@
 (ns lt.objs.clients.tcp
   "Define tcp server for use with language plugins"
   (:refer-clojure :exclude [send])
-  (:require [cljs.reader :as reader]
-            [lt.object :as object]
+  (:require [lt.object :as object]
             [lt.objs.clients :as clients]
             [lt.objs.console :as console]
-            [lt.util.bridge :as bridge]
-            [clojure.string :as string])
+            [lt.util.bridge :as bridge])
   (:require-macros [lt.macros :refer [behavior]]))
 
 

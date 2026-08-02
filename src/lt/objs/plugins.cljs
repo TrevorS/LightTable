@@ -24,7 +24,6 @@
             [lt.util.kahn :as kahn]
             [lt.util.load :as load]
             [lt.util.dom :as dom]
-            [clojure.set :as set]
             [clojure.string :as string]
             [clojure.walk :as walk])
   (:require-macros [lt.macros :refer [behavior]]))

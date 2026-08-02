@@ -41,7 +41,6 @@
   (:require [clojure.string :as string]
             [lt.object :as object]
             [lt.objs.editor :as editor]
-            [lt.objs.notifos :as notifos]
             [lt.util.bridge :as bridge]
             [lt.window.modules :as modules])
   (:require-macros [lt.macros :refer [behavior]]))

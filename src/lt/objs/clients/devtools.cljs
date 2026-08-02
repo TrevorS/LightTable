@@ -2,8 +2,7 @@
   "Provide devtools client for interacting with Chromium's remote debugging
   protocol - https://developer.chrome.com/devtools/docs/debugger-protocol"
   (:refer-clojure :exclude [send])
-  (:require [cljs.reader :as reader]
-            [lt.object :as object]
+  (:require [lt.object :as object]
             [lt.objs.files :as files]
             [lt.objs.console :as console]
             [lt.objs.app :as app]

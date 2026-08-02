@@ -1,13 +1,11 @@
 (ns lt.objs.clients.ws
   "Define websocket server for use with language plugins e.g. JavaScript"
   (:refer-clojure :exclude [send])
-  (:require [cljs.reader :as reader]
-            [lt.object :as object]
+  (:require [lt.object :as object]
             [lt.objs.files :as files]
             [lt.objs.clients :as clients]
             [lt.util.bridge :as bridge]
-            [lt.util.load :as load]
-            [clojure.string :as string])
+            [lt.util.load :as load])
   (:require-macros [lt.macros :refer [behavior]]))
 
 (def sockets (atom {}))

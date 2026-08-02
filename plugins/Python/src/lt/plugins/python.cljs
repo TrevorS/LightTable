@@ -13,7 +13,6 @@
             [lt.objs.plugins :as plugins]
             [lt.plugins.watches :as watches]
             [lt.objs.proc :as proc]
-            [clojure.string :as string]
             [lt.objs.clients :as clients]
             [lt.objs.notifos :as notifos]
             [lt.util.load :as load]

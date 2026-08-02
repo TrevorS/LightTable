@@ -2,8 +2,9 @@
  ;;
  ;; zls also formats, using zig fmt.
  ;;
- ;; There is no CodeMirror mode for Zig, so a .zig file has a language server
- ;; and no highlighting until a grammar is added.
+ ;; There is no CodeMirror mode for Zig and it does not need one: the
+ ;; highlighting is tree-sitter's, from the grammar registered against
+ ;; :editor.zig in lt.objs.editor.treesitter.
  :+ {:lsp.client [(:lt.objs.editor.lsp/language-servers
                    [{:tags [:editor.zig]
                      :language-id "zig"
