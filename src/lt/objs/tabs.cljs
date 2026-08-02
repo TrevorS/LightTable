@@ -8,13 +8,14 @@
             [lt.objs.context :as ctx]
             [lt.state :as state]
             [lt.ui :as ui]
+            [lt.ui.host :as host]
             [lt.ui.view :as view]
             [lt.util.dom :refer [append] :as dom]
             [lt.util.style :refer [->px]]
             [lt.util.js]
             [singultus.core :as crate]
-            [singultus.binding :refer [bound map-bound subatom]])
-  (:require-macros [lt.macros :refer [behavior defui]]))
+            [singultus.binding :refer [bound subatom]])
+  (:require-macros [lt.macros :refer [behavior]]))
 
 
 
@@ -117,28 +118,43 @@
     (dom/on el :contextmenu (fn [_] (object/raise ts :menu!)))
     el))
 
-(defui tabbed-item [active item]
-  [:div.content {:style {:visibility (bound active #(if (= % @item)
-                                                      "visible"
-                                                      "hidden"))}}
-   (bound item #(when % (object/->content %)))])
+(defn- tabbed-item
+  "One tab's own DOM, in the slot the tabset keeps for it.
+
+  Every tab is drawn and all but the active one are hidden, which is how a tab
+  keeps its scroll position and its editor's state while another is in front.
+  Hosted rather than described: what is inside belongs to the tab object — an
+  editor, the plugin manager, a browser — and Replicant is told nothing about
+  it. See [[lt.ui.host]].
+
+  `#multi .content > *` is a direct-child rule, so the host element *is* the
+  `.content` div rather than something wrapped in one."
+  [active item]
+  [::host/host {:replicant/key (object/->id item)
+                :class "content"
+                :style {:visibility (if (= item active) "visible" "hidden")}
+                :content (object/->content item)}])
 
 (defn- vertical-grip
   "The handle you drag to resize a tabset. See [[lt.objs.bottombar]].
 
-  This one also has to tell the browser it is a move: without `setData` a drag
-  never starts in Chromium, and without `dropEffect` the cursor says copy."
+  Plain hiccup rather than an `lt.ui/element`, unlike the other two: this one
+  is inside a view, so Replicant draws it along with everything else and there
+  is no node to make once and keep.
+
+  It also has to tell the browser it is a move: without `setData` a drag never
+  starts in Chromium, and without `dropEffect` the cursor says copy."
   [this]
-  (ui/element [:div.vertical-grip
-               {:draggable "true"
-                :on {:dragstart (fn [^js e]
-                                  (set! (.-dataTransfer.dropEffect e) "move")
-                                  (.dataTransfer.setData e "text/plain" nil)
-                                  (object/raise this :start-drag e))
-                     :dragend (fn [e] (object/raise this :end-drag e))
-                     :drag (fn [^js e]
-                             (set! (.-dataTransfer.dropEffect e) "move")
-                             (object/raise this :width! e))}}]))
+  [:div.vertical-grip
+   {:draggable "true"
+    :on {:dragstart (fn [^js e]
+                      (set! (.-dataTransfer.dropEffect e) "move")
+                      (.dataTransfer.setData e "text/plain" nil)
+                      (object/raise this :start-drag e))
+         :dragend (fn [e] (object/raise this :end-drag e))
+         :drag (fn [^js e]
+                 (set! (.-dataTransfer.dropEffect e) "move")
+                 (object/raise this :width! e))}}])
 
 (defn ->perc [x]
   (if x
@@ -208,15 +224,17 @@
 
 
 
-(defui tabset-ui [this]
-  [:div.tabset {:style {:width (bound (subatom this :width) ->perc)}}
-   [:div.list
-    (strip! this)]
-   [:div.items
-    (map-bound (partial tabbed-item (subatom this :active-obj)) this {:path [:objs]})]
-   (vertical-grip this)]
-  :click (fn []
-           (object/raise this :active)))
+(defn- tabset-ui [this]
+  (let [{:keys [objs active-obj strip]} @this]
+    (list
+     ;; The strip is made once in `:init` and hosted, because it is a render
+     ;; root of its own — `ui/state-node` watching `lt.state/app`. Building it
+     ;; here would make a new one every time a tab opened.
+     [::host/host {:class "list" :content strip}]
+     [:div.items
+      (for [o objs]
+        (tabbed-item active-obj o))]
+     (vertical-grip this))))
 
 (object/object* ::tabset
                 :objs []
@@ -225,8 +243,15 @@
                 :tags #{:tabset}
                 :width 100
                 :init (fn [this]
-                        (tabset-ui this)
-                        ))
+                        (object/merge! this {:strip (strip! this)})
+                        ;; `:class` is deliberately not among the attrs:
+                        ;; `activate-tabset` adds and removes `active` on this
+                        ;; element directly, and a view writing the class would
+                        ;; take it off again on the next draw. The width is the
+                        ;; view's; the active flag is the context's.
+                        (doto (ui/node this [:div.tabset] tabset-ui
+                                       (fn [obj] {:style {:width (->perc (:width @obj))}}))
+                          (dom/on :click (fn [] (object/raise this :active))))))
 
 (defn ->tabsets [tabs]
   (for [k tabs]

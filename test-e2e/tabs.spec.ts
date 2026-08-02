@@ -10,7 +10,9 @@
 // what matters and cannot see whether the strip in this window is that
 // function. This says what the tabs are and reads the screen.
 
-import { test, expect, evalClj } from './fixtures';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import { test, expect, evalClj, evalData, openFile, scratchDir } from './fixtures';
 import type { Page } from '@playwright/test';
 
 
@@ -121,4 +123,76 @@ test('the close button is a fact about the tab, and closes it', async ({ window 
     // A tab that says it cannot be closed is drawn without one — asserted from
     // a map in test/lt/ui/view_test.cljs, where turning the behavior off is
     // one key rather than a race with the editor that is being opened.
+});
+
+test('a tab keeps its own DOM, and the tabset only shows one at a time', async ({ window }) => {
+    // The last thing to move, and the most load-bearing: a tabset composes
+    // every tab's `->content` — an editor, the plugin manager, a browser —
+    // which is the shape doc/rendering.md called the one that cannot be swapped
+    // a component at a time. Every tab is drawn and all but the active one are
+    // hidden, which is how a tab keeps its scroll position and its editor's
+    // state while another is in front.
+    const dir = scratchDir('hosted-tabs');
+    const files = ['first.txt', 'second.txt'].map((n) => path.join(dir, n));
+    files.forEach((f, i) => fs.writeFileSync(f, `file ${i}\n`.repeat(3)));
+    for (const f of files) await openFile(window, f);
+
+    const slots = window.locator('#multi .tabset .items > .content');
+    await expect.poll(async () => await slots.count()).toBeGreaterThanOrEqual(2);
+
+    // Exactly one visible, and it is the active object's.
+    expect(await evalData(window, `
+        (let [ts (:lt.objs.tabs/tabset @(first (pool/by-path "${files[1]}")))
+              slots (array-seq (.querySelectorAll ^js (object/->content ts) ".items > .content"))]
+          {:visible (count (filter #(= "visible" (.-style.visibility ^js %)) slots))
+           :active-is-visible
+           (= "visible" (some (fn [^js s]
+                                (when (identical? (.-firstChild s)
+                                                  (object/->content (:active-obj @ts)))
+                                  (.-style.visibility s)))
+                              slots))})`))
+        .toEqual({ visible: 1, 'active-is-visible': true });
+
+    // The node in each slot is the tab object's own, placed rather than copied,
+    // and it is a direct child because `#multi .content > *` is a child rule.
+    expect(await evalData(window, `
+        (let [ed (first (pool/by-path "${files[0]}"))
+              ts (:lt.objs.tabs/tabset @ed)]
+          (boolean (some (fn [^js s] (identical? (.-firstChild s) (object/->content ed)))
+                         (array-seq (.querySelectorAll ^js (object/->content ts)
+                                                       ".items > .content")))))`))
+        .toBe(true);
+
+    // Switching tabs moves the visibility rather than rebuilding anything: the
+    // editor you left is the same element when you come back to it.
+    await evalClj(window, `
+        (do (set! (.-ltTabProbe ^js (object/->content (first (pool/by-path "${files[0]}")))) "kept")
+            (tabs/active! (first (pool/by-path "${files[0]}")))
+            :switched)`);
+    await expect.poll(async () => await evalData(window, `
+        (.-ltTabProbe ^js (object/->content (first (pool/by-path "${files[0]}"))))`)).toBe('kept');
+    expect(await evalData(window, `
+        (let [ts (:lt.objs.tabs/tabset @(first (pool/by-path "${files[0]}")))]
+          (count (filter #(= "visible" (.-style.visibility ^js %))
+                         (array-seq (.querySelectorAll ^js (object/->content ts)
+                                                       ".items > .content")))))`))
+        .toBe(1);
+
+    // The strip and the grip are still where the layout expects them: the strip
+    // is a render root of its own, made once and hosted, and the grip is drawn
+    // by the view as a direct child.
+    // One each per tabset rather than one overall: an earlier test in this file
+    // splits the window, and a tabset without its own strip is the failure.
+    //
+    // `> .list > .titlebar` rather than a descendant: the strip's own root is a
+    // `.titlebar` and `lt.ui.view/titlebar` returns another inside it, which is
+    // a pre-existing nesting and not what this is asking about.
+    const tabsets = await window.locator('#multi .tabset').count();
+    await expect(window.locator('#multi .tabset > .list > .titlebar')).toHaveCount(tabsets);
+    await expect(window.locator('#multi .tabset > .vertical-grip')).toHaveCount(tabsets);
+
+    for (const f of files) {
+        await evalClj(window, `(do (doseq [ed (pool/by-path "${f}")] (object/raise ed :close)) :closed)`);
+    }
+    fs.rmSync(dir, { recursive: true, force: true });
 });
