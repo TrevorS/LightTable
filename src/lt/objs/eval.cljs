@@ -41,13 +41,32 @@
   (str (reduce str (repeat lines "\n"))
        code))
 
+(def ^:private print-level
+  "How deep a printed result goes before it says `#`.
+
+  Deep enough that no ordinary value is truncated, and finite because some
+  values are not ordinary. A Light Table object is an atom whose state holds
+  other objects, so printing one walks the object graph — and the graph has
+  cycles, so it does not finish. `(first (pool/by-path f))` in a buffer, or
+  through `lt.objs.control`, took the window's stack with it and the
+  RangeError came out of whatever had called in."
+  12)
+
 (defn cljs-result-format [n]
-  (cond
-   (coll? n) (pr-str n)
-   (fn? n) (str "(fn " (.-name n) " ..)")
-   (nil? n) "nil"
-   (= (pr-str n) "#<[object Object]>") (console/inspect n)
-   :else (pr-str n)))
+  (binding [*print-level* print-level]
+    (try
+      (cond
+        (coll? n) (pr-str n)
+        (fn? n) (str "(fn " (.-name n) " ..)")
+        (nil? n) "nil"
+        (= (pr-str n) "#<[object Object]>") (console/inspect n)
+        :else (pr-str n))
+      (catch :default e
+        ;; A backstop for the values `*print-level*` does not bound: a native
+        ;; object holding a cycle is printed by JavaScript, not by us. A
+        ;; result nobody can read is still better than an exception thrown at
+        ;; whoever asked for it.
+        (str "#<unprintable: " (.-message e) ">")))))
 
 (behavior ::on-selected-cb
           :triggers #{:selected}

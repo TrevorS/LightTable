@@ -148,6 +148,8 @@ interface EvalOptions {
     every?: number;
     /** Return the job instead of its result, and do not throw on failure. */
     raw?: boolean;
+    /** Return the value through `clj->js` rather than the way a REPL prints it. */
+    data?: boolean;
 }
 
 /**
@@ -168,8 +170,8 @@ interface EvalOptions {
  * to assert that a failure is a status rather than a silence.
  */
 export async function evalClj(window: Page, source: string,
-                              { tries = 100, every = 50, raw = false }: EvalOptions = {}): Promise<any> {
-    let job = await control(window, 'eval', { source });
+                              { tries = 100, every = 50, raw = false, data = false }: EvalOptions = {}): Promise<any> {
+    let job = await control(window, 'eval', { source, data });
     for (let i = 0; i < tries && job.status === 'working'; i++) {
         await window.waitForTimeout(every);
         job = await control(window, 'job', { job: job.id });
@@ -177,6 +179,51 @@ export async function evalClj(window: Page, source: string,
     if (raw) return job;
     if (job.status !== 'completed') throw new Error(`${job.status}: ${job.error}\n${source}`);
     return job.result;
+}
+
+/**
+ * Evaluate ClojureScript and get the value, not a picture of it.
+ *
+ * `evalClj` answers the way a REPL prints — `"[0 2 0]"` — because the callers
+ * it was written for are showing a person a value. A test is not: comparing
+ * against pretty-printed EDN means every assertion is a string, a mismatch is
+ * a diff of text rather than of values, and adding a key to a map breaks
+ * assertions that never cared about it.
+ *
+ * So this asks the window for the value through `clj->js`: a vector is an
+ * array, a map with keyword keys is an object, and `toEqual` does the work.
+ *
+ * ```ts
+ * expect(await evalData(window, '(mapv :line (marks ed))')).toEqual([0, 2]);
+ * ```
+ *
+ * Only for values that are data. Naming an editor, an object or a CodeMirror
+ * instance fails with a message saying so rather than answering `{}` — see
+ * `lt.objs.control/->data`.
+ */
+export async function evalData<T = any>(window: Page, source: string,
+                                        options: Omit<EvalOptions, 'data' | 'raw'> = {}): Promise<T> {
+    return await evalClj(window, source, { ...options, data: true }) as T;
+}
+
+/**
+ * Wait until ClojureScript answers `true`.
+ *
+ * Every spec had its own `expect.poll` around a predicate, differing only in
+ * how long it was willing to wait, and a poll that times out reports
+ * `"false" !== "true"` — which names neither the condition nor the file. This
+ * throws with the source that never became true.
+ */
+export async function waitFor(window: Page, source: string,
+                              { timeout = 30_000, every = 100 }: { timeout?: number, every?: number } = {}) {
+    const until = Date.now() + timeout;
+    let last: unknown;
+    while (Date.now() < until) {
+        last = await evalData(window, source);
+        if (last === true) return;
+        await window.waitForTimeout(every);
+    }
+    throw new Error(`waited ${timeout}ms and it was still ${JSON.stringify(last)}:\n${source}`);
 }
 
 /**

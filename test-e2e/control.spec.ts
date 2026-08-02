@@ -7,7 +7,7 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { test, expect, scratchDir } from './fixtures';
+import { test, expect, evalData, scratchDir } from './fixtures';
 import type { Page } from '@playwright/test';
 
 /** Call the control surface the way `script/lt-repl.sh` and MCP will. */
@@ -128,4 +128,70 @@ test('an unknown operation says what there is', async ({ window }) => {
     expect(out.error).toContain('teleport');
     expect(out.operations).toContain('snapshot');
     expect(out.operations).toContain('eval');
+});
+
+test('and a caller can have the value rather than a picture of it', async ({ window }) => {
+    // `eval` answers the way a REPL prints, because the callers it was written
+    // for are showing a person a value. A test is not: comparing against
+    // pretty-printed EDN makes every assertion a string, and a mismatch a diff
+    // of text. So `data` asks for the value through `clj->js`.
+    const data = async (source: string) =>
+        await evalData(window, source);
+
+    expect(await data('[1 2 3]')).toEqual([1, 2, 3]);
+    expect(await data('{:a 1 :b {:c "x"}}')).toEqual({ a: 1, b: { c: 'x' } });
+    expect(await data('(mapv name [:one :two])')).toEqual(['one', 'two']);
+    expect(await data('nil')).toBe(null);
+    // A keyword is a string, which is the whole of what clj->js promises.
+    expect(await data(':done')).toBe('done');
+
+    // Printed is still the default, and still printed.
+    expect((await evalClj(window, '[1 2 3]')).result).toBe('[1 2 3]');
+});
+
+test('and asking for data about something that is not data says so', async ({ window }) => {
+    // Every one of these used to be a different bad answer. A function and an
+    // atom took the window's stack down inside `clj->js`; a DOM node came back
+    // as `{}`, which reads as an empty result rather than as a mistake.
+    for (const [source, why] of [['(fn [x] x)', 'a function'],
+                                 ['(atom {:a 1})', 'an object or an atom'],
+                                 ['js/document.body', 'a DOM node']] as const) {
+        const job = await control(window, 'eval', { source, data: true });
+        expect(job.status, source).toBe('failed');
+        expect(job.error, source).toContain(why);
+    }
+});
+
+test('and printing an object is bounded rather than endless', async ({ window }) => {
+    // A Light Table object is an atom whose state holds other objects, and the
+    // graph has cycles — so `(first (pool/by-path f))`, which is the most
+    // ordinary thing to evaluate in this editor, printed until the stack ran
+    // out. The RangeError came out of whoever had called in, which through the
+    // control surface meant the caller rather than the job.
+    const dir = scratchDir('control-print');
+    const file = path.join(dir, 'printed.txt');
+    fs.writeFileSync(file, 'a\nb\n');
+    await evalClj(window, `(do (lt.objs.command/exec! :open-path "${file}") :opened)`);
+    await expect.poll(async () => await evalData(window, `(count (pool/by-path "${file}"))`)).toBe(1);
+
+    const job = await evalClj(window, `(first (pool/by-path "${file}"))`);
+    expect(job.status).toBe('completed');
+    expect(job.result).toContain('cljs.core.Atom');
+    // Bounded, so it is a page rather than a heap.
+    expect(job.result.length).toBeLessThan(200_000);
+
+    await evalClj(window, `(do (doseq [ed (pool/by-path "${file}")] (lt.object/raise ed :close)) :closed)`);
+    fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('and Light Table\'s own TypeScript is reachable from the ClojureScript', async ({ window }) => {
+    // The other direction, and the one that had a gap. `lt.window.modules` is
+    // the single bridge — a `def ^js` per module with its exports in the
+    // docstring — but three of the nine were required for their side effect
+    // alone and so had no name, reachable only as `js/window.ltCm6Modes`.
+    // Which is the hand-spelled global this whole namespace exists to replace.
+    expect(await evalData(window, '(count (js->clj (.knownModes modules/cm6-modes)))'))
+        .toBeGreaterThan(100);
+    expect(await evalData(window, '(boolean (.-commands modules/cm6-commands))')).toBe(true);
+    expect(await evalData(window, '(boolean (.-treeHighlighting modules/cm6-treesitter))')).toBe(true);
 });

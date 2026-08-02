@@ -7,42 +7,30 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { test, expect, scratchDir, connectLocalClient } from './fixtures';
+import { test, expect, evalClj, evalData, scratchDir, connectLocalClient, waitFor } from './fixtures';
+import type { Page } from '@playwright/test';
 
 /** Open `file` and wait until the editor has parsed it into top-level forms. */
-async function openForms(window: import('@playwright/test').Page, file: string, expected: number) {
-    await window.evaluate(
-        ([f]) => (globalThis as any).lt.objs.command.exec_BANG_(
-            (globalThis as any).cljs.core.keyword.call(null, 'open-path'), f),
-        [file]);
-
-    await window.waitForFunction(
-        ([f, n]) => {
-            const lt = (globalThis as any).lt, cljs = (globalThis as any).cljs;
-            const ed = cljs.core.first.call(null, lt.objs.editor.pool.by_path(f));
-            if (!ed) return false;
-            const forms = lt.plugins.clojure.forms_in(ed);
-            return !!forms && cljs.core.count(forms) === n;
-        },
-        [file, expected] as [string, number],
-        { timeout: 60_000 });
+async function openForms(window: Page, file: string, expected: number) {
+    await evalClj(window, `(do (cmd/exec! :open-path "${file}") :opening)`);
+    await waitFor(window, `
+        (= ${expected} (some-> (first (pool/by-path "${file}"))
+                               lt.plugins.clojure/forms-in
+                               count))`, { timeout: 60_000 });
 }
 
 /** The results drawn beside each form, in order. */
-async function inlineResults(window: import('@playwright/test').Page, file: string) {
-    return await window.evaluate(([f]) => {
-        const lt = (globalThis as any).lt, cljs = (globalThis as any).cljs;
-        const kw = (n: string) => cljs.core.keyword.call(null, n);
-        const ed = cljs.core.first.call(null, lt.objs.editor.pool.by_path(f));
-        return cljs.core.clj__GT_js(cljs.core.mapv.call(null, (kv: unknown) => {
-            const el = cljs.core.get.call(null, cljs.core.deref(cljs.core.second(kv)), kw('content'));
-            if (!el) return '';
-            // An inline result carries a truncated span beside the full one,
-            // so textContent says everything twice.
-            const full = el.querySelector ? el.querySelector('.full') : null;
-            return (full || el).textContent || '';
-        }, cljs.core.get.call(null, cljs.core.deref(ed), kw('widgets'))));
-    }, [file]) as string[];
+async function inlineResults(window: Page, file: string): Promise<string[]> {
+    return await evalData<string[]>(window, `
+        (let [ed (first (pool/by-path "${file}"))]
+          (mapv (fn [[_ res]]
+                  (if-let [el (:content @res)]
+                    ;; An inline result carries a truncated span beside the
+                    ;; full one, so textContent says everything twice.
+                    (or (some-> ^js (.querySelector el ".full") .-textContent)
+                        (.-textContent ^js el))
+                    ""))
+                (:widgets @ed)))`);
 }
 
 test('a ClojureScript buffer changes the editor it is open in', async ({ window, ltErrors }) => {

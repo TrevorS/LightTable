@@ -277,6 +277,12 @@
   'lt.control-user)
 
 (def ^:private eval-ns-form
+  ;; `lt.window.modules` is here for the same reason as the rest and answers
+  ;; the other direction: it is the one bridge to Light Table's own TypeScript,
+  ;; a `def ^js` per module with its exports in the docstring. So
+  ;; `(.knownModes modules/cm6-modes)` reaches src-window/cm6-modes.ts from a
+  ;; caller that is writing ClojureScript, without a second mechanism and
+  ;; without anybody spelling `window.ltCm6Modes` by hand.
   "(ns lt.control-user
      (:require [lt.object :as object]
                [lt.objs.command :as cmd]
@@ -286,6 +292,7 @@
                [lt.objs.tabs :as tabs]
                [lt.objs.workspace :as workspace]
                [lt.objs.clients :as clients]
+               [lt.window.modules :as modules]
                [clojure.string :as string]))")
 
 (defonce ^:private eval-ns-ready (atom false))
@@ -301,6 +308,39 @@
        (reset! eval-ns-ready true)
        (f)))))
 
+(defn- ->data
+  "A value a JSON caller can have, or a failure that says why it cannot.
+
+  Not everything survives the trip. An editor, a CodeMirror instance and an
+  object are cyclic or full of functions, and `clj->js` on one of those either
+  throws or produces something worse than useless. So a caller that asks for
+  data and names something that is not data is told, and is told what it
+  named — the alternative is a JSON `{}` that reads as an empty result."
+  [value]
+  (try
+    ;; `clj->js` walks as far as the value goes, and a Light Table object is an
+    ;; atom whose state holds other objects — so this is the same cycle
+    ;; [[lt.objs.eval/cljs-result-format]] bounds with `*print-level*`, with no
+    ;; equivalent knob. Refusing the kinds that cannot be data is the knob.
+    ;; `object?` is `(identical? (type x) js/Object)` and an HTMLBodyElement is
+    ;; not that, so the node check has to be the property. A DOM node is the
+    ;; one of the three that does not throw — it stringifies to `{}`, because
+    ;; everything on it is on the prototype — which is the worst of the three
+    ;; answers and the reason this list is not just a try/catch.
+    (when-let [why (cond (fn? value) "a function"
+                         (satisfies? IDeref value) "an object or an atom"
+                         (and (some? value) (number? (.-nodeType ^js value))) "a DOM node"
+                         :else nil)]
+      (throw (js/Error. (str "it is " why))))
+    (let [json (js/JSON.stringify (clj->js value))]
+      ;; `JSON.stringify` answers `undefined` for `undefined` and for a bare
+      ;; function, and `JSON.parse` of that throws a SyntaxError naming
+      ;; neither. Both mean "no value", which is what nil is.
+      {:ok (if (undefined? json) nil (js/JSON.parse json))})
+    (catch :default e
+      {:error (str "The value is not data, so it cannot come back as data: "
+                   (.-message e))})))
+
 (defn eval-clj
   "Evaluate ClojureScript in this window. Returns a job.
 
@@ -309,21 +349,41 @@
   so a caller can send `(count (object/by-tag :editor))` rather than
   `cljs.core.count(lt.object.by_tag(...))` with the munged names spelled by
   hand. Sending source and getting a value back is the difference between
-  driving an editor and operating a keyboard."
-  [source]
-  (let [id (start-job! :eval)]
-    (with-eval-ns
-      (fn []
-        (cljs-compiler/eval-forms
-         {:forms [{:code source :meta {:line 1}}]
-          :buffer-ns eval-ns
-          :path "control"}
-         (fn [results]
-           (let [r (first results)]
-             (if (or (:ex r) (:stack r))
-               (finish! id "failed" {:error (or (:ex r) (:stack r))})
-               (finish! id "completed" {:result (:result r)})))))))
-    (job id)))
+  driving an editor and operating a keyboard.
+
+  `data?` decides which of those two you get. Without it the result is what a
+  REPL would print — `\"[0 2 0]\"` — which is right for a person reading it and
+  wrong for a caller that wanted the vector: every assertion becomes a string
+  comparison against pretty-printed EDN, and a mismatch is a diff of text
+  rather than of values. With it the value comes back through `clj->js`, so a
+  vector is an array and a map with keyword keys is an object.
+
+  Printed stays the default because the callers that came first — the REPL
+  script, MCP — are showing a person a value."
+  ([source] (eval-clj source false))
+  ([source data?]
+   (let [id (start-job! :eval)]
+     (with-eval-ns
+       (fn []
+         (cljs-compiler/eval-forms
+          {:forms [{:code source :meta {:line 1}}]
+           :buffer-ns eval-ns
+           :path "control"}
+          (fn [results]
+            (let [r (first results)]
+              (cond
+                (or (:ex r) (:stack r))
+                (finish! id "failed" {:error (or (:ex r) (:stack r))})
+
+                (not data?)
+                (finish! id "completed" {:result (:result r)})
+
+                :else
+                (let [{:keys [ok error]} (->data (:value r))]
+                  (if error
+                    (finish! id "failed" {:error (str error " — " (:result r))})
+                    (finish! id "completed" {:result ok})))))))))
+     (job id))))
 
 (defn open
   "Open `path`, and finish when its editor exists."
@@ -373,7 +433,7 @@
     "clear-errors" (clear-errors!)
     "prompts" {:prompts (mapv #(dissoc % :object) (prompts))}
     "answer" (answer! (:prompt arg) (:choice arg))
-    "eval" (eval-clj (:source arg))
+    "eval" (eval-clj (:source arg) (boolean (:data arg)))
     "open" (open (:path arg))
     "value" (editor-value (:editor arg))
     "job" (or (job (:job arg)) {:error (str "No job " (:job arg))})

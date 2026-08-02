@@ -160,9 +160,15 @@
 (defn eval-form
   "Compile `code` and run it in this window. Calls `cb` with one result map.
 
-  The result is `{:result <printed> :meta …}`, or the `:ex`/`:stack` pair the
-  result behaviors render as an exception — the same shape the nREPL client
-  produces, so everything downstream is shared."
+  The result is `{:result <printed> :value <the value> :meta …}`, or the
+  `:ex`/`:stack` pair the result behaviors render as an exception — the same
+  shape the nREPL client produces, so everything downstream is shared.
+
+  `:value` is the value itself, which everything that draws a result ignores:
+  a REPL prints, and printing is what `:result` is. It is here for a caller
+  that wants the value rather than a picture of it, which over a wire means
+  the control surface — see [[lt.objs.control/eval-clj]]. An nREPL client
+  cannot offer this and does not: the value never leaves the other process."
   [{:keys [code meta ns path]} cb]
   (ensure-ns!
     ns
@@ -184,6 +190,7 @@
                        (if error
                          (cb (error-result error meta))
                          (cb {:result (->display value)
+                              :value value
                               :meta meta})))))))
 
 (defn eval-forms

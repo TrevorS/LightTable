@@ -21,9 +21,9 @@
             ["./cm6.js" :as cm6-js]
             ["./cm6-editor.js" :as cm6-editor-js]
             ["./cm6-theme.js" :as cm6-theme-js]
-            ["./cm6-commands.js"]
-            ["./cm6-modes.js"]
-            ["./cm6-treesitter.js"]))
+            ["./cm6-commands.js" :as cm6-commands-js]
+            ["./cm6-modes.js" :as cm6-modes-js]
+            ["./cm6-treesitter.js" :as cm6-treesitter-js]))
 
 (def ^js fuzzy
   "Fuzzy matching for the command bar and the file navigator: stringScore,
@@ -60,3 +60,28 @@
   token classes as a HighlightStyle, and the structural rules mirrored onto
   CodeMirror 6's own selectors. See src-window/cm6-theme.ts."
   cm6-theme-js)
+
+;; These last three were required for their side effect alone — each registers
+;; itself on `window` so a test and a REPL can reach it — and so had no name
+;; here. That made this bridge a nine-module list with six doors: reaching
+;; `knownModes` from ClojureScript meant `js/window.ltCm6Modes`, which is the
+;; hand-spelled global this namespace exists to stop asking for, and it is what
+;; `lt.objs.control`'s evaluation namespace aliases. A `def` costs nothing and
+;; the window registration stays for the JavaScript-side tests that use it.
+
+(def ^js cm6-commands
+  "CodeMirror 5's command names, done on CodeMirror 6: commands, runCommand,
+  isOverwriting, multipleSelections, UNSUPPORTED_COMMANDS. See
+  src-window/cm6-commands.ts."
+  cm6-commands-js)
+
+(def ^js cm6-modes
+  "Syntax highlighting per language: modeExtension, knownModes,
+  unsupportedModes. See src-window/cm6-modes.ts."
+  cm6-modes-js)
+
+(def ^js cm6-treesitter
+  "Drawing tree-sitter's spans into a CodeMirror 6 editor: setTreeHighlighter,
+  treeHighlighter, treeHighlighting. The parsing half is [[treesitter]]. See
+  src-window/cm6-treesitter.ts."
+  cm6-treesitter-js)
