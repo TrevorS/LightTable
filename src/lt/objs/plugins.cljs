@@ -20,15 +20,14 @@
             [lt.objs.plugins.node-modules :as node-modules]
             [lt.objs.plugins.require-shim :as require-shim]
             [cljs.reader :as reader]
-            [singultus.core :as crate]
-            [singultus.binding :refer [bound]]
+            [lt.ui :as ui]
             [lt.util.kahn :as kahn]
             [lt.util.load :as load]
             [lt.util.dom :as dom]
             [clojure.set :as set]
             [clojure.string :as string]
             [clojure.walk :as walk])
-  (:require-macros [lt.macros :refer [behavior defui]]))
+  (:require-macros [lt.macros :refer [behavior]]))
 
 
 (def plugins-dir (files/lt-home "plugins"))
@@ -685,140 +684,135 @@
 ;; Manager ui
 ;;*********************************************************
 
-(defui url-input []
-  [:input {:type "text" :placeholder "Github URL"}]
-  :focus (fn []
-           (ctx/in! :popup.input))
-  :blur (fn []
-          (ctx/out! :popup.input)))
+(defn- stop [e]
+  (dom/prevent e)
+  (dom/stop-propagation e))
 
-(defui tab [this tab-name label]
-  [:button {:class (bound this #(when (= tab-name (:tab %))
-                                  "active"))}
-   label]
-  :click (fn []
-           (object/merge! this {:tab tab-name})))
+(defn- tab [this tab-name label]
+  [:button {:class (when (= tab-name (:tab @this)) "active")
+            :on {:click (fn [] (object/merge! this {:tab tab-name}))}}
+   label])
 
-(defui search-input [this]
-  [:input {:placeholder "Search available plugins"}]
-  :focus (fn []
-           (ctx/in! :plugin-manager.search this))
-  :blur (fn []
-           (ctx/out! :plugin-manager.search)))
-
-(defui tabs-and-search [this]
+(defn- tabs-and-search [this]
   [:div.tabs
    (tab this :installed "Installed")
    (tab this :server "Available")
-   (search-input this)])
+   [:input {:placeholder "Search available plugins"
+            :on {:focus (fn [] (ctx/in! :plugin-manager.search this))
+                 :blur (fn [] (ctx/out! :plugin-manager.search))}}]])
 
-(defui source-button [plugin]
-  [:span.source [:a {:href (:url plugin (:source plugin))} "website"]]
-  :click (fn [e]
-           (dom/prevent e)
-           (dom/stop-propagation e)
-           (platform/open-url (:url plugin (:source plugin)))))
+(defn- source-button [plugin]
+  (let [url (:url plugin (:source plugin))]
+    [:span.source {:on {:click (fn [e] (stop e) (platform/open-url url))}}
+     [:a {:href url} "website"]]))
 
-(defui update-button [plugin]
-  [:span.update]
-  :click (fn [e]
-           (dom/prevent e)
-           (dom/stop-propagation e)
-           (discover-deps plugin (fn []
+(defn- update! [plugin]
+  (discover-deps plugin (fn []
+                          (object/raise manager :refresh!)
+                          (cmd/exec! :behaviors.reload)
+                          ;; Wait for behaviors.reload to write its message
+                          (wait 1000 (fn []
+                                       (notifos/set-msg! (str "Updated " (:name plugin) " " (:version plugin))))))))
+
+(defn- update-button [plugin]
+  [:span.update {:on {:click (fn [e] (stop e) (update! plugin))}}])
+
+(defn- install-button [plugin]
+  ;; The row this is in used to be removed from the DOM by the handler, with
+  ;; `this-as` reaching for its own parent. `:refresh!` below is what actually
+  ;; makes it go: the available list is drawn minus what is installed, and
+  ;; refreshing is what changes that answer.
+  [:span.install
+   {:on {:click (fn [e]
+                  (stop e)
+                  (discover-deps plugin
+                                 (fn []
                                    (object/raise manager :refresh!)
                                    (cmd/exec! :behaviors.reload)
-                                   ;; Wait for behaviors.reload to write its message
                                    (wait 1000 (fn []
-                                                (notifos/set-msg! (str "Updated " (:name plugin) " " (:version plugin)))))))))
+                                                (notifos/set-msg! (str "Installed " (:name plugin) " " (:version plugin))))))))}}])
 
-(defui install-button [plugin]
-  [:span.install]
-  :click (fn [e]
-           (this-as me
-                    (discover-deps plugin (fn []
-                                            (dom/remove (dom/parent me))
-                                            (object/raise manager :refresh!)
-                                            (cmd/exec! :behaviors.reload)
-                                            ;; Wait for behaviors.reload to write its message
-                                            (wait 1000 (fn []
-                                                         (notifos/set-msg! (str "Installed " (:name plugin) " " (:version plugin))))))))
-           (dom/prevent e)
-           (dom/stop-propagation e)))
+(defn- plugin-title [plugin]
+  (let [url (:url plugin (:source plugin))]
+    [:h1
+     [:span.link {:on {:click (fn [e] (stop e) (platform/open-url url))}} (:name plugin)]
+     [:span.version (:version plugin)]]))
 
-(defui plugin-link-title [plugin]
-  [:span.link (:name plugin)]
-  :click (fn [e]
-           (dom/prevent e)
-           (dom/stop-propagation e)
-           (platform/open-url (:url plugin (:source plugin)))))
-
-(defui plugin-title [plugin]
-  [:h1
-   (plugin-link-title plugin)
-   [:span.version (:version plugin)]])
-
-(defui server-plugin-ui [plugin]
-  (let [info plugin
-        ver (:version info)
-        installed (-> @app/app ::plugins (get (:name info)))
-        update? (and (:version installed)
-                     (deploy/is-newer? (:version installed) ver))]
-    [:li {:class (if update?
-                   "has-update")}
-     (if-not installed
+(defn- server-plugin-ui
+  "A plugin you could install. `installed` is the manager's copy of what is."
+  [installed plugin]
+  (let [ver (:version plugin)
+        have (get installed (:name plugin))
+        update? (and (:version have) (deploy/is-newer? (:version have) ver))]
+    [:li {:replicant/key (:name plugin)
+          :class (when update? "has-update")}
+     (if-not have
        (install-button plugin)
        (if update?
          (update-button plugin)
          [:span.installed]))
      (source-button plugin)
      (plugin-title plugin)
-     [:h3 (:author info)]
-     [:p (:desc info)]]))
+     [:h3 (:author plugin)]
+     [:p (:desc plugin)]]))
 
-
-(defui uninstall-button [plugin]
-  [:span.uninstall]
-  :click (fn []
-           (popup/popup! {:header "Uninstall plugin?"
-                          :body [:div "This will delete the plugin from your system, removing any local
+(defn- uninstall-button [plugin]
+  [:span.uninstall
+   {:on {:click (fn []
+                  (popup/popup! {:header "Uninstall plugin?"
+                                 :body [:div "This will delete the plugin from your system, removing any local
                                  changes you may have made, and cannot be undone."]
-                          :buttons [{:label "Delete plugin"
-                                     :action (fn []
-                                               (uninstall plugin))}
-                                    {:label "Cancel"}]})))
+                                 :buttons [{:label "Delete plugin"
+                                            :action (fn [] (uninstall plugin))}
+                                           {:label "Cancel"}]}))}}])
 
-(defui installed-plugin-ui [plugin]
-  (let [cached (-> @manager :server-plugins (get (keyword (:name plugin))) :latest-version)
-        update? (when cached
-                  (deploy/is-newer? (:version plugin) cached))]
-    [:li {:class (if update?
-                   "has-update")}
-     (when update?
-       (update-button (assoc plugin :version cached)))
+(defn- installed-plugin-ui [server-plugins plugin]
+  (let [cached (-> server-plugins (get (keyword (:name plugin))) :latest-version)
+        update? (when cached (deploy/is-newer? (:version plugin) cached))]
+    [:li {:replicant/key (:name plugin)
+          :class (when update? "has-update")}
+     (when update? (update-button (assoc plugin :version cached)))
      (uninstall-button plugin)
      (source-button plugin)
      (plugin-title plugin)
      [:h3 (:author plugin)]
-     [:p (:desc plugin)]
-     ]))
+     [:p (:desc plugin)]]))
 
 ;;*********************************************************
 ;; Manager object
 ;;*********************************************************
 
+(defn- manager-ui
+  "Both lists, and which one you are looking at.
+
+  The available list is drawn minus what is installed, and the installed list
+  is `(::plugins @app/app)` as `::render-installed-plugins` last read it. Two
+  behaviors used to empty a `ul` and append a fragment into it; the lists are
+  values on the object now and this is the only thing that draws them."
+  [this]
+  (let [{:keys [server-results installed server-plugins]} @this]
+    (list
+     (tabs-and-search this)
+     [:ul.server-plugins
+      (for [p server-results
+            :when (not (installed? (:name p)))]
+        (server-plugin-ui installed p))]
+     [:ul.plugins
+      (for [p (sort-by #(.toUpperCase (str (:name %))) (vals installed))]
+        (installed-plugin-ui server-plugins p))])))
+
 (object/object* ::plugin-manager
                 :tags #{:plugin-manager}
                 :name "Plugins"
                 :tab :installed
+                :server-results []
                 :init (fn [this]
-                        (object/merge! this {:server-plugins (read-cache)})
-                        [:div {:class (bound this #(str "plugin-manager"
-                                                        (if (= (:tab %) :server)
-                                                          " server")))}
-                         (tabs-and-search this)
-                         [:ul.server-plugins
-                          ]
-                         [:ul.plugins]]))
+                        (object/merge! this {:server-plugins (read-cache)
+                                             :installed (::plugins @app/app)})
+                        (ui/node this [:div] manager-ui
+                                 (fn [obj]
+                                   {:class (str "plugin-manager"
+                                                (when (= (:tab @obj) :server) " server"))}))))
 
 (def manager (object/create ::plugin-manager))
 
@@ -854,12 +848,11 @@
           :triggers #{:plugin-results}
           :desc "Plugin Manager: render plugin results"
           :reaction (fn [this plugins]
-                      (let [ul (dom/$ :.server-plugins (object/->content this))]
-                        (dom/empty ul)
-                        (->> (remove #(installed? (-> % :name)) plugins)
-                             (map server-plugin-ui)
-                             (dom/fragment)
-                             (dom/append ul)))))
+                      ;; Kept whole. The view drops what is installed, so
+                      ;; installing one takes it out of this list without the
+                      ;; list being sent again — which is what the handler
+                      ;; removing its own row was standing in for.
+                      (object/merge! this {:server-results (vec plugins)})))
 
 (behavior ::search-server-plugins
           :triggers #{:search-plugins!}
@@ -906,9 +899,7 @@
                       (object/merge! app/app {::plugins (available-plugins)})
                       (when-not ignore-missing
                         (check-missing (::plugins @app/app)))
-                      (let [ul (dom/$ :.plugins (object/->content this))]
-                        (dom/empty ul)
-                        (dom/append ul (dom/fragment (map installed-plugin-ui (->> @app/app ::plugins vals (sort-by #(.toUpperCase (:name %))))))))))
+                      (object/merge! this {:installed (::plugins @app/app)})))
 
 (behavior ::on-close
           :triggers #{:close}
