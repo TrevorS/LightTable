@@ -677,6 +677,55 @@ test('the actions the views emit are all handled', async ({ window }) => {
     await evalClj(window, '(do (object/clear-errors!) :cleared)');
 });
 
+test('a node can be rendered once and handed away', async ({ window }) => {
+    // `lt.ui/element` is the third render primitive and the one the remaining
+    // `defui` need. A CodeMirror widget, a console line and a button in a
+    // dialog are all the same shape: something else takes the node, and no
+    // object changing means "draw this again".
+    //
+    // What has to hold is that it is a real detached node with the tag and
+    // classes the hiccup asked for — CodeMirror's stylesheets are written
+    // against those, so a wrapper would be a visual regression rather than an
+    // implementation detail.
+    expect(await evalClj(window, `
+        (do (def one (lt.ui/element [:div.underline-result [:pre "42"]]))
+            [(.-tagName one) (.-className one) (some? (.-parentNode one)) (.-textContent one)])`))
+        .toBe('["DIV" "underline-result" false "42"]');
+
+    // And the handler is data, still attached after the node is moved into the
+    // document — which is the whole reason not to keep using `crate/html` plus
+    // `dom/on` for these.
+    await evalClj(window, `
+        (do (lt.actions/register! :probe/clicked
+                                  (fn [state _] {:state (assoc state :probe-clicked true)}))
+            (swap! lt.state/app dissoc :probe-clicked)
+            ;; Pinned over the chrome, because the point is a real click landing
+            ;; on it and the editor covers the body.
+            (def clicky (lt.ui/element [:button#probe-element
+                                        {:style {:position "fixed" :inset "0 auto auto 0"
+                                                 :z-index 99999}
+                                         :on {:click [[:probe/clicked]]}}
+                                        "go"]))
+            (js/document.body.appendChild clicky)
+            :mounted)`);
+
+    await window.locator('#probe-element').click();
+    expect(await evalClj(window, '(:probe-clicked @lt.state/app)')).toBe('true');
+
+    // The holder does not accumulate. Rendering a hundred of these leaves
+    // nothing behind, which is the failure mode of the obvious implementation:
+    // hand out the first child, leave it in the holder, and Replicant keeps a
+    // vdom entry per widget for the life of the window.
+    expect(await evalClj(window, `
+        (let [nodes (doall (for [i (range 100)] (lt.ui/element [:span.probe-many (str i)])))]
+          [(count (distinct (map #(.-textContent %) nodes)))
+           (count (filter #(some? (.-parentNode %)) nodes))])`))
+        .toBe('[100 0]');
+
+    await evalClj(window, `
+        (do (.remove clicky) (swap! lt.state/app dissoc :probe-clicked) :cleaned)`);
+});
+
 test('a data handler works from the very first render', async ({ window }) => {
     // The bug this is about was invisible and permanent. A view with a data
     // handler — every panel in the chrome has one — renders when its namespace

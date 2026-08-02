@@ -5,7 +5,9 @@ in, DOM out, plus a fine-grained binding layer (`bound`, `bound-coll`,
 `map-bound`, `subatom`) that writes into a node when an atom changes. 560 lines,
 in `src/singultus/`, unmaintained upstream. 116 `defui`, 67 `bound` and 27
 `subatom` across 37 namespaces in core, and a further 11 and 3 in the bundled
-plugins.
+plugins. 62, 30 and 36 across 21 today; `subatom` went *up* because what is
+left of it is layout — `#multi`'s insets, the sidebar widths, the bottombar
+height — which is the part that stays object-owned.
 
 It was also the plugin API — `lt.macros/defui` and `defpartial` compile to
 singultus calls — and for most of this migration that meant singultus stays in
@@ -28,7 +30,7 @@ worth converting because they are the last twelve.
 
 | | |
 |---|---|
-| singultus | everything, minus the list below. 63 `defui` across 22 files, from 116 across 37 |
+| singultus | everything, minus the list below. 62 `defui` across 21 files, from 116 across 37 |
 | Replicant | the tab strip, the statusbar, the workspace tree, the connect panel, the welcome screen, the component kit, and the window as a view |
 
 The swap is one object at a time and the two render side by side in the same
@@ -107,6 +109,65 @@ of `lt.state/app` and `lt.state/cursor`.
 The view re-runs on every change to the object. `bound` was finer than that —
 it wrote one attribute when one path changed — so a view over an object that
 changes on every keystroke is worth measuring before converting.
+
+[[lt.ui/element]] is the third one, and the answer for everything that is not a
+panel. A CodeMirror widget, a console line and a button in a dialog have this
+in common: something else takes the node and owns it from then on, and no
+object changing means "draw this again" — the widget is replaced wholesale or
+it is not replaced at all.
+
+```clojure
+(ui/element [:li.button {:on {:click [[:popup/choose 2]]}} "OK"])
+```
+
+Which is `defui` with handlers as data instead of `addEventListener` closures,
+and it is why the eight decoration `defui` can be converted at all. Replicant
+attaches handlers to the nodes themselves rather than delegating from the
+container, so moving the node into the document later takes them with it.
+
+It renders into one shared detached holder and then renders that holder empty
+again, which is what hands the node over. Handing out `.-firstChild` and
+leaving it there works for the node and leaks a vdom entry per widget — an
+inline result is built once per evaluation — and taking it out behind
+Replicant's back leaves that vdom describing a child that is gone. So
+Replicant removes it, and the holder is clean for the next caller.
+
+Nothing redraws an `element`, which also means [[lt.ui.kit/redefine!]] does not
+reach one. That is the right trade for a widget and the wrong one for chrome:
+if a thing should follow a redefinition, it wants a root of its own.
+
+## What is left, by kind
+
+`defui` expands to exactly two things — `singultus.core/html` and one
+`lt.util.dom/on` per event — so converting one is always the same question,
+*what re-renders this?*, and the 62 sort into four answers.
+
+| kind | n | answer |
+|---|---|---|
+| buttons | 15 | nothing does. One `[:div.button label]` and a click; not views, node factories |
+| decorations | 8 | nothing does, and there is no object to watch — CodeMirror or a `<ul>` owns the node |
+| grips | 3 | nothing does. The same HTML5 drag handle three times, over layout that stays object-owned |
+| panels | 36 | an object or the state does — `node` or `state-node` |
+
+The buttons are `connector/client-button`, `deploy/button`, `document/button`,
+`version/check-button`, `eval/button`, `find/replace-all-button`,
+`search/replace-all-button`, `lsp/action-button`, four in `plugins`,
+`doc/connect-button`, `command/header-button` and `popup/->button`. The
+decorations are `eval/{->inline-res,->underline-result,->inline-exception}`,
+`lsp/{->diagnostic,->diagnostics}`, the two `->helper` in `langs`, and
+`console/->item`. Both kinds are [[lt.ui/element]].
+
+The panels are the work: `plugins` 12, `doc` 7, `search` 6, `browser` 5,
+`devtools` 3, `popup` 2, `find` 2, and singletons elsewhere. Everything past
+`popup`, `find`, `console` and `bottombar` is tab *contents* rather than
+chrome — whole panels that want their own design pass, not a translation.
+
+**Deleting `defui` and deleting singultus are different finish lines.**
+`lt.ui/node`, `lt.ui/state-node`, `lt.ui.window`, `lt.ui.pane`,
+`lt.object/->dom` and `lt.compat` all call `singultus.core/html` for a static
+root element. The 260-line binding layer goes with the last `defui`; the
+192-line compiler outlives it until something replaces `crate/html` there,
+which is a small `createElement` helper whenever it is wanted.
 
 ## What cannot be swapped one-for-one
 
