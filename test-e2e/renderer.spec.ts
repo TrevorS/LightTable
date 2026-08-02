@@ -854,3 +854,53 @@ test('the grips that resize the chrome are where the layout puts them', async ({
         (do (object/raise lt.objs.sidebar/sidebar :width! (js-obj "clientX" ${before}))
             :restored)`);
 });
+
+test('a DOM node left in a view is reported rather than silently dropped', async ({ window }) => {
+    // The single most expensive mistake in the whole renderer migration.
+    // Replicant renders hiccup; hand it a node among the children and it draws
+    // the element around it empty, reports nothing and throws nothing. It
+    // happened in four separate files — an inline result carrying a devtools
+    // inspector, a console line carrying the same, a sidebar grip, and the file
+    // navigator's filter list — and every one was found by a test written for
+    // something else.
+    //
+    // `lt.ui.host` is what to reach for. This is what says so, at the moment it
+    // happens, naming the object and the tag.
+    await evalClj(window, `
+        (do (object/clear-errors!)
+            (object/object* ::node-in-hiccup
+                            :init (fn [this]
+                                    (lt.ui/node this [:div.node-probe]
+                                                (fn [_]
+                                                  (let [n (js/document.createElement "aside")]
+                                                    [:div "before" n "after"])))))
+            (def spliced (object/create ::node-in-hiccup))
+            (js/document.body.appendChild (object/->content spliced))
+            :drawn)`);
+
+    const said = await window.evaluate(
+        () => (globalThis as any).lt.objs.control.request('errors', {})
+            .errors.map((e: { message: string }) => e.message).join(' | ')) as string;
+    expect(said, 'the node should have been reported').toContain('DOM node in its hiccup');
+    expect(said).toContain('<aside>');
+    expect(said).toContain('lt.ui.host/host');
+
+    // And a view with no node in it says nothing, so this cannot fire on
+    // everything and be ignored.
+    await evalClj(window, `
+        (do (object/clear-errors!)
+            (object/object* ::plain-hiccup
+                            :init (fn [this]
+                                    (lt.ui/node this [:div.plain-probe] (fn [_] [:div "fine"]))))
+            (def plain (object/create ::plain-hiccup))
+            :drawn)`);
+    expect(await window.evaluate(
+        () => (globalThis as any).lt.objs.control.request('errors', {}).errors.length)).toBe(0);
+
+    await evalClj(window, `
+        (do (.remove (object/->content spliced))
+            (object/destroy! spliced)
+            (object/destroy! plain)
+            (object/clear-errors!)
+            :gone)`);
+});

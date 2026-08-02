@@ -56,10 +56,28 @@
   tree first is what puts the failure back in a frame that means something."
   [el what view]
   (let [hiccup (try
-                 (let [h (view)]
-                   ;; Realized here rather than by the renderer, so a lazy
-                   ;; sequence that throws does it in this frame.
-                   (doall (tree-seq #(and (coll? %) (not (map? %))) seq h))
+                 (let [h (view)
+                       ;; Realized here rather than by the renderer, so a lazy
+                       ;; sequence that throws does it in this frame.
+                       nodes (doall (tree-seq #(and (coll? %) (not (map? %))) seq h))]
+                   ;; And while every node is in hand, the one mistake this
+                   ;; renderer does not report. Replicant draws the element
+                   ;; around a DOM node empty and says nothing — no error, no
+                   ;; warning — so a panel that composes another object\'s
+                   ;; content by splicing it looks like a panel that decided to
+                   ;; draw nothing. It happened in four separate files during
+                   ;; the migration off singultus and every one was found by a
+                   ;; test written for something else. `lt.ui.host` is what to
+                   ;; reach for; this is what says so.
+                   (when-let [node (first (filter #(and (some? %)
+                                                        (not (coll? %))
+                                                        (number? (.-nodeType ^js %)))
+                                                  nodes))]
+                     (object/safe-report-error
+                      (str "The view for " what " has a DOM node in its hiccup — a <"
+                           (string/lower-case (.-tagName ^js node))
+                           ">. Replicant will draw nothing there. Wrap it in "
+                           "[:lt.ui.host/host {:content …}].")))
                    h)
                  (catch :default e
                    (object/safe-report-error

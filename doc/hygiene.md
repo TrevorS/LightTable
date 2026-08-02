@@ -205,21 +205,20 @@ than erase. The two check-only configs already rely on it.
 **Keeping `defui` as a stable plugin API.** Decided the other way, 2026-08-01:
 this fork is one person's editor, the only plugins that matter are the ones in
 this repository, and those get ported rather than supported. So singultus is
-not permanent — 35 `defui` across 7 files remain in `src` and none at all in
-the bundled plugins, from 116 across 37 when doc/rendering.md was written, and
-the file that stops using the last one deletes `src/singultus`. A `defui`
-reimplemented on Replicant to keep the signature is no longer worth the trouble
-it would take to get right.
+not permanent. It is gone: `src/singultus/`, `lt.macros/defui` and `lt.compat`
+were all deleted once the last call site was, from 116 `defui` across 37 files
+when doc/rendering.md was written. A `defui` reimplemented on Replicant to keep
+the signature would have been work to preserve a signature nobody outside this
+repository uses.
 
 **A `host` alias for splicing another object's DOM into hiccup.** Decided
-against, 2026-08-02, after measuring rather than before. It was the planned
-next step and it has no caller: the three files it was for — bottombar,
-sidebar, tabset — keep their bound roots either way, because a panel's width
-and height are object-owned geometry. What those files and `lt.objs.eval`
-actually shared was the opposite gap, the root's *own* class and style, which
-is `lt.ui/node`'s `attrs` now. If a tabset ever becomes a view the alias
-becomes worth having; until then it would be a mechanism with nothing behind
-it.
+against on 2026-08-02 for having no caller — the three files it was proposed
+for keep their bound roots either way — and built later the same day when the
+command bar needed it, with three callers waiting. The decision was right when
+it was made and the record of it is more useful than a tidy one: what those
+files actually shared was the opposite gap, the root's own class and style,
+which is `lt.ui/node`'s `attrs`. `lt.ui.host` exists now because a panel whose
+content is two other objects' DOM cannot be a view without it.
 
 **A `make`-based build system.** The `Makefile` is explicitly a wrapper, one
 line deep, deferring to `package.json` and `script/`. Reimplementing logic in it
@@ -228,6 +227,19 @@ would create the second source of truth it exists to avoid.
 ---
 
 ## Closed
+
+**A DOM node left in hiccup was dropped without a word** — `70666c35`'s
+successor. Replicant renders hiccup; hand it a node among the children and it
+draws the element around it empty, reports nothing and throws nothing. The
+single most expensive thing found in the renderer migration: four separate
+files — an inline result carrying a devtools inspector, a console line carrying
+the same, a sidebar grip, and the file navigator's filter list — and every one
+found by a test written for something else.
+
+`lt.ui.host` is what to reach for, and `lt.ui/render-safely!` now says so at the
+moment it happens, naming the object and the tag. It already walked the hiccup
+tree to force lazy sequences, so the check is free. It would have caught all
+four.
 
 **Every chrome panel silently lost its first paint** — `0a3fe468`'s successor.
 A view with a data handler renders when its namespace loads, which was before
