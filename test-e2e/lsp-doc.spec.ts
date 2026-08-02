@@ -349,3 +349,124 @@ test('and the bar says what the language server is doing', async ({ window }) =>
 
     fs.rmSync(path.dirname(path.dirname(file)), { recursive: true, force: true });
 });
+
+test('and a server that is ready says which one, and where', async ({ window }) => {
+    // "Language server ready" was said on every `:lsp.ready`, with nothing tying
+    // it to the editor you were looking at. A connection is per `[root command
+    // args]`, so with two servers declared — or two projects open — that was a
+    // true sentence about something else, and it is what sent three separate
+    // investigations of "toggle docs isn't working" to the wrong place while
+    // the connection the open editor used had `initialized? false`.
+    const file = project('lspreadyname');
+
+    await evalClj(window, `
+        (do (lt.objs.notifos/set-msg! "")
+            (lt.object/call-behavior-reaction
+              :lt.objs.editor.lsp/language-servers
+              lt.objs.editor.lsp/lsp-client
+              [{:tags [:editor.typescript]
+                :language-id "typescript"
+                :root ["tsconfig.json"]
+                :id "vtsls"
+                :command "node"
+                :args ["${FAKE_SERVER}"]}])
+            (cmd/exec! :open-path "${file}")
+            :opened)`);
+    await expect.poll(async () => await evalClj(window, `
+        (boolean (object/has-tag? (first (pool/by-path "${file}")) :docable))`),
+    { timeout: 30000 }).toBe('true');
+
+    // The server is `node`, the project is the scratch directory this test
+    // made — so the message names both halves of what the connection is keyed
+    // by, and a second connection could not produce the same sentence.
+    const said = String(await evalClj(window, `
+        (lt.objs.editor.lsp/ready-message
+          (first (lt.objs.editor.lsp/conns (first (pool/by-path "${file}")))))`));
+    expect(said).toContain('node ready in ');
+    expect(said).toContain(path.basename(path.dirname(path.dirname(file))));
+
+    await evalClj(window, `
+        (do (doseq [ed (pool/by-path "${file}")] (object/raise ed :close)) :closed)`);
+    fs.rmSync(path.dirname(path.dirname(file)), { recursive: true, force: true });
+});
+
+test('and a doc press that nothing answers says so', async ({ window }) => {
+    // The guard that does not need to know what went wrong. Five reports of
+    // "toggle docs isn't working" with four different causes, and every one
+    // looked the same from the outside: no widget, no message, no console line.
+    // Each fix closed the path it was about and the next silence was identical.
+    //
+    // So the command checks whether anything happened. Every way this can fail
+    // ends in no widget and nothing said, whatever the reason and whether or
+    // not anybody has found it yet.
+    const file = project('lspunanswered');
+
+    await evalClj(window, `
+        (do (lt.object/call-behavior-reaction
+              :lt.objs.editor.lsp/language-servers
+              lt.objs.editor.lsp/lsp-client
+              [{:tags [:editor.typescript]
+                :language-id "typescript"
+                :root ["tsconfig.json"]
+                :id "vtsls"
+                :command "node"
+                :args ["${FAKE_SERVER}"]}])
+            (cmd/exec! :open-path "${file}")
+            :opened)`);
+    await expect.poll(async () => await evalClj(window, `
+        (boolean (object/has-tag? (first (pool/by-path "${file}")) :docable))`),
+    { timeout: 30000 }).toBe('true');
+
+    // A client that claims the surface and never replies — which is what the
+    // local ClojureScript client does for `:editor.cljs.doc`, because its
+    // `on-message` has a `:default` method that is a no-op. Nothing declines,
+    // nothing errors, nothing arrives.
+    await evalClj(window, `
+        (do (def mute
+              (object/create (object/object* :lt.probe/mute :tags #{:client}
+                                             :init (fn [_] nil))))
+            (object/merge! mute {:name "mute" :provides #{:doc}})
+            (swap! lt.objs.clients/cs assoc (lt.objs.clients/->id mute) mute)
+            (object/update! (first (pool/by-path "${file}")) [:client] assoc :default mute)
+            :muted)`);
+
+    await evalClj(window, `
+        (let [ed (first (pool/by-path "${file}"))]
+          (lt.objs.editor/focus ed)
+          (lt.objs.editor/move-cursor ed {:line 1 :ch 13})
+          (lt.objs.notifos/set-msg! "")
+          (cmd/exec! :editor.doc.toggle)
+          :pressed)`);
+
+    await expect.poll(async () => await evalClj(window, '(:text (:message @lt.state/app))'),
+                      { timeout: 15000 }).toContain('Nothing answered');
+    expect(await insideEditor<number>(window, file,
+        '(.-length (.querySelectorAll root ".inline-doc"))')).toBe(0);
+
+    // And it does not talk over a decline that did report. A feature saying
+    // "no" is a feature working, and replacing its sentence with "nothing
+    // answered" would lose the only part that was useful. The decline used is
+    // the real one: a server still doing its handshake.
+    await evalClj(window, `
+        (do (swap! lt.objs.clients/cs dissoc (lt.objs.clients/->id mute))
+            (object/merge! (first (pool/by-path "${file}")) {:client {}})
+            (doseq [c (lt.objs.editor.lsp/conns (first (pool/by-path "${file}")))]
+              (swap! c assoc :initialized? false))
+            (lt.objs.notifos/set-msg! "")
+            (cmd/exec! :editor.doc.toggle)
+            :pressed)`);
+    await expect.poll(async () => await evalClj(window, '(:text (:message @lt.state/app))'))
+        .toContain('still starting');
+    // Past the window in which the guard would have spoken.
+    await window.waitForTimeout(4000);
+    expect(await evalClj(window, '(:text (:message @lt.state/app))'),
+           'the decline must survive the guard').toContain('still starting');
+
+    await evalClj(window, `
+        (do (doseq [c (lt.objs.editor.lsp/conns (first (pool/by-path "${file}")))]
+              (swap! c assoc :initialized? true))
+            (object/merge! (first (pool/by-path "${file}")) {:client {}})
+            (doseq [ed (pool/by-path "${file}")] (object/raise ed :close))
+            :closed)`);
+    fs.rmSync(path.dirname(path.dirname(file)), { recursive: true, force: true });
+});

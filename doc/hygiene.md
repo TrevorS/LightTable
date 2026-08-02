@@ -55,19 +55,6 @@ remote debugging port on, so a devtools client forwards the window's own
 console into Light Table's. `page.addInitScript` with a `console.error` wrapper
 is what found it.
 
-### "Language server ready" is about whichever one finished first
-
-`::on-ready` says it on every `:lsp.ready`, and nothing ties the message to the
-editor you are looking at. On this repository a probe found the statusbar
-already reporting it while the connection attached to the open editor had
-`initialized? false` and no capabilities at all.
-
-Found chasing "toggle docs isn't working", which `063aa943` fixed at the other
-end: the commands that a person runs on purpose now say when the server is
-still starting. That makes the truth visible where it matters and leaves this
-message still capable of lying. Closing it means naming the server, or saying
-it per editor rather than per connection.
-
 ### A doc over an existing underline result orphans the old node
 
 `lt.plugins.doc/inline-doc` does `object/update! this [:widgets] assoc [line
@@ -251,6 +238,31 @@ would create the second source of truth it exists to avoid.
 ---
 
 ## Closed
+
+**A doc press that nothing answers now says so.** The guard that does not need
+to know what went wrong. Five reports of "toggle docs isn't working" with four
+different causes — a server declining pre-handshake, a REPL taking the surface
+and having nothing, the ClojureScript twins of the behaviors that fixed, and a
+client whose `on-message` `:default` method swallows the request and never
+replies — and every one of them looked identical from outside: no widget, no
+message, no console line. Each fix closed the path it was about, and the next
+silence was indistinguishable from the last.
+
+`:editor.doc.toggle` checks now. Every way this can fail ends in no widget and
+nothing said, whatever the reason and whether or not anybody has found it yet,
+so the check needs no theory of the failure. It points at `:lsp.status` rather
+than guessing, because that already works the whole situation out and a second,
+worse version of that sentence is how two answers come to disagree. It stays
+quiet when something *did* report — a feature saying no is a feature working.
+
+**"Language server ready" was about whichever one finished first.** `::on-ready`
+said it on every `:lsp.ready` with nothing tying it to what you were looking at.
+A connection is keyed `[root command args]`, so on a project with two servers,
+or with two projects open, it was a true sentence about something else — and it
+is what sent three separate investigations to the wrong place while the
+connection the open editor used had `initialized? false` and no capabilities at
+all. The connection keeps its `:command` now and `ready-message` names both
+halves of what it is keyed by: `clojure-lsp ready in LightTable`.
 
 **Toggle docs did nothing in ClojureScript files** — the fourth report, and
 the same two dead ends as the second, in the twin nobody looked at. `838f8446`

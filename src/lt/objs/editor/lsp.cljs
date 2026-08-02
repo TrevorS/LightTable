@@ -116,6 +116,14 @@
   (let [idx (.lastIndexOf path "/")]
     (when (pos? idx) (subs path 0 idx))))
 
+(defn- leaf
+  "The last segment of `path`. `lt.objs.files/basename` without requiring it —
+  this namespace reaches the filesystem through `lt.util.bridge` and adding a
+  second way in for one string operation is not worth it."
+  [path]
+  (let [s (str path)]
+    (subs s (inc (.lastIndexOf s "/")))))
+
 (defn project-root
   "The nearest directory at or above `path` containing one of `markers`.
 
@@ -1213,11 +1221,29 @@
           :reaction (fn [_ message _conn]
                       (js/lt.objs.console.error (str "language server: " message))))
 
+(defn ready-message
+  "What to say when `conn` finishes its handshake.
+
+  Named, because a connection is per `[root command args]` and this used to say
+  \"Language server ready\" about whichever one got there first. On a project
+  with two servers, or two projects open at once, that is a true sentence about
+  something you are not looking at — and it was what sent three separate
+  investigations to the wrong place while the connection the open editor
+  actually used had `initialized? false` and no capabilities at all.
+
+  The project's directory name rather than its path: the point is telling two
+  of them apart, and the full path pushes the server's name off the bar."
+  [conn]
+  (let [{:keys [command root-path]} @conn]
+    (str (leaf command) " ready"
+         (when (seq (str root-path))
+           (str " in " (leaf root-path))))))
+
 (behavior ::on-ready
           :triggers #{:lsp.ready}
           :desc "Language server: Report that a server is ready"
-          :reaction (fn [_ _result _conn]
-                      (notifos/done-working "Language server ready")))
+          :reaction (fn [_ _result conn]
+                      (notifos/done-working (ready-message conn))))
 
 (behavior ::shutdown-servers-on-close
           :triggers #{:closed}

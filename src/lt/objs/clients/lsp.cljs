@@ -177,6 +177,12 @@
                     :buffer wire/empty-buffer
                     :initialized? false
                     :object object
+                    ;; Kept so a connection can say which one it is. Everything
+                    ;; here is per `[root command args]`, and a message about
+                    ;; "the language server" that cannot name either half is
+                    ;; how "Language server ready" came to be announced about
+                    ;; whichever connection finished first.
+                    :command command
                     :root-path root-path})
         ^js handle (.spawn bridge/processes command (clj->js (or args []))
                            #js {:cwd root-path})]

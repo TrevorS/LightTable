@@ -8,7 +8,9 @@
             [lt.objs.editor :as editor]
             [lt.objs.editor.pool :as pool]
             [lt.objs.sidebar :as sidebar]
+            [lt.state :as state]
             [lt.util.dom :as dom]
+            [lt.util.js :as util]
             [lt.util.cljs :refer [str-contains?]]
             [clojure.set :as set]
             [lt.objs.command :as cmd]
@@ -56,6 +58,39 @@
                             )))
 
 
+(def ^:private answer-window
+  "How long an answer has to arrive before the press is called unanswered.
+
+  A language server round-trip is milliseconds once it has indexed and a REPL's
+  is not much worse, so this is generous rather than tight — the cost of being
+  early is telling someone nothing happened when it is about to."
+  2500)
+
+(defn- unanswered!
+  "Say that the press did nothing, if by now it has.
+
+  This exists because \"toggle docs isn't working\" has been reported five
+  times with four different causes, and every one of them presented the same
+  way: nothing on screen, nothing in the bar, nothing in the console. Each fix
+  closed the path it was about and the next silence looked identical.
+
+  So the command checks. Every way this can fail ends in no widget and no
+  message, whatever the reason and whether or not anyone thought to report it —
+  which makes this the one guard that does not need to know what went wrong.
+
+  It says where to look rather than guessing: `:lsp.status` already works the
+  whole situation out, and duplicating a worse version of that sentence here is
+  how two answers come to disagree."
+  [ed line said]
+  (util/wait answer-window
+    (fn []
+      (when (and (nil? (doc-on-line? ed line))
+                 ;; Nobody said anything either — a decline that reported is a
+                 ;; working feature saying no, and must not be talked over.
+                 (= said (:text (:message @state/app))))
+        (notifos/set-msg! (str "Nothing answered for documentation here. "
+                               "Run 'Language server: Status for this editor' to see why."))))))
+
 (cmd/command {:command :editor.doc.toggle
               :desc "Docs: Toggle documentation at cursor"
               :exec (fn []
@@ -63,9 +98,9 @@
                         (let [loc (editor/->cursor ed)]
                           (if-let [cur (doc-on-line? ed (:line loc))]
                             (remove! ed cur)
-                            (object/raise ed :editor.doc)
-                            )))
-                      )})
+                            (let [said (:text (:message @state/app))]
+                              (object/raise ed :editor.doc)
+                              (unanswered! ed (:line loc) said))))))})
 
 (defn- doc-ui
   "What a language said about the thing under the cursor, as hiccup.
