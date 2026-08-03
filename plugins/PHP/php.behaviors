@@ -1,0 +1,16 @@
+{;; PHP, as data. No code in this plugin.
+ ;;
+ ;; intelephense rather than phpactor: it is the server most PHP editors
+ ;; default to, and the features that matter here — hover, definition,
+ ;; completion, diagnostics — are in the free tier. Swapping is one line in
+ ;; user.behaviors.
+ ;;
+ ;; The colouring is tree-sitter's, from the grammar registered against
+ ;; :editor.php in lt.objs.editor.treesitter.
+ :+ {:lsp.client [(:lt.objs.editor.lsp/language-servers
+                   [{:tags [:editor.php]
+                     :language-id "php"
+                     :root ["composer.json" ".git"]
+                     :command "intelephense"
+                     :args ["--stdio"]
+                     :install "npm i -g intelephense"}])]}}

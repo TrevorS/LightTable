@@ -317,18 +317,42 @@ What ships:
 One connection per project root and server, shared by every editor under it.
 Declared out of the box, each by the plugin that owns the language:
 
-| tags | server | declared in | install |
+| tags | server | plugin | install |
 |---|---|---|---|
-| `:editor.typescript` | `typescript-language-server` | `plugins/TypeScript/typescript.behaviors` | `npm i -D typescript-language-server` |
-| `:editor.tsx` | `typescript-language-server` | `plugins/TypeScript/typescript.behaviors` | as above |
-| `:editor.clj`, `:editor.cljs` | `clojure-lsp` | `plugins/Clojure/clojure.behaviors` | `brew install clojure-lsp/brew/clojure-lsp-native` |
+| `:editor.c`, `:editor.cpp` | `clangd` | C | `brew install llvm` |
+| `:editor.clj`, `:editor.cljs` | `clojure-lsp` | Clojure | `brew install clojure-lsp/brew/clojure-lsp-native` |
+| `:editor.css` | `vscode-css-language-server` | CSS | `npm i -g vscode-langservers-extracted` |
+| `:editor.scss` | `vscode-css-language-server` | CSS | as above |
+| `:editor.elixir` | `elixir-ls` | Elixir | see github.com/elixir-lsp/elixir-ls |
+| `:editor.go` | `gopls` | Go | `go install golang.org/x/tools/gopls@latest` |
+| `:editor.html` | `vscode-html-language-server` | HTML | `npm i -g vscode-langservers-extracted` |
+| `:editor.java` | `jdtls` | Java | `brew install jdtls` |
+| `:editor.json` | `vscode-json-language-server` | JSON | `npm i -g vscode-langservers-extracted` |
+| `:editor.php` | `intelephense` | PHP | `npm i -g intelephense` |
+| `:editor.python` | `pyright-langserver` + `ruff` | Python | `pip install pyright ruff` |
+| `:editor.ruby` | `ruby-lsp` | Ruby | `gem install ruby-lsp` |
+| `:editor.rust` | `rust-analyzer` | Rust | `rustup component add rust-analyzer` |
+| `:editor.shell` | `bash-language-server` | Shell | `npm i -g bash-language-server` |
+| `:editor.toml` | `taplo` | TOML | `brew install taplo` |
+| `:editor.typescript`, `:editor.tsx`, `:editor.javascript` | `vtsls` + `biome` | TypeScript | `npm i -g @vtsls/language-server @biomejs/biome` |
+| `:editor.yaml` | `yaml-language-server` | YAML | `npm i -g yaml-language-server` |
+| `:editor.zig` | `zls` | Zig | `zig fetch --global zls` |
 
-Install `typescript` alongside the language server and pin it to 5.x.
-`typescript-language-server` drives `tsserver.js`, and TypeScript 7 — the
-native rewrite — does not ship one, so a plain `npm i -D typescript` now gets a
-compiler it refuses to start against. It says so on stderr, and Light Table
-puts that on the console, which is the only reason this took minutes rather
-than an afternoon.
+Every language with a bundled tree-sitter grammar has a server here, which is
+not a coincidence — a grammar and a server are the two halves of supporting a
+language, and a language with one and not the other is a gap worth an issue.
+The pairs are listed in `lt.objs.editor.treesitter/grammars` and in the plugin
+behaviors above, and nothing enforces the correspondence; it is a thing to
+check when adding either half.
+
+`vtsls` rather than `typescript-language-server`, which this table named for a
+while: it wraps the same extension VS Code ships, so completion matches what
+most people are used to. If you go back to `typescript-language-server`, install
+`typescript` alongside it and pin it to 5.x — that server drives `tsserver.js`,
+and TypeScript 7, the native rewrite, does not ship one, so a plain
+`npm i -D typescript` gets a compiler it refuses to start against. It says so on
+stderr and Light Table puts that on the console, which is the only reason that
+took minutes rather than an afternoon.
 
 clojure-lsp is worth its own note. Its diagnostics come from **clj-kondo**,
 which is what `make check` already runs on this repository — so what it says in

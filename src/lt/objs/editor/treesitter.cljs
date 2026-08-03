@@ -89,6 +89,7 @@
                   {:wasm (npm pkg (str pkg ".wasm"))
                    :queries [(npm pkg "queries/highlights.scm")]
                    :injections [(npm pkg "queries/injections.scm")]})
+         css (npm "tree-sitter-css" "queries/highlights.scm")
          clojure {:wasm "grammars/tree-sitter-clojure.wasm"
                   :queries ["grammars/queries/clojure-highlights.scm"]}]
      {:editor.javascript {:wasm (npm "tree-sitter-javascript" "tree-sitter-javascript.wasm")
@@ -133,6 +134,17 @@
       :editor.go         (simple "tree-sitter-go")
       :editor.json       (simple "tree-sitter-json")
       :editor.css        (simple "tree-sitter-css")
+      ;; SCSS is CSS plus its own rules, the same shape as C++ over C — and it
+      ;; is a *fork* of the CSS grammar, so CSS's own query applies to it node
+      ;; for node and is worth four times what SCSS's supplement is alone.
+      ;; Measured on a small stylesheet: 12 captures across 6 names with the
+      ;; supplement by itself, 47 across 16 with CSS underneath it.
+      ;;
+      ;; Both files are ours because npm publishes no usable `.wasm` for SCSS —
+      ;; see deploy/core/grammars/README.md — which is also why the query is
+      ;; there rather than under node_modules.
+      :editor.scss       {:wasm "grammars/tree-sitter-scss.wasm"
+                          :queries [css "grammars/queries/scss-highlights.scm"]}
       :editor.html       (simple "tree-sitter-html")
       :editor.bash       (simple "tree-sitter-bash")
       ;; The Shell plugin tags `.sh` and friends `:editor.shell`, which is the
@@ -155,7 +167,21 @@
                           :queries [(npm "@tree-sitter-grammars/tree-sitter-toml" "queries/highlights.scm")]}
       :editor.zig        {:wasm (npm "@tree-sitter-grammars/tree-sitter-zig" "tree-sitter-zig.wasm")
                           :queries [(npm "@tree-sitter-grammars/tree-sitter-zig" "queries/highlights.scm")]
-                          :injections [(npm "@tree-sitter-grammars/tree-sitter-zig" "queries/injections.scm")]}})))
+                          :injections [(npm "@tree-sitter-grammars/tree-sitter-zig" "queries/injections.scm")]}
+
+      ;; The last two are not file types and never will be. They are here
+      ;; because JavaScript's injections.scm asks for them by name — a regex
+      ;; literal is a language, and so is the inside of a documentation comment
+      ;; — and until they were here those two rules found a language nobody
+      ;; had and quietly did nothing. Keyed the same way as everything else,
+      ;; because a language is a grammar and whether you can open a file of it
+      ;; is not this map's business.
+      :editor.regex      (simple "tree-sitter-regex")
+      ;; Applied to every comment rather than only to `/** … */`, which is what
+      ;; the query says. That is safe and was checked: a plain `// comment`
+      ;; produces no captures at all, so the host's `@comment` colour survives
+      ;; and only a real doc comment gains `@param` and its types.
+      :editor.jsdoc      (simple "tree-sitter-jsdoc")})))
 
 (def language-aliases
   "What tree-sitter calls a language, to the editor tag Light Table calls it by.

@@ -21,7 +21,7 @@ real payoff: a theme becomes a stylesheet rather than a port.
 
 | | |
 |---|---|
-| Grammars bundled | JavaScript, TypeScript, TSX, JSX, **Clojure**, Python, Rust, Go, C, C++, Java, Ruby, PHP, Elixir, Zig, JSON, YAML, TOML, CSS, HTML, Bash/Shell |
+| Grammars bundled | JavaScript, TypeScript, TSX, JSX, **Clojure**, Python, Rust, Go, C, C++, Java, Ruby, PHP, Elixir, Zig, JSON, YAML, TOML, CSS, **SCSS**, HTML, Bash/Shell — plus regex and jsdoc, which are injected and never opened |
 | Runtime load | once, ~0ms after the first grammar |
 | Grammar load | ~46ms, once per language, on first use |
 | Parse | 0.8ms for a small file; 0.2ms incremental after an edit |
@@ -32,9 +32,10 @@ plus the npm dependency — and that map is an atom a plugin can `swap!`, so a
 language plugin can bring its own grammar without waiting for an editor release.
 
 Most grammars come from npm packages that ship a prebuilt `.wasm` and a
-`queries/highlights.scm`. Clojure does neither, so its grammar is built from
-source and committed under `deploy/core/grammars/`, and its highlight query is
-Light Table's own — worth the effort for the language this editor is written
+`queries/highlights.scm`. Two do not and are built from source and committed
+under `deploy/core/grammars/`: SCSS, whose package publishes native bindings
+only, and Clojure, whose package publishes neither those nor a query. Clojure's
+highlight query is Light Table's own — worth the effort for the language this editor is written
 in. That directory's README has the build, which needs neither docker nor
 emscripten: the tree-sitter CLI fetches its own wasi-sdk.
 

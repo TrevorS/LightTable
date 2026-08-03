@@ -192,6 +192,41 @@ test('a language inside a language is drawn by its own grammar', async ({ window
     await close(window, file);
 });
 
+test('a regex and a doc comment are languages too', async ({ window }) => {
+    // JavaScript's own injections.scm names `regex` and `jsdoc`, and until the
+    // grammars were here those two rules found a language nobody had and did
+    // nothing. Neither is a file type and neither ever will be — which is the
+    // point: an injected language does not need to be one you can open.
+    const file = path.join(scratchDir('inject-js'), 'a.js');
+    fs.writeFileSync(file, [
+        '// an ordinary line comment',
+        '/** @param {number} n how many */',
+        'function f(n) { return /ab+c/g.test(String(n)); }',
+        ''
+    ].join('\n'));
+    await evalClj(window, `(do (cmd/exec! :open-path "${file}") :opened)`);
+
+    await expect.poll(async () => await evalClj(window, `
+        (let [ed (first (pool/by-path "${file}"))]
+          (vec (sort (:injected (lt.objs.editor.treesitter/report ed)))))`),
+    { timeout: 60000 }).toBe('["jsdoc" "regex"]');
+
+    // `+` inside a regex literal is an operator, which the JavaScript grammar
+    // has no reason to think — to it the whole literal is one token.
+    await expect.poll(async () => await paintedClasses(window, file), { timeout: 15000 })
+        .toContain('cm-ts-operator');
+    const painted = await paintedClasses(window, file);
+    // From the doc comment: `@param` is a keyword and `{number}` is a type.
+    expect(painted).toContain('cm-ts-keyword');
+    expect(painted).toContain('cm-ts-type');
+    // And the plain line comment is still a comment. jsdoc is injected into
+    // *every* comment, which the query asks for and which is only safe because
+    // a comment that is not documentation produces no captures at all.
+    expect(painted).toContain('cm-ts-comment');
+
+    await close(window, file);
+});
+
 test('the languages with a plugin and no CodeMirror mode are coloured too', async ({ window }) => {
     // Elixir, Zig and Shell each ship a plugin — file types, a language server,
     // a keymap — and until now the colouring was the one part missing: Elixir
@@ -202,7 +237,11 @@ test('the languages with a plugin and no CodeMirror mode are coloured too', asyn
         ['a.ex', 'defmodule Foo do\n  def bar(x), do: x + 1\nend\n', 'tree-sitter-elixir'],
         ['a.zig', 'const std = @import("std");\npub fn main() void {}\n',
          '@tree-sitter-grammars/tree-sitter-zig'],
-        ['a.sh', '#!/bin/sh\nfor f in *.txt; do echo "$f"; done\n', 'tree-sitter-bash']
+        ['a.sh', '#!/bin/sh\nfor f in *.txt; do echo "$f"; done\n', 'tree-sitter-bash'],
+        // Built here rather than installed, because npm publishes no usable
+        // `.wasm` for it — see deploy/core/grammars/README.md.
+        ['a.scss', '$primary: #333;\n@mixin theme($c) { color: $c; }\n'
+                 + '.card { @include theme($primary); &:hover { color: red; } }\n', 'grammars']
     ];
 
     for (const [name, source, grammar] of cases) {

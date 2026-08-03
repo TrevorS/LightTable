@@ -1,0 +1,9 @@
+{:name "Java"
+ :version "0.1.0"
+ :author "Light Table"
+ :desc "Java support, through jdtls."
+ :source "https://github.com/TrevorS/LightTable"
+ :behaviors "java.behaviors"
+
+ ;; None. The editor spawns the language server, not this plugin.
+ :capabilities #{}}

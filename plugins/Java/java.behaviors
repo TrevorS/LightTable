@@ -1,0 +1,19 @@
+{;; Java, as data. No code in this plugin.
+ ;;
+ ;; jdtls is the Eclipse JDT language server, which is what every editor with
+ ;; Java support is talking to. It also formats, using the project's
+ ;; formatter settings.
+ ;;
+ ;; The colouring is tree-sitter's, from the grammar registered against
+ ;; :editor.java in lt.objs.editor.treesitter.
+ ;;
+ ;; :root is ordered outermost-first in effect: `project-root` takes the
+ ;; outermost marker inside the repository, so a module of a Maven or Gradle
+ ;; multi-project build is rooted at the build that can actually resolve it.
+ :+ {:lsp.client [(:lt.objs.editor.lsp/language-servers
+                   [{:tags [:editor.java]
+                     :language-id "java"
+                     :root ["pom.xml" "build.gradle" "build.gradle.kts" "settings.gradle" ".git"]
+                     :command "jdtls"
+                     :args []
+                     :install "brew install jdtls, or your package manager"}])]}}
