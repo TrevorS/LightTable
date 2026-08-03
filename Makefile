@@ -55,6 +55,15 @@ repl: ## Boot the editor and attach a REPL to it (see script/lt-repl.sh)
 screenshot: ## Screenshot files in the editor — make screenshot FILES="a.ts b.clj"
 	script/screenshot.sh $(FILES)
 
+storybook: ## The component kit in a browser, on http://localhost:6106
+	npm run storybook
+
+storybook-build: ## A static Storybook in storybook-static/
+	npm run storybook:build
+
+storybook-check: ## Build it, then prove every story actually renders
+	npm run --silent storybook:check
+
 ## ── Checking ──────────────────────────────────────────────────────────────
 
 check: ## Lint, type-check, and confirm doc/api matches the source

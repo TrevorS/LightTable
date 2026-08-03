@@ -170,6 +170,29 @@
                                  :redef false
                                  :undeclared-var false}}}
 
+  ;; The component kit, compiled for a browser that is not Light Table.
+  ;;
+  ;; `:esm` rather than `:browser` because the consumer is Vite: it wants real
+  ;; ES modules with real exports, and shadow's browser target emits a loader
+  ;; that expects to be the page's own script. One import in a story file is
+  ;; the whole integration.
+  ;;
+  ;; Nothing about the editor is in here and that is the design rather than a
+  ;; limitation — thirty of the thirty-five aliases require nothing but
+  ;; Replicant, so the kit renders anywhere a DOM does. See src/lt/ui/storybook.cljs
+  ;; for what crosses and doc/storybook.md for why this is a separate build
+  ;; rather than a mode of the app one.
+  :storybook
+  {:target     :esm
+   :output-dir ".storybook/generated"
+   :runtime    :browser
+   :modules    {:kit {:exports {render   lt.ui.storybook/render!
+                                ids      lt.ui.storybook/ids
+                                describe lt.ui.storybook/describe}}}
+   :js-options {:js-provider :shadow
+                :js-package-dirs ["deploy/core/node_modules" "node_modules"]}
+   :compiler-options {:optimizations :simple}}
+
   ;; Runs under node, so only namespaces that load without a DOM or an Electron
   ;; runtime can be exercised here. Anything needing the real app is covered by
   ;; script/smoke-test.mts instead.

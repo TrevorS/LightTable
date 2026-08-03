@@ -1,0 +1,14 @@
+/* Only what a story needs to sit somewhere, which is not a theme.
+ *
+ * Everything visual comes from deploy/core/css/kit.css. If a component looks
+ * wrong here, it looks wrong in the editor, which is the point. */
+
+body {
+    background: var(--lt-base);
+    color: var(--lt-text);
+    font-family: var(--lt-font-ui, system-ui, sans-serif);
+}
+
+.lt-story {
+    padding: 16px;
+}

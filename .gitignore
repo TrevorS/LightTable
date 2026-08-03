@@ -68,3 +68,10 @@
 
 # The pinned clj-kondo binary, fetched by script/fetch-clj-kondo.js.
 /.tools/
+
+# Storybook: the ClojureScript bundle it renders from, and the static build.
+# Both are outputs — `make storybook` produces the first, `npm run
+# storybook:build` the second. The story files themselves are committed,
+# because they are generated from a registry and `make check` compares them.
+/.storybook/generated/
+/storybook-static/

@@ -22,7 +22,8 @@
   "Every namespace a build compiles from. Each shadow-cljs target has one, and
   between them they must cover the tree."
   '#{lt.core                  ;; the renderer bundle
-     lt.background.worker})   ;; the worker thread
+     lt.background.worker      ;; the worker thread
+     lt.ui.storybook})         ;; the component kit, built for a plain browser
 
 (defn- cljs-files
   "Every ClojureScript source file under `dir`."
