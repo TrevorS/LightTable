@@ -186,12 +186,22 @@
   {:target     :esm
    :output-dir ".storybook/generated"
    :runtime    :browser
-   :modules    {:kit {:exports {render   lt.ui.storybook/render!
-                                ids      lt.ui.storybook/ids
-                                describe lt.ui.storybook/describe}}}
+   :modules    {:kit {:exports {render lt.ui.storybook/render!
+                                ids    lt.ui.storybook/ids}}}
    :js-options {:js-provider :shadow
                 :js-package-dirs ["deploy/core/node_modules" "node_modules"]}
    :compiler-options {:optimizations :simple}}
+
+  ;; What stories exist, as JSON on stdout. `script/gen-stories.mts` runs this
+  ;; and writes one Storybook file per component from it. Under node because
+  ;; the registry is plain data and asking it a question should not need a
+  ;; browser — see src/lt/ui/stories/manifest.cljs.
+  :stories-manifest
+  {:target    :node-script
+   :output-to "target/stories-manifest.js"
+   :main      lt.ui.stories.manifest/main
+   :js-options {:js-provider :shadow
+                :js-package-dirs ["deploy/core/node_modules" "node_modules"]}}
 
   ;; Runs under node, so only namespaces that load without a DOM or an Electron
   ;; runtime can be exercised here. Anything needing the real app is covered by

@@ -23,6 +23,42 @@ test.describe('the component kit', () => {
         await window.locator('.kit').first().waitFor();
     });
 
+    test('a card told from the story registry says what the registry says', async ({ window }) => {
+        // The unification. `chrome/status-dot` used to be written twice: a card
+        // here with a sentence, a prop table and eight states, and — once
+        // Storybook existed — a second list of states over there. Two answers
+        // to "what states does this have?" is one too many, so the card is now
+        // built from `lt.ui.story/registry` and the Storybook build reads the
+        // same one.
+        //
+        // Asserted against the registry rather than against a list typed here,
+        // because a list typed here would be the third answer.
+        // Twice, because `evalClj` gives back the printed form of the value and
+        // the value here is itself a JSON string.
+        const wanted = JSON.parse(JSON.parse(await evalClj(window, `
+            (let [spec (get @lt.ui.story/registry :lt.ui.chrome/status-dot)]
+              (js/JSON.stringify
+                (clj->js {:desc (:doc spec)
+                          :props (mapv first (:props spec))
+                          :states (mapv first (lt.ui.story/states :lt.ui.chrome/status-dot))
+                          :usage (:usage spec)})))`))) as
+            { desc: string; props: string[]; states: string[]; usage: string };
+
+        // Nothing below can pass on an empty registry, which is the way a test
+        // that compares two things read from the same place fails to mean
+        // anything.
+        expect(wanted.states.length).toBe(10);
+        expect(wanted.props.length).toBe(3);
+
+        const card = window.locator('.kit__card', { hasText: 'status-dot' }).first();
+        expect(await card.locator('.kit__prop-name').allInnerTexts()).toEqual(wanted.props);
+        expect(await card.locator('.kit__demo-row .status').allInnerTexts())
+            .toEqual(wanted.states);
+        expect((await card.locator('.kit__desc').innerText()).replace(/\s+/g, ' ').trim())
+            .toBe(wanted.desc.replace(/\s+/g, ' ').trim());
+        expect(await card.locator('.kit__usage').innerText()).toContain(wanted.usage);
+    });
+
     test('draws a cell for every alias the registry holds', async ({ window }) => {
         // Not a number written here: the page asks lt.ui.kit/aliases for the
         // list and marks anything it did not draw, so this reads the marks

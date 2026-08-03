@@ -3,20 +3,25 @@
 `make storybook` opens the component kit on <http://localhost:6106>, rendered
 by the same ClojureScript the editor renders, outside the editor.
 
-This is module 1 of five. What exists now is the path end to end — a
-ClojureScript build, a bridge, a story, and a check that the story actually
-draws — with one component in it. The modules after this one are listed at the
-bottom.
+Modules 1 and 2 of five are done: the path end to end, and stories as
+ClojureScript that the in-editor catalogue reads too. One component is
+described so far. The rest are listed at the bottom.
 
-## Why, when there is already a catalogue
+## One description, two surfaces
 
-[`lt.ui.catalogue`](../src/lt/ui/catalogue.cljs) draws twenty-five components
-from the live alias registry, inside Light Table, and
-`test-e2e/catalogue.spec.ts` fails if a registered alias is missing from it.
-That is worth more than a picture of a component, and it is not what this
-replaces.
+[`lt.ui.catalogue`](../src/lt/ui/catalogue.cljs) draws components from the live
+alias registry, inside Light Table, and `test-e2e/catalogue.spec.ts` fails if a
+registered alias is missing from it. That is worth more than a picture of a
+component, and it is not what this replaces.
 
-The two answer different questions, and the split is clean:
+It did, briefly, mean two answers to *what states does this component have?* —
+a hand-written card here and a story registry over there. Two is the number
+that goes stale. So [`lt.ui.story`](../src/lt/ui/story.cljs) is the one both
+read: `story/of` carries the sentence, the prop table, the usage line and every
+state, the catalogue's `told-card` builds a card from it, and the Storybook
+generator builds files from it. Neither surface owns the description.
+
+What is left is genuinely different, and the split is clean:
 
 | | catalogue | Storybook |
 |---|---|---|
@@ -52,10 +57,44 @@ last rendered into a given node, and Storybook remounts a story whenever a
 control changes; handing back a node it has already discarded gives you the
 previous story's DOM with the new story's diff applied to it.
 
-**The stories.** ClojureScript, in the registry. Storybook's indexer needs one
-file per component to build its sidebar, so those files exist — but they are
-generated from the registry rather than written, which is module 2. Until then
-`.storybook/stories/chrome.stories.js` is the shape the generator will emit.
+**The stories.** ClojureScript, in `lt.ui.stories.*`, beside the components
+rather than inside them — `lt.ui.chrome` is eighteen aliases and nothing else
+and it stays that way.
+
+A state is **props, not markup**:
+
+```clojure
+(story/of ::chrome/status-dot
+  {:doc    "One indicator for all seven execution states plus connection health."
+   :props  [[":status" "one of the eight" "what it is doing now"]]
+   :usage  "band/result · view/statusbar · every titlebar"
+   :states (array-map :queued {:status :queued}
+                      :hollow {:status :finished :hollow true})})
+```
+
+Props because that is what a control varies, and because an alias silently
+ignores an attribute it does not destructure — a state written as hiccup can
+pass a prop the component does not take, draw the default, and look fine. That
+is not hypothetical; see below. `:hiccup` is still available for a state that
+is a small composition rather than one call.
+
+Naming the alias is the other half: `::chrome/status-dot` is a keyword the
+compiler resolves, so renaming a component breaks its stories at compile time.
+That is the argument for writing these in ClojureScript rather than in the
+JavaScript that has to exist anyway.
+
+**The generated files.** Storybook's indexer needs one file per component, so
+`script/gen-stories.mts` writes them from the registry — via a `stories-manifest`
+node build that prints it as JSON, because asking a registry a question should
+not need a browser.
+
+They are **not committed**, which is a change from what this page said in module
+1. The comparison then was `doc/api`: generated, committed, guarded by `make
+check`. But `doc/api` is committed because people read it on GitHub and its diff
+says what changed about the promised API. Nobody reads these. A generated file
+nobody reads, committed, is something that can go stale plus a check that has to
+exist to notice; generated into a gitignored directory by the same command that
+runs Storybook, it cannot.
 
 **The ground.** `.storybook/preview.js` imports `deploy/core/css/reset.css` and
 `kit.css` — the real stylesheets, not a copy. A component drawn against a copy
@@ -107,13 +146,11 @@ module 5 question.
 ## The modules
 
 1. **The harness** — done. The build, the bridge, one component, the check.
-2. **ClojureScript as a first-class story format.** A `defstory` that writes
-   into the registry from the namespace the component lives in, and
-   `script/gen-stories.mts` generating the `.stories.js` files from it —
-   committed and guarded by `make check`, the same arrangement `doc/api`
-   already has.
+2. **ClojureScript as a first-class story format** — done, and it grew a second
+   half on the way: the catalogue reads the same registry, so a component is
+   described once. `chrome/status-dot` is the first card told that way.
 3. **The pure kit.** Every state of the thirty aliases in chrome, row, band and
-   host.
+   host, and the rest of the catalogue's cards converted to `told-card`.
 4. **The five that reach the editor.** `lt.ui.pane` and `lt.ui.kit`, and the
    composed views in `lt.ui.view`. This is a design question, not a typing
    exercise — see above on stubs.

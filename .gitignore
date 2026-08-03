@@ -69,9 +69,12 @@
 # The pinned clj-kondo binary, fetched by script/fetch-clj-kondo.js.
 /.tools/
 
-# Storybook: the ClojureScript bundle it renders from, and the static build.
-# Both are outputs — `make storybook` produces the first, `npm run
-# storybook:build` the second. The story files themselves are committed,
-# because they are generated from a registry and `make check` compares them.
+# Storybook outputs: the ClojureScript bundle it renders from, the story files
+# generated from lt.ui.story/registry, and the static build. None of the three
+# is a decision anyone made — every one is produced by `npm run
+# storybook:build`, so committing them would only create something that can go
+# stale. Contrast doc/api, which is generated and committed because people read
+# it on GitHub.
 /.storybook/generated/
+/.storybook/stories/
 /storybook-static/

@@ -32,6 +32,8 @@
             [lt.ui.chrome :as chrome]
             [lt.ui.kit :as kit]
             [lt.ui.row :as row]
+            [lt.ui.stories.chrome]
+            [lt.ui.story :as story]
             [lt.ui.view :as view])
   (:require-macros [lt.macros :refer [behavior]]))
 
@@ -73,7 +75,33 @@
          [:span.kit__prop-note hint]])])
    (when usage [:div.kit__usage "in " usage])])
 
+(defn- told-card
+  "The card for a component that has described itself in [[lt.ui.story]].
+
+  Everything on it — the sentence, the prop table, where it is used, every
+  state — comes from the one `story/of` call the Storybook build reads too.
+  A card written here and a story written there is two answers to \"what states
+  does this have?\", and two is the number that goes stale.
+
+  `demo` is still accepted for the states that are a composition rather than a
+  call, and appended after the ones the registry knows. A component with
+  nothing but props needs none."
+  [alias & demo]
+  (let [{:keys [doc props usage width badge]} (get @story/registry alias)]
+    (apply card {:ns (str (story/short-ns alias) "/")
+                 :nm (name alias)
+                 :desc doc
+                 :props props
+                 :usage usage
+                 :width width
+                 :badge badge}
+           [:div.kit__demo-row
+            (for [[state hiccup] (story/states alias)]
+              [:span.status {:replicant/key state} hiccup (str state)])]
+           demo)))
+
 (defn- section [num title desc & cards]
+
   [:div.kit__section
    [:div.kit__section-head
     [:span.kit__section-num num]
@@ -93,11 +121,6 @@
 ;;*********************************************************
 ;; 01 · atoms
 ;;*********************************************************
-
-(def ^:private statuses
-  "The seven execution states plus connection health, in the order a run moves
-  through them."
-  [:queued :connecting :executing :finished :restarting :shutting-down :lost :idle])
 
 (defn- themed
   "A ground carrying the class the editor's own theme is scoped by.
@@ -137,23 +160,11 @@
          " that carry no layout of their own — plus two things that look like
           components here and are deliberately not registered as any.")
 
-   (card {:ns "chrome/" :nm "status-dot"
-          :desc "One indicator for all seven execution states plus connection health. Hollow means nothing has run yet."
-          :props [[":status" "one of the eight" "what it is doing now"]
-                  [":hollow" "boolean" "nothing has run yet"]
-                  [":pulse" "boolean" "connecting and restarting only"]]
-          :usage "band/result · view/statusbar · every titlebar"}
-         [:div.kit__demo-row
-          (for [s (take 4 statuses)]
-            [:span.status {:replicant/key s}
-             [::chrome/status-dot {:status s}] (name s)])]
-         [:div.kit__demo-row
-          (for [s (drop 4 statuses)]
-            [:span.status {:replicant/key s}
-             [::chrome/status-dot {:status s}] (name s)])]
-         [:div.kit__demo-row
-          [:span.status [::chrome/status-dot {:status :finished :hollow true}] "hollow"]
-          [:span.status [::chrome/status-dot {:status :connecting :pulse true}] "pulsing"]])
+   ;; The first card told from the registry rather than written here. Its
+   ;; sentence, prop table, usage line and ten states all come from the one
+   ;; `story/of` call in lt.ui.stories.chrome, which the Storybook build reads
+   ;; too. Module 3 converts the rest.
+   (told-card ::chrome/status-dot)
 
    (card {:ns "chrome/" :nm "status"
           :desc "A dot with a word. The statusbar and the titlebar both need the pair, so the pair is the component."
