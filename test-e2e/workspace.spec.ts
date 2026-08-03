@@ -187,6 +187,14 @@ test('and what a menu item does is the action it dispatches', async ({ window, l
     const after = await ltErrors();
     expect(after.length, after.slice(before).join('\n')).toBe(before);
 
+    // Closed before the directory goes, because this test opened it. An editor
+    // left on a path that is then deleted is state every later test inherits —
+    // the pool still holds it, the projection still lists it, and anything that
+    // reads a file for a tab has a file that is not there.
+    await evalClj(window, `
+        (do (doseq [ed (lt.objs.editor.pool/by-path "${path.join(dir, 'untitled.txt')}")]
+              (object/raise ed :close))
+            :closed)`);
     await evalClj(window, `
         (do (object/raise lt.objs.workspace/current-ws :remove.folder! "${dir}") :removed)`);
     fs.rmSync(dir, { recursive: true, force: true });
@@ -205,7 +213,20 @@ test('a file is renamed in the row it is in', async ({ window }) => {
     await evalClj(window, '(do (lt.objs.command/exec! :workspace.show :force) :shown)');
     await evalClj(window, `
         (do (object/raise lt.objs.workspace/current-ws :add.folder! "${dir}") :added)`);
-    await window.locator('#side .wstree__tree .row', { hasText: path.basename(dir) }).first().click();
+    // Opened by the action the click dispatches rather than by clicking. The
+    // click is setup here — the subject is renaming — and clicking a tree row
+    // is covered by `the tree draws the folder, and opening it reads the
+    // folder` above, which is where it belongs.
+    //
+    // It is also the one gesture in this file that has failed on Linux CI, and
+    // the mechanism is still unexplained: the row resolves and is then detached
+    // repeatedly for thirty seconds, on the first attempt of every run, while
+    // the identical click three tests earlier never fails. Ruled out so far —
+    // an over-broad locator (fixed anyway, see the top of this file), unkeyed
+    // rows, churn during the click, stale nodes under a removed root. What is
+    // left is something about that window in that environment, and a test whose
+    // subject is renaming is not the place to keep looking.
+    await evalClj(window, `(do (lt.actions/dispatch! [[:tree/toggle "${dir}"]]) :opened)`);
 
     const input = window.locator('#side .wstree .tree__rename');
     const names = () => window.locator('#side .wstree__tree .tree__name').allInnerTexts();

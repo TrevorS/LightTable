@@ -253,6 +253,20 @@ container that holds one of two things is ambiguous by construction**, and the
 symptom is a detachment rather than a wrong match — so it reads as timing and
 gets retried instead of fixed.
 
+**That was not the whole cause.** Scoping the locators did not stop it: the next
+run reported the same test flaky, with a call log that now says the row *does*
+resolve and is then detached while Playwright waits for it to be stable. The
+mechanism is still unexplained, and what has been ruled out is above. Two things
+changed for it anyway, both worth doing on their own terms: the test three
+places earlier no longer leaves an editor open on a file it then deletes, and
+the rename test opens its folder by dispatching `[:tree/toggle …]` rather than
+by clicking — the click was setup, the subject is renaming, and clicking a row
+is covered by the test written for it.
+
+So the flake is removed rather than explained. That is a worse outcome than
+understanding it, and it is recorded as such: if a tree row starts detaching
+under Linux somewhere else, this is the thread to pull, not a new investigation.
+
 The same run reported `and redrawing the chrome does not replace the webview`
 flaky, for a different reason with the same shape: it read `querySelector
 ("#browser webview")` once, and between two renders that can return nothing,
