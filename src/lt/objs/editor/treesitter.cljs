@@ -158,6 +158,15 @@
                           :queries [cq (npm "tree-sitter-cpp" "queries/highlights.scm")]
                           :injections [(npm "tree-sitter-cpp" "queries/injections.scm")]}
       :editor.java       (simple "tree-sitter-java")
+      ;; Lua has a working CodeMirror mode, so this is the first grammar added
+      ;; for a language that was not uncoloured — and the reason is the same
+      ;; one the whole page turns on: the mode emits seven token types and
+      ;; cannot tell a call from a local, a builtin from a name you chose, or
+      ;; a table key from a variable. The grammar's own injections put C inside
+      ;; an `ffi.cdef` string, which is a thing no mode was ever going to do.
+      :editor.lua        {:wasm (npm "@tree-sitter-grammars/tree-sitter-lua" "tree-sitter-lua.wasm")
+                          :queries [(npm "@tree-sitter-grammars/tree-sitter-lua" "queries/highlights.scm")]
+                          :injections [(npm "@tree-sitter-grammars/tree-sitter-lua" "queries/injections.scm")]}
       :editor.ruby       (simple "tree-sitter-ruby")
       :editor.php        (simple "tree-sitter-php")
       :editor.elixir     (simple "tree-sitter-elixir")

@@ -21,7 +21,7 @@ real payoff: a theme becomes a stylesheet rather than a port.
 
 | | |
 |---|---|
-| Grammars bundled | JavaScript, TypeScript, TSX, JSX, **Clojure**, Python, Rust, Go, C, C++, Java, Ruby, PHP, Elixir, Zig, JSON, YAML, TOML, CSS, **SCSS**, HTML, Bash/Shell — plus regex and jsdoc, which are injected and never opened |
+| Grammars bundled | JavaScript, TypeScript, TSX, JSX, **Clojure**, Python, Rust, Go, C, C++, Java, Ruby, PHP, Elixir, Zig, Lua, JSON, YAML, TOML, CSS, **SCSS**, HTML, Bash/Shell — plus regex and jsdoc, which are injected and never opened |
 | Runtime load | once, ~0ms after the first grammar |
 | Grammar load | ~46ms, once per language, on first use |
 | Parse | 0.8ms for a small file; 0.2ms incremental after an edit |

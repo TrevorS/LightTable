@@ -328,6 +328,7 @@ Declared out of the box, each by the plugin that owns the language:
 | `:editor.html` | `vscode-html-language-server` | HTML | `npm i -g vscode-langservers-extracted` |
 | `:editor.java` | `jdtls` | Java | `brew install jdtls` |
 | `:editor.json` | `vscode-json-language-server` | JSON | `npm i -g vscode-langservers-extracted` |
+| `:editor.lua` | `lua-language-server` | Lua | `brew install lua-language-server` |
 | `:editor.php` | `intelephense` | PHP | `npm i -g intelephense` |
 | `:editor.python` | `pyright-langserver` + `ruff` | Python | `pip install pyright ruff` |
 | `:editor.ruby` | `ruby-lsp` | Ruby | `gem install ruby-lsp` |

@@ -227,12 +227,16 @@ test('a regex and a doc comment are languages too', async ({ window }) => {
     await close(window, file);
 });
 
-test('the languages with a plugin and no CodeMirror mode are coloured too', async ({ window }) => {
-    // Elixir, Zig and Shell each ship a plugin — file types, a language server,
-    // a keymap — and until now the colouring was the one part missing: Elixir
-    // and Zig have no CodeMirror 6 mode at all, and Shell's tag is `editor.shell`
-    // where the grammar is called `bash`. Each is one line of registry, and this
-    // is what says the line is wired to something.
+test('the languages added last reach the grammar meant for them', async ({ window }) => {
+    // Four ways a registry entry can be wrong, one per case. Elixir and Zig had
+    // no CodeMirror mode at all, so the grammar is the only thing colouring
+    // them. Shell's tag is `editor.shell` where the grammar is called `bash`,
+    // which is what the alias table is for. SCSS is built here rather than
+    // installed, so its paths leave `node_modules` entirely. And Lua already had
+    // a working mode, so it is the case where the grammar has to *win*.
+    //
+    // Each is one or two lines of registry, and this is what says the lines are
+    // wired to something.
     const cases: [string, string, string][] = [
         ['a.ex', 'defmodule Foo do\n  def bar(x), do: x + 1\nend\n', 'tree-sitter-elixir'],
         ['a.zig', 'const std = @import("std");\npub fn main() void {}\n',
@@ -241,7 +245,11 @@ test('the languages with a plugin and no CodeMirror mode are coloured too', asyn
         // Built here rather than installed, because npm publishes no usable
         // `.wasm` for it — see deploy/core/grammars/README.md.
         ['a.scss', '$primary: #333;\n@mixin theme($c) { color: $c; }\n'
-                 + '.card { @include theme($primary); &:hover { color: red; } }\n', 'grammars']
+                 + '.card { @include theme($primary); &:hover { color: red; } }\n', 'grammars'],
+        // The first grammar added for a language that already had a working
+        // CodeMirror mode. What it buys is in the assertion below the loop.
+        ['a.lua', 'local function add(a, b)\n  return a + b\nend\n',
+         '@tree-sitter-grammars/tree-sitter-lua']
     ];
 
     for (const [name, source, grammar] of cases) {
@@ -260,6 +268,23 @@ test('the languages with a plugin and no CodeMirror mode are coloured too', asyn
                           { timeout: 15000 }).toBeGreaterThan(3);
         await close(window, file);
     }
+
+    // Lua is the one of these that was never uncoloured, so "it paints" is not
+    // the claim — the claim is that it paints things the mode cannot see. The
+    // CodeMirror lua mode has one token type for every name in the file.
+    const lua = path.join(scratchDir('lua'), 'b.lua');
+    fs.writeFileSync(lua, 'local t = { x = 1 }\nlocal function add(a, b) return a + b end\n'
+                        + 'print(add(t.x, 2))\n');
+    await evalClj(window, `(do (cmd/exec! :open-path "${lua}") :opened)`);
+    await expect.poll(async () => await paintedClasses(window, lua), { timeout: 60000 })
+        .toContain('cm-ts-function-call');
+    const painted = await paintedClasses(window, lua);
+    // `print` is a builtin, `add` is a call, `a`/`b` are parameters, `x` is a
+    // table field. To a per-line tokenizer all four are the same word shape.
+    expect(painted).toContain('cm-ts-function-builtin');
+    expect(painted).toContain('cm-ts-parameter');
+    expect(painted).toContain('cm-ts-field');
+    await close(window, lua);
 });
 
 test('installing a highlighter turns the language\'s own colouring off', async ({ window }) => {

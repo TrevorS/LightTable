@@ -1,0 +1,19 @@
+{;; Lua, as data. No code in this plugin.
+ ;;
+ ;; lua-language-server is the one every editor with Lua support talks to. It
+ ;; also formats, through its bundled EmmyLuaCodeStyle.
+ ;;
+ ;; The colouring is tree-sitter's, from the grammar registered against
+ ;; :editor.lua in lt.objs.editor.treesitter. The CodeMirror mode is still
+ ;; what indents and comments.
+ ;;
+ ;; `.luarc.json` first because it is what configures the server — a project
+ ;; with one wants to be rooted there, and the linter files below are the next
+ ;; best evidence that a directory is the project rather than a folder in it.
+ :+ {:lsp.client [(:lt.objs.editor.lsp/language-servers
+                   [{:tags [:editor.lua]
+                     :language-id "lua"
+                     :root [".luarc.json" ".luarc.jsonc" ".luacheckrc" "stylua.toml" ".stylua.toml" ".git"]
+                     :command "lua-language-server"
+                     :args []
+                     :install "brew install lua-language-server, or your package manager"}])]}}
