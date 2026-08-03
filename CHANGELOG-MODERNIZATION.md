@@ -98,9 +98,10 @@ while the public `behavior` macro expanded to it. The CI gate is now scoped to
 
 - **singultus** (a fork of `crate`) is vendored under `src/singultus` — 573
   lines, only the namespaces actually used. It keeps its namespace names so
-  plugins using `defui`/`defpartial` are unaffected. See
-  [its README](src/singultus/README.md) for provenance: the code descends from
-  crate, which is EPL, so it is not under Light Table's MIT license. Vendoring
+  plugins using `defui`/`defpartial` are unaffected. Its README recorded the
+  provenance: the code descends from crate, which is EPL, so it was not under
+  Light Table's MIT license. (Both are gone now — see *The renderer: Replicant,
+  and the end of `defui`* below.) Vendoring
   is what made `core/raw` fixable — it now parses through an inert `<template>`,
   verified by confirming an `img`/`onerror` payload builds a node without the
   handler firing.
@@ -858,6 +859,310 @@ plain data crosses intact — but it is a genuine loss of fidelity.
   Light Table is named for. The eval surface has narrowed as far as it usefully
   can. What remains is not cleanup deferred; it is the product.
 
+## Language servers
+
+Light Table's original intelligence came from nREPL middleware: `lein-light-nrepl`
+answered where the forms were, what a symbol meant and where it was defined. That
+worked for one language, only with a REPL attached, and only after a round trip.
+LSP is the same questions asked in a protocol fifty editors already speak, and
+the point of doing it was not Rust or Go — it was that **the answers stop being
+per-language work.**
+
+Built in slices, each one runnable: framing and the connection, then document
+sync and inline diagnostics, then completion, documentation and
+jump-to-definition, then references and document symbols, then formatting, then
+code actions, then rename. Nineteen tag-to-server rows ship out of the box, each
+declared by the plugin that owns the language — see
+[doc/lsp-architecture.md](doc/lsp-architecture.md) for the table.
+
+Four things are worth recording because they were not obvious going in.
+
+**A server is data, not code.** `:lt.objs.editor.lsp/language-servers` is a
+`:user` behavior taking a vector of maps — tags, language id, root markers,
+command, args, an install line. So a language plugin is often a file with no
+code in it at all (Zig, Elixir, Shell, Java, PHP, Lua are exactly that), and
+pointing a language at a different server is one line in `user.behaviors` rather
+than a fork.
+
+**More than one server can answer for a language, and they have to be asked
+separately.** `lt.objs.providers` is what decides which connection answers
+`:doc`, `:completion`, `:jump` or `:code-action`, from what each server
+advertised in its capabilities. That is what lets biome lint and format
+TypeScript while vtsls keeps hover and definition, with neither told the other
+exists — and what lets pyright and ruff sit side by side. An earlier version ran
+only the *last* server a language declared, which looked like a working
+arrangement right up until the second one was needed.
+
+**A root is not the nearest manifest.** `project-root` walked up to the first
+directory carrying a marker, which is wrong for every monorepo: a Cargo
+workspace member says `edition.workspace = true` and cannot be read without the
+workspace above it. rust-analyzer rooted at the member answered hover, which
+needs only the open file, and published no diagnostics at all, which needs the
+crate graph. It takes the *outermost* marker inside the repository now, bounded
+by the nearest `.git` — and the bound is what makes "outermost" safe, since
+without it one stray manifest in a home directory would capture everything
+beneath it.
+
+**Silence has a shape, and it needed one.** Every step of a behavior chain is
+allowed to decline quietly, which is what makes the architecture extensible and
+what makes a break invisible. `lt.objs.editor.lsp.situation` exists because
+"nothing happened" had six different meanings — no server configured, one
+declared and not installed, one starting, one connected but pre-handshake, one
+answering, no file at all — and telling them apart used to mean knowing that
+`:lsp.status` existed. The phase is computed once, from one `cond`, and both the
+status line and the statusbar indicator read it. They each used to have their
+own copy of that decision and their own copy of the bug in it.
+
+## Tree-sitter, for colour and then for more than colour
+
+This began as a scouting note arguing tree-sitter was not worth it for
+highlighting. The argument was wrong in a specific way — see
+[doc/syntax-highlighting.md](doc/syntax-highlighting.md), which keeps the
+overturned version below the line — and the measurement that decided it was
+that a CodeMirror mode emits **seven token types** for a realistic TypeScript
+file where a highlight query emits **fourteen named captures**, from a
+vocabulary Helix, Neovim and Zed themes are already written against. The
+difference is not mainly quantity: a per-line state machine cannot tell a type
+from a value, a parameter from a local, or a call from a variable, at all, ever.
+
+Thirty-two editor tags now resolve to a grammar, out of twenty-one grammar
+packages plus two built here. Eight of those tags are the Clojure family, whose
+grammar and whose highlight query are both Light Table's own — nobody publishes either, and it was worth the
+effort for the language this editor is written in. SCSS is built here for the
+same reason.
+
+Highlighting is the first thing a parse tree gets used for and not the most
+useful. Three further uses landed on the same parse:
+
+- **Bracket depth**, which replaced the Rainbow plugin. That plugin re-tokenized
+  the whole document through `CodeMirror.overlayMode` to produce information the
+  parse tree already had; this is one pass over the brackets the highlight query
+  already found.
+- **Top-level forms**, which is how a result can appear beside each form rather
+  than one result for a whole file — the thing Light Table exists to do. That
+  used to be answered by a language's own nREPL middleware. It is a property of
+  the buffer now.
+- **Indentation**, where nothing else can do it. The obvious route is
+  `indents.scm`, the query file Neovim's indenter reads, and exactly one bundled
+  grammar ships one — so this is structural instead: indentation is the number
+  of distinct lines on which something still open here was opened. Not the
+  number of enclosing nodes, which is the trap, because grammars disagree wildly
+  about how many wrapper nodes sit between a construct and its body.
+
+**A file is also not always one language.** The `<script>` in an HTML file is
+JavaScript and the `<style>` is CSS; a Rust macro body is Rust; a tagged
+template literal is whatever its tag says. Every per-line tokenizer that handled
+this did it by hand — CodeMirror's `htmlmixed` is a mode written to know about
+two other modes — and stopped at whatever its author thought of. The grammars
+ship queries saying it instead, so injections are one pass over files that
+already existed rather than a feature per language pair. What makes it cheap is
+`includedRanges`: the inner parser is handed the whole document and told which
+parts to read, so its captures come back in the host's coordinates and merge
+into the same span table.
+
+Two of the injected languages are not file types and never will be. JavaScript's
+own injection query names `regex` and `jsdoc`, and until their grammars were
+added those two rules found a language nobody had and quietly did nothing.
+
+## The Clojure path, ported and then made unnecessary to install
+
+`lein-light-nrepl` was a jar committed to the repository, built against a JDK
+that no longer exists. Porting it was the obvious move and only half the answer.
+
+The other half: **buy the intelligence, build the Light Table part.** clojure-lsp
+already answers documentation, definition, references, rename and diagnostics
+for Clojure, and does it without a REPL running — so the nREPL connection is for
+the one thing only it can do, which is evaluating against a live process and
+knowing what is actually loaded. Those are different questions and it is worth
+having both, which is why `lt.objs.providers` exists.
+
+ClojureScript now evaluates through the same path as Clojure, and the compiler
+runs *inside the editor window* — no project, no JVM, nothing to install. That
+is what makes the editor changeable while it runs, which is the property the
+project is named for; [doc/live-editing.md](doc/live-editing.md) says which
+files get it and why.
+
+A REPL is also started from shadow-cljs and `deps.edn` projects rather than only
+Leiningen, and it is the user's own Leiningen rather than a bundled one.
+
+## Plugins, moved into the repository
+
+Predicted in *Monorepo for the bundled plugins* below, and done. Every bundled
+plugin is source in `plugins/`, compiled against the host, and nothing is cloned
+at build time.
+
+The reason was never code organisation. Plugins shipped precompiled and nothing
+rebuilt them, so a rename in the editor did not fail a build — it failed in a
+user's session. That happened twice here before anyone noticed. In-tree plugins
+turn that class of break into a build error, and the linter covers them now too.
+
+Twenty-two plugins are in the tree. Most of the ones added since are the
+data-only shape the language-server work made possible: a `plugin.edn`, a
+`.behaviors` file, a README, and no code.
+
+## The renderer: Replicant, and the end of `defui`
+
+Light Table's UI was built on `crate`/`singultus` — a DOM-building macro where
+each surface owned its nodes and mutated them. `defui` was the idiom, and the
+problem with it is not that it is old: it is that a surface which owns nodes has
+no single answer to *what should be on screen*, so every panel had its own idea
+of when to redraw, and several of them lost their first paint.
+
+The move is to Replicant: views are functions of one value, and what is on
+screen is derived rather than maintained. Surfaces were converted one at a time
+— the chrome panels, the filter list, the connect panel, the tab strip, the
+console, the modal, the find bar, the docs sidebar, the plugin manager, the
+workspace tree, the object inspector, the command bar, the browser tab, the
+tabset — and `singultus` was deleted when the last one left. There is no `defui`
+in the tree.
+
+The value that drives them is `lt.state/app`, and the bridge from the object
+world into it is `lt.state.objects/snapshot`: one namespace, which reads and
+never writes, so it is countable and so it can be deleted as each surface moves.
+That projection is kept in step by a list of triggers in `lt.ui.window`, and it
+is worth saying plainly that **the list is the weak point** — most of the
+staleness bugs in this period were a trigger nobody had added yet, and
+`script/lt-repl.sh drift` exists to find them by comparing the two directly.
+
+Two Replicant-specific traps, both of which cost real time:
+
+- **A DOM node left in hiccup is silently dropped.** `lt.ui/element` is the
+  primitive that hosts one, and it exists because inline results, the browser
+  tab's webview and the object inspector all need to show a node somebody else
+  owns and renders.
+- **A handler must be data, not a function.** `lt.actions/install!` teaches
+  Replicant to dispatch a vector, and without it a `:on {:click [[…]]}` throws
+  inside Replicant's own render, which logs *"you may have misbehaving aliases"*
+  with the exception as `[object Object]` and **skips that render**. Nothing
+  looks broken, because the second render is a state change away.
+
+Alongside the views, [lt.actions](src/lt/actions.cljs) makes a change to the
+state a value: an action is a vector, `apply-action` is pure, and `dispatch!` is
+the only writer of the state atom. One place to log from, one place to replay
+through.
+
+## CodeMirror 6
+
+The section below this line concluded "stay on 5, revisit if upstream signals an
+end". It was reasonable and it is superseded: **CodeMirror 5 is deleted, and
+there are zero `js/CodeMirror` references in the tree.**
+
+What changed the answer was the counting in that section rather than any new
+urgency. Exactly one published function leaked the object, 34 of 59 references
+were `js/CodeMirror.commands.*` in a single command table, and the compiled
+Clojure, Javascript and Paredit plugins referenced CodeMirror zero times — so
+the abstraction held far better than anyone had assumed, and a bounded project
+is a different decision from a rewrite.
+
+It was done as an engine that answers to the other one's names. `src-window/`
+is 4,000 lines of TypeScript now, and `cm6-editor.ts` still speaks
+`getCursor`/`setValue`/`markText`/`lineComment`, because `lt.objs.editor` speaks
+them, plugins reach past it through `->cm-ed` to speak them directly, and
+Paredit speaks them through nothing at all. Those names are Light Table's editor
+API now, whatever they were before.
+
+The steps were: prove the mechanism, make the nineteen methods answer, port the
+command table, port the modes, swap the factory, then default to CodeMirror 6
+and fix what that found. Then the surfaces that were not methods — thirty themes,
+the options, find and replace, multiple cursors, the twenty-one Sublime
+commands, bracket matching, autocomplete — and finally deleting the old engine.
+
+Where CodeMirror 6 cannot express something it is **named** rather than silently
+dropped: `inertOptions()`, `UNSUPPORTED` in `cm6-options.ts`,
+`UNSUPPORTED_COMMANDS` in `cm6-commands.ts`, and the fallback table in
+`cm6-modes.ts`. A gap you can ask about beats one you discover.
+
+105 mode names are carried forward by `@codemirror/legacy-modes` running under
+a `StreamLanguage`; eight resolve to a real Lezer grammar instead; thirteen are
+named as gaps with what they fall back to. Two have neither and need neither —
+Elixir and Zig are coloured by tree-sitter and carry only `languageData`, which
+is what a comment looks like and which brackets close. That is a category the
+migration did not anticipate and the tree-sitter work created.
+
+## Five ways to ask what happened
+
+Five separate reports of "toggle docs isn't working" had **six different
+causes** and one symptom: nothing on screen, nothing in the bar, nothing in the
+console. That is not a coincidence or bad luck — it is the architecture's
+defining property seen from the wrong side. Every step of a behavior chain is
+allowed to decline quietly, which is what makes it extensible.
+
+The six were: a language server declining before its handshake; two dead
+branches in the Clojure REPL path; the ClojureScript twins of those; a command
+that returned early because `pool/last-active` was nil; a REPL connection
+attempt throwing a modal *over* the answer; and two `:menu!` behaviors where the
+second reset the first's popup handlers, so every token-backed menu item was
+dead.
+
+Guessing found the first three slowly. What found the rest was building the
+tools, and each of them earned itself back on its first or second use:
+
+| ask | how |
+|---|---|
+| what fired for a trigger, and what did not | `script/lt-repl.sh trace on` |
+| what the window is showing right now | `script/lt-repl.sh screen` |
+| where the state atom disagrees with the objects | `script/lt-repl.sh drift` |
+| does it work in the packaged app | `script/lt-repl.sh start --release` |
+| what build am I running | `App: What build is this?` |
+| is this checkout sane | `make doctor` |
+| dead code, unwired behaviors, duplicate keys | `make audit` |
+
+`trace` reports `:raised` with a listener count as well as which behaviors ran,
+so "nothing listens for this" and "something listened and declined" — the two
+halves of every silence here — are one line apart. `drift` found a real bug on
+its first run: a closed editor stayed in the projection, because
+`lt.object/destroy!` raises `:destroy` *before* removing the instance. `screen`
+exists because an hour went into querying the DOM for a widget while a modal sat
+on top of it, which one screenshot would have shown instantly.
+
+`App: What build is this?` deserves its own note, because twice the answer to
+"it still doesn't work" was a window running code from before the fix. A bundle
+carries no identity and `version.json` is the same string across every build
+between two releases, so the question had no answer. It now reports the commit,
+whether the tree was dirty, the branch and the build time.
+
+The same reasoning produced a **control surface** — `lt.objs.control`, shaped so
+that a harness or an MCP client can drive the editor and read back what
+happened, which is what makes the packaged application testable at all.
+
+## Tests, tooling, and what CI actually proves
+
+Four layers, because they answer different questions:
+
+| layer | count | runs |
+|---|---|---|
+| ClojureScript units | 207 tests, 589 assertions | node, no DOM |
+| main-process units | 18 | plain node |
+| end-to-end | 179, across 31 spec files | Playwright against real Electron |
+| smoke | 94 checks | boots the packaged application |
+
+The end-to-end suite shares one boot across a worker rather than starting
+Electron per test, which is the difference between a suite you run and one you
+avoid. Every complex `npm` chain moved into a script under `script/`, written in
+TypeScript and run directly by node, so `make check` is five independent checks
+reported together rather than five `&&`-linked ones where the first failure
+hides the rest.
+
+CI runs the whole of that on Linux and macOS for every push to every branch,
+through a reusable workflow a release also calls — so what is published is built
+the way it is always built. Its actions were a major version behind across the
+board and every run annotated that Node 20 was being forced onto Node 24;
+they are current now, which is a deprecation dealt with before it became a
+failure.
+
+One thing CI is quietly hiding and should not be: the end-to-end suite retries,
+and two tests fail their first attempt on Linux — `workspace.spec.ts`'s rename
+test in six runs out of six, and `browser-tab.spec.ts`'s webview redraw in two
+of six. Six out of six is not flakiness, it is a test that does not pass on that
+platform, and the retry is what has kept it out of sight.
+
+One test earns a mention: `lt.core-test` walks the require graph from the entry
+points and fails if a namespace is unreachable. That sounds like housekeeping
+and it is not — requiring a Light Table namespace also *loads* it, and loading
+it is how its behaviors and objects come to exist. It caught two namespaces
+during a cleanup where the alias was unused and the require was the only edge
+keeping them in the bundle.
+
 ---
 
 # What comes next
@@ -930,6 +1235,10 @@ CSP is the last question, and the honest answer may be `unsafe-eval` with a much
 smaller blast radius behind it, which is now what it has.
 
 ## Monorepo for the bundled plugins
+
+**Done — see *Plugins, moved into the repository* above.** The payload-and-coupling
+problem below is what it cost, and it is recorded because the estimate was
+roughly right.
 
 Worth doing, for a reason that is not code organisation.
 
@@ -1095,6 +1404,10 @@ Electron itself reads, and fails loudly if either field is missing.
 
 ## CodeMirror
 
+**Superseded — this happened. See *CodeMirror 6* above.** Kept because the
+counting in it is what changed the decision, and because a reasonable call that
+was later overturned is worth being able to read.
+
 Worth knowing before anyone treats this as urgent: **CodeMirror 5 is still
 receiving releases.** 5.65.21 shipped in February 2026 — *more recently* than the
 `codemirror` 6.0.2 meta-package, which sits still because CodeMirror 6 is
@@ -1120,23 +1433,36 @@ migration is a bounded project rather than a rewrite, and if nothing were
 already chosen, CodeMirror 6 is what Light Table would pick. See
 [doc/editor-engine.md](doc/editor-engine.md).
 
-## Dependencies
+*What decided it was the last sentence rather than the first. Once "bounded
+project" replaced "rewrite", there was no argument left for keeping an engine
+nobody would choose.*
 
-Everything is at its latest release: `codemirror` 5.65.21 (see above),
-`socket.io` 4.8.3, `tar` 7.5.22, `bencode` 4.0.1, `shelljs` 0.10.0,
-Electron 43.2.0, Clojure 1.12.5, ClojureScript 1.12.145.
+## Dependencies, as they stand
+
+Everything is at its latest release: `socket.io` 4.8.3, `tar` 7.5.22,
+`shelljs` 0.10.0, Electron 43.2.0, Clojure 1.12.5, ClojureScript 1.12.145.
+
+The `codemirror` 5.65.21 named here is gone — the editor is
+`@codemirror/state`, `@codemirror/view`, `@codemirror/language` and their
+neighbours now, each independently versioned. Twenty-one tree-sitter grammar
+packages joined, and they are data rather than code: what is loaded from each is
+a `.wasm` and a `.scm`, never its JavaScript, which is why
+`deploy/core/.npmrc` sets `ignore-scripts` and why the native binding they all
+declare as an optional peer is never installed.
 
 **What Light Table ships has no npm advisories.** The last three were
 `brace-expansion` denial-of-service reports reached through `minimatch`, pulled
 in by `replace`, and they are gone with the package — see *Project-wide search,
 which had stopped working* below.
 
-The build tooling still reports some, and they are a different problem: the
-`clj-kondo` npm wrapper installs its binary through `binwrap`, which depends on
-the deprecated `request`, which depends on `form-data`, `qs`, `tough-cookie` and
-`uuid`. There is no fix available upstream, none of it is shipped to a user, and
-the way out is fetching the clj-kondo binary directly rather than through npm.
-Worth doing; not the same urgency as something in the application.
+**The build tooling's advisories are gone too, the way this section predicted.**
+The `clj-kondo` npm wrapper installed its binary through `binwrap`, which
+depended on the deprecated `request` and through it on `form-data`, `qs`,
+`tough-cookie` and `uuid`, with no upstream fix available.
+`script/fetch-clj-kondo.mts` fetches the binary from the GitHub release
+directly, pinned to a version and checked against the `.sha256` upstream
+publishes beside it — which is a stronger guarantee than the wrapper offered as
+well as a shorter dependency tree.
 
 ## Project-wide search, which had stopped working
 

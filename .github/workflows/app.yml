@@ -46,14 +46,14 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '25'
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: '24'
           cache: npm
@@ -64,7 +64,7 @@ jobs:
             plugins/Javascript/package-lock.json
 
       - name: Cache Maven dependencies
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.m2
           key: m2-${{ runner.os }}-${{ hashFiles('shadow-cljs.edn', 'package-lock.json') }}
@@ -74,7 +74,7 @@ jobs:
       # against a pinned digest, so it is worth not fetching on every run. Keyed
       # on the script because the version and the digests both live in it.
       - name: Cache clj-kondo
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: .tools
           key: clj-kondo-${{ runner.os }}-${{ hashFiles('script/fetch-clj-kondo.mts') }}
@@ -139,7 +139,7 @@ jobs:
       # `npm ci` brings down the package and nothing else. Without the second
       # step there is no dist/ and the smoke test cannot boot anything.
       - name: Cache the Electron binary
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ${{ matrix.electron-cache }}
           key: electron-${{ runner.os }}-${{ hashFiles('deploy/electron/package-lock.json') }}
@@ -168,7 +168,7 @@ jobs:
 
       - name: Keep the report from a failing integration run
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: playwright-${{ matrix.platform }}
           path: |
@@ -199,7 +199,7 @@ jobs:
 
       - name: Upload the packaged application
         if: inputs.upload
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.archive.outputs.file }}
           path: builds/${{ steps.archive.outputs.file }}
