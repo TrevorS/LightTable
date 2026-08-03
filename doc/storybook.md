@@ -181,6 +181,51 @@ It is not in `make check`, deliberately: that script exists so a lint error
 does not cost a ClojureScript build to discover, and this needs a cljs compile,
 a Vite build and a browser. `make storybook-check` is its own thing.
 
+## What the light skin found
+
+The point of a skin toolbar is not a light theme — Light Table does not ship
+one and this is not it. It is a question you can only ask by changing the
+ground: **does this component name a role, or a colour?**
+
+It found ten literal colours outside `:root` in `kit.css`, eight of them role
+colours written out by hand. `.chip--selected` spelled `rgba(137, 220, 235,
+0.15)`, which is the exact value of `--lt-element-selected`, three lines away.
+The tints in `:root` were literals too — `--lt-agent-tint` wrote out mauve's
+channels rather than naming `--lt-agent`.
+
+They derive now:
+
+```css
+--lt-agent-tint: color-mix(in srgb, var(--lt-agent) 10%, transparent);
+```
+
+Which is what makes a skin work at all: swap `--lt-text` and every tint built
+on it follows, where a hand-written one stays the colour it was compiled at.
+Measured on the two that do follow — `--lt-element-hover` goes from a light
+tint on dark to a dark tint on light, and `--lt-element-selected` correctly
+does not move, because sky is an accent rather than a ground role.
+
+Two literals are left and both are deliberate: a drop shadow, which is black
+everywhere, and `.band__frame`, which is white because what is inside it is
+somebody else's HTML and HTML with no stylesheet expects a white page.
+
+`script/kit-colours.mts` is what made that safe to do. It records what all 91
+stories paint and compares a later run against it, so "this refactor changes no
+colours" is checked rather than claimed. It is a tool for a change like this
+one rather than a standing check, which is why it takes a baseline file instead
+of living in `make storybook-check`.
+
+**It found its own bug first, which is the useful part of the story.** The
+first comparison reported 44 of 91 stories changed, and every one was
+`rgba(243, 139, 168, 0.1)` becoming `color(srgb 0.952941 0.545098 0.658824 /
+0.1)` — the same colour, because 243/255 is 0.952941, spelled the way
+`color-mix` computes. Comparing strings was the bug. It compares painted pixels
+now.
+
+The same trap was sitting in `test-e2e/renderer.spec.ts`, which asserted that
+literal string. It compares the element against the token now, both resolved
+through one probe, which is what the test was always trying to say.
+
 ## The modules, and what they turned into
 
 1. **The harness** — the build, the bridge, one component, the check.

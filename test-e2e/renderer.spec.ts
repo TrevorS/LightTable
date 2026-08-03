@@ -221,13 +221,37 @@ test('a role in the kit resolves through the token sheet, not the markup', async
     const kit = window.locator('.kit');
     await expect(kit).toHaveCount(1);
 
-    // The class is what the component names, the colour is the CSS.
-    const selected = kit.locator('.row--selected').first();
-    expect(await selected.evaluate((n) => getComputedStyle(n).backgroundColor))
-        .toBe('rgba(137, 220, 235, 0.15)');
+    // The class is what the component names, and the colour is the token's —
+    // which is the claim, so it is what gets asserted. Against the token rather
+    // than against a literal: this used to say `rgba(137, 220, 235, 0.15)` and
+    // broke when the sheet started deriving its tints with `color-mix`, because
+    // the same colour computes as `color(srgb 0.537255 …)`. A literal here is a
+    // third copy of a value that is supposed to live in one place.
+    //
+    // Both sides resolved through the same probe, so the comparison is about
+    // the colour rather than about how a browser spells it.
+    const resolves = (selector: string, token: string) => window.evaluate(
+        ([sel, tok]) => {
+            const el = document.querySelector(`.kit ${sel}`);
+            if (!el) return { element: 'no element', token: '' };
+            const probe = document.createElement('div');
+            probe.style.backgroundColor = getComputedStyle(document.documentElement)
+                .getPropertyValue(tok!).trim();
+            document.body.appendChild(probe);
+            const wanted = getComputedStyle(probe).backgroundColor;
+            probe.remove();
+            return { element: getComputedStyle(el).backgroundColor, token: wanted };
+        }, [selector, token] as [string, string]);
+
+    const selected = await resolves('.row--selected', '--lt-element-selected');
+    expect(selected.element).toBe(selected.token);
+    expect(selected.element).not.toBe('rgba(0, 0, 0, 0)');
+
+    const agent = await resolves('.dot--agent', '--lt-agent');
+    expect(agent.element).toBe(agent.token);
+    expect(agent.element).toBe('rgb(203, 166, 247)');
+
     const agentDot = kit.locator('.dot--agent').first();
-    expect(await agentDot.evaluate((n) => getComputedStyle(n).backgroundColor))
-        .toBe('rgb(203, 166, 247)');
 
     // And a token can be moved without touching a component, which is the
     // whole argument for the sheet.

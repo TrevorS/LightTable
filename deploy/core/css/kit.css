@@ -48,13 +48,36 @@
   --lt-warning: var(--lt-yellow);
   --lt-error: var(--lt-red);
 
-  --lt-element-hover: rgba(205, 214, 244, 0.06);
-  --lt-element-selected: rgba(137, 220, 235, 0.15);
-  --lt-agent-tint: rgba(203, 166, 247, 0.10);
-  --lt-watch-tint: rgba(148, 226, 213, 0.08);
-  --lt-warning-tint: rgba(249, 226, 175, 0.10);
-  --lt-error-tint: rgba(243, 139, 168, 0.10);
-  --lt-quiet-tint: rgba(205, 214, 244, 0.035);
+  /* Tints, derived rather than written.
+   *
+   * Every one of these used to be an rgba literal repeating the channels of
+   * the accent above it — `--lt-agent-tint` spelled out mauve, and seven more
+   * spelled it out again down in the rules. That works exactly as long as the
+   * palette never changes, and a skin is a palette changing: swap `--lt-sky`
+   * and a hand-written sky tint stays the old sky.
+   *
+   * `color-mix(… X n%, transparent)` is the same colour rgba produced — the
+   * percentages below are the ones that were there — with the accent named
+   * once. Verified rather than asserted: `script/kit-colours.mts` recorded
+   * what all 91 stories painted before this and compared after. */
+  --lt-element-hover: color-mix(in srgb, var(--lt-text) 6%, transparent);
+  --lt-element-selected: color-mix(in srgb, var(--lt-sky) 15%, transparent);
+  --lt-agent-tint: color-mix(in srgb, var(--lt-agent) 10%, transparent);
+  --lt-watch-tint: color-mix(in srgb, var(--lt-watch) 8%, transparent);
+  --lt-warning-tint: color-mix(in srgb, var(--lt-warning) 10%, transparent);
+  --lt-error-tint: color-mix(in srgb, var(--lt-error) 10%, transparent);
+  --lt-quiet-tint: color-mix(in srgb, var(--lt-text) 3.5%, transparent);
+
+  /* The four the rules below were spelling out by hand. Named here for the
+   * same reason as the seven above, and kept at the exact strengths they were
+   * written at rather than rounded together — 2%, 3% and 3.5% of the same
+   * colour are almost certainly drift rather than three decisions, but that is
+   * a question for whoever owns the design, not something to settle in a
+   * refactor that is supposed to change nothing. */
+  --lt-result-tint: color-mix(in srgb, var(--lt-result) 6%, transparent);
+  --lt-bound-tint: color-mix(in srgb, var(--lt-result) 7%, transparent);
+  --lt-recessed-tint: color-mix(in srgb, var(--lt-text) 2%, transparent);
+  --lt-raised-tint: color-mix(in srgb, var(--lt-text) 3%, transparent);
 
   /* The seven execution states plus connection health, as one vocabulary. */
   --lt-status-queued: var(--lt-overlay1);
@@ -156,7 +179,7 @@
   color: var(--lt-overlay2);
 }
 
-.chip--selected { background: rgba(137, 220, 235, 0.15); color: var(--lt-subtext1); }
+.chip--selected { background: var(--lt-element-selected); color: var(--lt-subtext1); }
 .chip--agent { background: var(--lt-agent-tint); color: var(--lt-agent); }
 .chip--warning { background: var(--lt-warning-tint); color: var(--lt-warning); }
 
@@ -306,7 +329,7 @@
 /* Stands in for the lines nobody needs to see. Never a number without a count. */
 .fold {
   padding: 5px 14px 5px var(--lt-gutter);
-  background: rgba(205, 214, 244, 0.02);
+  background: var(--lt-recessed-tint);
   font-family: var(--lt-mono);
   font-size: 11.5px;
   color: var(--lt-overlay2);
@@ -319,7 +342,7 @@
   gap: 6px;
   padding: 8px 12px;
   border-radius: var(--lt-radius);
-  background: rgba(137, 220, 235, 0.06);
+  background: var(--lt-result-tint);
   font-family: var(--lt-mono);
   font-size: 12px;
   color: var(--lt-overlay2);
@@ -349,7 +372,7 @@
 }
 
 .cause__kind { color: var(--lt-maroon); }
-.cause--root { background: rgba(205, 214, 244, 0.03); border-radius: var(--lt-radius-sm); padding: 8px 8px; }
+.cause--root { background: var(--lt-raised-tint); border-radius: var(--lt-radius-sm); padding: 8px 8px; }
 
 /* Three weights, one row, and the narrowest grant is always leftmost. */
 .actions { display: flex; align-items: center; gap: 8px; }
@@ -391,7 +414,7 @@
   box-sizing: border-box;
 }
 
-.connection--bound { background: rgba(137, 220, 235, 0.07); }
+.connection--bound { background: var(--lt-bound-tint); }
 /* A fixed column so what a client *is* lines up down the list, and a name that
  * runs past it truncates rather than wrapping — a row is one line, and a
  * two-line one puts the kind beside the wrong half of the name. */
@@ -473,7 +496,7 @@
 .band__value { color: var(--lt-text); white-space: pre-wrap; }
 .band__note { color: var(--lt-overlay2); font-size: 12px; }
 
-.band--result { background: rgba(137, 220, 235, 0.06); }
+.band--result { background: var(--lt-result-tint); }
 .band--watch { background: var(--lt-watch-tint); }
 .band--watch .band__value { color: var(--lt-watch); }
 .band--agent { background: var(--lt-agent-tint); }
@@ -564,7 +587,7 @@
   padding: 16px 18px;
   border-radius: 14px;
   max-width: 560px;
-  background: rgba(137, 220, 235, 0.06);
+  background: var(--lt-result-tint);
   font-size: 13px;
   line-height: 1.7;
   color: var(--lt-lavender);
@@ -712,7 +735,7 @@
  * beside it is local, and its colours come from the theme rather than here. */
 .kit__code { font-family: var(--lt-mono); font-size: 13.5px; line-height: 23px; white-space: pre; display: flex; }
 .kit__code .band__gutter { padding-top: 0; padding-bottom: 0; }
-.kit__code--active { background: rgba(49, 50, 68, 0.5); }
+.kit__code--active { background: color-mix(in srgb, var(--lt-surface0) 50%, transparent); }
 
 /* ---- the window -------------------------------------------------------- */
 
@@ -905,6 +928,10 @@
 /* A value that is not data. The band owns this node and Replicant does not
  * look inside it — a plot, a frame, a stream arriving in pieces. */
 .band__host { display: block; }
+/* White on purpose, and the only literal colour left outside :root. What is in
+ * this frame is somebody else's HTML — a value the editor was handed, drawn in
+ * a sandbox — and HTML with no stylesheet of its own expects a white page.
+ * Giving it the editor's ground would render black text on near-black. */
 .band__frame { width: 100%; height: 220px; border: 0; border-radius: var(--lt-radius); background: #fff; }
 .band__image { max-width: 100%; border-radius: var(--lt-radius); }
 
