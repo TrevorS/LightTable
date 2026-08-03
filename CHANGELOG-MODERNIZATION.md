@@ -1223,6 +1223,13 @@ that was always going to be harder, and it is not `eval`:
    `fs.readFile`, and the difference is worth having before a hundred plugins
    are written against the wrong one. This is the argument against the
    compatibility-`require` route as anything but a bridge to somewhere else.
+
+   **Scouted — see [doc/permissions.md](doc/permissions.md).** The finding is
+   that the expensive half is already built: `require-shim` works out which
+   plugin is calling from the stack, in 1.3–2.7µs, and applies it to `require`
+   and nothing else. And the surface to scope is nineteen functions rather than
+   sixty-seven — twelve of them `files/*` — because forty-four take no path,
+   host or port at all.
 4. **Self-evaluation can be scoped too.** The connector model already
    distinguishes evaluating *in Light Table* from evaluating *in a client*. That
    distinction is the natural place for a trust boundary: an editor-scoped eval
