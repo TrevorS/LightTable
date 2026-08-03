@@ -271,3 +271,54 @@ test('installing a highlighter turns the language\'s own colouring off', async (
     expect(out.after).toContain('cm-ts-keyword');
     expect(out.after).not.toContain('cm-keyword');
 });
+
+test('the tree indents the languages that have no indenter', async ({ window }) => {
+    // Elixir and Zig have a grammar and no CodeMirror parser, so nothing knew
+    // where a line belonged: pressing Tab did nothing and a new line copied the
+    // one above it. The tree knows — it is the thing that says what encloses
+    // this line — and `indentLevel` reads it structurally rather than from a
+    // query, because one of the grammars bundled here ships an indents.scm and
+    // the rest do not.
+    const file = path.join(scratchDir('indent'), 'a.ex');
+    fs.writeFileSync(file, 'defmodule Foo do\ndef bar(x) do\nx + 1\nend\nend\n');
+    await evalClj(window, `(do (cmd/exec! :open-path "${file}") :opened)`);
+    await expect.poll(async () => await evalClj(window, `
+        (let [ed (first (pool/by-path "${file}"))]
+          (boolean (:active (lt.objs.editor.treesitter/report ed))))`),
+    { timeout: 60000 }).toBe('true');
+
+    const indented = await evalClj(window, `
+        (let [ed (first (pool/by-path "${file}"))
+              cm (lt.objs.editor/->cm-ed ed)]
+          (dotimes [n 5] (.indentLine cm n))
+          (lt.objs.editor/->val ed))`);
+
+    // Two levels inside the nested `do`, one for each `do` that is still open,
+    // and the `end`s back out to the level of what they close. Every one of
+    // those is the same rule: count the lines something still open began on,
+    // and do not count the block a line closes.
+    expect(indented).toBe(JSON.stringify(
+        'defmodule Foo do\n  def bar(x) do\n    x + 1\n  end\nend\n'));
+
+    await close(window, file);
+
+    // And the other half of the rule: TypeScript has a grammar too, and a real
+    // indenter written against a real grammar, so the tree must *not* take the
+    // job. Proved the only way it can be — by the result being right, which a
+    // structural count would not be for a chained call broken over lines.
+    const ts = path.join(scratchDir('indent-ts'), 'a.ts');
+    fs.writeFileSync(ts, 'function pick(a: number) {\nreturn a;\n}\n');
+    await evalClj(window, `(do (cmd/exec! :open-path "${ts}") :opened)`);
+    await expect.poll(async () => await evalClj(window, `
+        (let [ed (first (pool/by-path "${ts}"))]
+          (boolean (:active (lt.objs.editor.treesitter/report ed))))`),
+    { timeout: 60000 }).toBe('true');
+
+    const tsIndented = await evalClj(window, `
+        (let [ed (first (pool/by-path "${ts}"))
+              cm (lt.objs.editor/->cm-ed ed)]
+          (dotimes [n 3] (.indentLine cm n))
+          (lt.objs.editor/->val ed))`);
+    expect(tsIndented).toBe(JSON.stringify('function pick(a: number) {\n  return a;\n}\n'));
+    await close(window, ts);
+});

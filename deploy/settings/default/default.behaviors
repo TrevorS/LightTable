@@ -668,6 +668,7 @@
  [:workspace :lt.objs.sidebar.workspace/on-ws-add]
  [:workspace :lt.objs.workspace/watch-on-set]
  [:workspace :lt.objs.sidebar.workspace/on-ws-remove]
+ [:workspace :lt.objs.sidebar.workspace/close-editors-on-clear]
  [:workspace :lt.objs.sidebar.workspace/on-ws-rename]
  [:workspace :lt.objs.workspace/set!]
  [:workspace :lt.objs.sidebar.workspace/watched.delete]

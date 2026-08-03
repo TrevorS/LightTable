@@ -54,10 +54,21 @@
       (filter #(= (-> @% :info (get :path) (or "") string/lower-case) path) (object/by-tag :editor)))))
 
 (defn containing-path
-  "Return editor objects that edit paths containing given path string"
+  "Every open editor whose file is `path`, or is inside it.
+
+  A prefix at a separator rather than a substring anywhere in the string, which
+  is what the name says and what a caller acting on the answer needs. The
+  substring form this replaces said that `/src/app` contained
+  `/src/application/main.js`, so anything closing or reloading `by containing
+  path` reached into a sibling project that merely started with the same
+  letters."
   [path]
-  (let [path (string/lower-case path)]
-    (filter #(> (.indexOf (-> @% :info :path (or "") string/lower-case) path) -1) (object/by-tag :editor))))
+  (let [root (string/lower-case path)
+        inside (str root files/separator)]
+    (filter (fn [ed]
+              (let [p (-> @ed :info :path (or "") string/lower-case)]
+                (or (= p root) (string/starts-with? p inside))))
+            (object/by-tag :editor))))
 
 (defn- unsaved-prompt [on-yes]
   (popup/popup! {:header "You will lose changes."

@@ -21,6 +21,7 @@ import { StateEffect, StateField, RangeSetBuilder } from '@codemirror/state';
 import type { Extension } from '@codemirror/state';
 import { EditorView, Decoration, ViewPlugin } from '@codemirror/view';
 import type { DecorationSet, ViewUpdate } from '@codemirror/view';
+import { indentService } from '@codemirror/language';
 import { runsForLine, tokenClasses } from './treesitter.js';
 import type { Span } from './treesitter.js';
 
@@ -33,6 +34,12 @@ import type { Span } from './treesitter.js';
  */
 export interface LineSpans {
     spansForLine(line: number): Span[] | undefined;
+    /**
+     * Indent steps for a line, when the thing drawing can also say where a
+     * line belongs. Optional: a plugin computing spans some other way owes
+     * nothing here.
+     */
+    indentLevel?(row: number, firstNonWs: number): number | null;
 }
 
 /** Install a highlighter, or `null` to stop highlighting from a tree. */
@@ -115,13 +122,67 @@ const drawTreeHighlight = ViewPlugin.fromClass(class {
     }
 }, { decorations: (plugin) => plugin.decorations });
 
+/**
+ * Whether this document's indentation comes from the parse tree.
+ *
+ * Off unless asked, and asked for only where the language has no indenter of
+ * its own — see `modeHasParser` in cm6-modes.ts. A tree-sitter tree knows more
+ * about a document than a per-line mode does, but `@codemirror/lang-javascript`
+ * has a real indenter written against a real grammar, and a structural rule
+ * that is right most of the time is a regression against one that is right.
+ * Where there is no mode at all, the same rule is the only thing there is.
+ */
+export const setTreeIndent = StateEffect.define<boolean>();
+
+const treeIndentEnabled = StateField.define<boolean>({
+    create: () => false,
+    update(value, tr) {
+        for (const effect of tr.effects) {
+            if (effect.is(setTreeIndent)) return effect.value;
+        }
+        return value;
+    }
+});
+
+/**
+ * Indentation from the tree, in columns.
+ *
+ * `indentService` is consulted *before* CodeMirror's own syntax-tree
+ * indentation, so having no opinion has to be said precisely:
+ *
+ *     for (let service of state.facet(indentService)) {
+ *         let result = service(context, pos)
+ *         if (result !== undefined) return result
+ *     }
+ *
+ * `undefined` passes; `null` is an answer, and the answer it gives is "this
+ * line has no indentation". Returning null here to mean "not my business"
+ * turned smart indent off for every language in the editor — a service
+ * installed on every document, declining, and taking the language's own
+ * indenter down with it.
+ */
+const treeIndent = indentService.of((context, pos) => {
+    if (!context.state.field(treeIndentEnabled, false)) return undefined;
+    const highlighter = context.state.field(treeHighlighter, false);
+    if (!highlighter?.indentLevel) return undefined;
+
+    const line = context.state.doc.lineAt(pos);
+    let firstNonWs = 0;
+    while (firstNonWs < line.text.length && /\s/.test(line.text.charAt(firstNonWs))) firstNonWs++;
+
+    // Zero-based here and one-based in CodeMirror 6, which is CodeMirror 5's
+    // numbering and therefore Light Table's.
+    const level = highlighter.indentLevel(line.number - 1, firstNonWs);
+    return level === null ? undefined : level * context.unit;
+});
+
 /** Everything an editor needs to be highlighted from a parse tree. */
 export function treeHighlighting(): Extension {
-    return [treeHighlighter, drawTreeHighlight];
+    return [treeHighlighter, drawTreeHighlight, treeIndentEnabled, treeIndent];
 }
 
 declare global {
     interface Window { ltCm6Treesitter?: unknown }
 }
 
-window.ltCm6Treesitter = { setTreeHighlighter, treeHighlighter, treeHighlighting };
+window.ltCm6Treesitter = { setTreeHighlighter, setTreeIndent, treeHighlighter, treeHighlighting };

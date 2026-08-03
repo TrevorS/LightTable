@@ -662,6 +662,26 @@ export function modeExtension(name: string): Extension {
     return extension;
 }
 
+/**
+ * Whether this mode brings a parser, and with it an indenter.
+ *
+ * The question a caller actually has is "does anything already know how to
+ * indent this?", and having a parser is what that comes down to: a Lezer
+ * grammar carries `indentNodeProp`, and a legacy mode carries CodeMirror 5's
+ * `indent` method. A METADATA language carries neither by definition — it is
+ * the declaration that there is no parser — and an unknown name carries
+ * nothing at all.
+ *
+ * Asked by cm6-editor when the mode changes, to decide whether the parse tree
+ * should be the one answering. See `setTreeIndent` in cm6-treesitter.ts.
+ */
+export function modeHasParser(name: string): boolean {
+    const mode = resolve(name);
+    if (mode in LEZER || mode in LEGACY) return true;
+    const to = FALLBACK[mode];
+    return typeof to === 'string' ? modeHasParser(to) : false;
+}
+
 /** Every mode name this can answer for. */
 export function knownModes(): string[] {
     return [...new Set([...Object.keys(LEZER), ...Object.keys(LEGACY),

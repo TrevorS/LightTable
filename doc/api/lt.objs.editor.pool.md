@@ -9,7 +9,7 @@ Source: [`src/lt/objs/editor/pool.cljs`](https://github.com/TrevorS/LightTable/b
 | | |
 |---|---|
 | [`by-path`](#var-by-path) | Return editor objects that edit given path |
-| [`containing-path`](#var-containing-path) | Return editor objects that edit paths containing given path string |
+| [`containing-path`](#var-containing-path) | Every open editor whose file is `path`, or is inside it. |
 | [`create`](#var-create) | Create a :lt.objs.editor/editor object with given info map and add it to current pool |
 | [`focus-last`](#var-focus-last) | Focus the most recently active editor. |
 | [`last-active`](#var-last-active) | Return current editor object (last active in pool) |
@@ -37,7 +37,14 @@ Return editor objects that edit given path
 (containing-path path)
 ```
 
-Return editor objects that edit paths containing given path string
+Every open editor whose file is `path`, or is inside it.
+
+A prefix at a separator rather than a substring anywhere in the string, which
+is what the name says and what a caller acting on the answer needs. The
+substring form this replaces said that `/src/app` contained
+`/src/application/main.js`, so anything closing or reloading `by containing
+path` reached into a sibling project that merely started with the same
+letters.
 
 [source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor/pool.cljs#L56)
 
@@ -51,7 +58,7 @@ Return editor objects that edit paths containing given path string
 
 Create a :lt.objs.editor/editor object with given info map and add it to current pool
 
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor/pool.cljs#L175)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor/pool.cljs#L186)
 
 <a id="var-focus-last"></a>
 
@@ -63,7 +70,7 @@ Create a :lt.objs.editor/editor object with given info map and add it to current
 
 Focus the most recently active editor.
 
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor/pool.cljs#L78)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor/pool.cljs#L89)
 
 <a id="var-last-active"></a>
 
@@ -75,7 +82,7 @@ Focus the most recently active editor.
 
 Return current editor object (last active in pool)
 
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor/pool.cljs#L71)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor/pool.cljs#L82)
 
 <a id="var-unsaved"></a>
 

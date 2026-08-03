@@ -297,6 +297,62 @@ export function runsForLine(spans: Span[] | undefined, length: number): Span[] {
 }
 
 //*********************************************************
+// Indentation
+//*********************************************************
+
+/**
+ * How many indent steps the line at `row` sits at, read from the tree's shape.
+ *
+ * Not from a query. Nine grammars in ten ship no `indents.scm` — of the ones
+ * bundled here exactly one does — so a query-driven indenter would be an
+ * indenter for Zig. What every grammar does have is the tree, and the tree
+ * already says everything indentation is about: what encloses this line, and
+ * where each of those things began.
+ *
+ * The rule is one line long. **Indentation is the number of distinct lines on
+ * which something still open here was opened.** Not the number of enclosing
+ * nodes — that is the trap, and it is the same one `bracketDepths` avoids:
+ * grammars disagree wildly about how many wrapper nodes sit between a
+ * construct and its body, so counting ancestors indents the same code
+ * differently per language. A `function_declaration` and the `statement_block`
+ * inside it both begin on the line with the `{`; a reader sees one opening
+ * there and so does this.
+ *
+ * The one exception is the line that *closes* something. A `}` or an `end`
+ * belongs to the level outside the block it finishes, not inside it, so an
+ * enclosing node whose closing token is the first thing on this line does not
+ * count. That is one condition rather than a table of per-language delimiters,
+ * because "the anonymous token that ends my parent" is what all of them are.
+ *
+ * Returns null when there is no tree to read, which is a real answer: the
+ * caller should leave the line alone rather than move it to column zero.
+ */
+export function indentLevel(root: Node, row: number, firstNonWs: number): number | null {
+    const node = root.descendantForPosition({ row, column: firstNonWs });
+    if (!node) return null;
+
+    const opened = new Set<number>();
+    for (let a: Node | null = node; a; a = a.parent) {
+        // Strictly before, and still open: a node that began on this line has
+        // not indented it, and one that ended above it is not enclosing it.
+        if (a.startPosition.row < row && a.endPosition.row >= row) {
+            opened.add(a.startPosition.row);
+        }
+    }
+    let level = opened.size;
+
+    if (node.startPosition.row === row
+        && node.startPosition.column === firstNonWs
+        && !node.isNamed
+        && node.parent
+        && node.parent.endPosition.row === row
+        && node.parent.startPosition.row < row) {
+        level -= 1;
+    }
+    return Math.max(0, level);
+}
+
+//*********************************************************
 // Injections
 //*********************************************************
 
@@ -648,6 +704,18 @@ export class Highlighter {
 
     spansForLine(line: number): Span[] | undefined {
         return this.spans.get(line);
+    }
+
+    /**
+     * Indent steps for a line, or null when there is no tree yet.
+     *
+     * See [[indentLevel]]. The host tree rather than an injected one: what a
+     * line is nested inside is a question about the document, and the host
+     * grammar is the one that spans all of it.
+     */
+    indentLevel(row: number, firstNonWs: number): number | null {
+        if (!this.tree) return null;
+        return indentLevel(this.tree.rootNode, row, firstNonWs);
     }
 
     /**

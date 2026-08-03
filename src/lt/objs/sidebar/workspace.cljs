@@ -31,6 +31,7 @@
             [lt.objs.files :as files]
             [lt.objs.menu :as menu]
             [lt.objs.popup :as popup]
+            [lt.objs.editor.pool :as pool]
             [lt.objs.sidebar :as sidebar]
             [lt.objs.workspace :as workspace]
             [lt.state :as state]
@@ -299,6 +300,38 @@
 (behavior ::on-ws-remove
           :triggers #{:remove}
           :reaction (fn [_ & _] (roots!)))
+
+(behavior ::close-editors-on-clear
+          :triggers #{:set}
+          :type :user
+          :desc "Workspace: Close the project's editors when the workspace is cleared"
+          :doc "Clearing the workspace, or starting a new one, means the last
+                project is finished. Its open files are part of that project,
+                and leaving them behind gives you a tab strip belonging to
+                something you just closed.
+
+                Removing a *single* folder deliberately does not do this. The
+                two gestures read differently: taking one root out of a
+                workspace of four is a change to the workspace, and the file
+                you are editing out of that folder is very often the reason
+                you did it — closing it would be the editor deciding it knows
+                better. Clearing is an ending, and this is what an ending
+                implies.
+
+                Only editors under a root that was actually in the workspace.
+                A file opened from somewhere else is nobody's project and stays.
+
+                A user behavior, so `user.behaviors` can turn it off if the
+                other reading suits you better."
+          :reaction (fn [this old]
+                      ;; `:set` carries the workspace as it was and is raised by
+                      ;; both `:set!` and `:clear!`. An empty result is what
+                      ;; makes this a clearing rather than a switch to another
+                      ;; project, which must leave everything alone.
+                      (when (workspace/ws-empty? this)
+                        (doseq [root (concat (:folders old) (:files old))
+                                ed (pool/containing-path root)]
+                          (object/raise ed :close)))))
 
 (behavior ::on-ws-rename
           :triggers #{:rename}

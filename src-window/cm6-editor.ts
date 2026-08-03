@@ -30,14 +30,14 @@ import {
 } from '@codemirror/commands';
 import { codeFolding, foldCode, unfoldCode, syntaxTree } from '@codemirror/language';
 import { themeExtensions, legacyHighlighting, themeClass } from './cm6-theme.js';
-import { treeHighlighting, setTreeHighlighter } from './cm6-treesitter.js';
+import { treeHighlighting, setTreeHighlighter, setTreeIndent } from './cm6-treesitter.js';
 import type { LineSpans } from './cm6-treesitter.js';
 import { Options, UNSUPPORTED } from './cm6-options.js';
 import {
     search, SearchQuery, setSearchQuery, findNext, findPrevious,
     replaceNext, replaceAll, highlightSelectionMatches
 } from '@codemirror/search';
-import { modeExtension } from './cm6-modes.js';
+import { modeExtension, modeHasParser } from './cm6-modes.js';
 import { runCommand, multipleSelections } from './cm6-commands.js';
 import { bandField, setBands } from './cm6.js';
 import type { Band } from './cm6.js';
@@ -532,8 +532,16 @@ export class Cm6Editor {
             });
         }
         if (name === 'mode' || name === 'mime') {
+            const mode = String(value ?? '');
             this.view.dispatch({
-                effects: this.language.reconfigure(modeExtension(String(value ?? '')))
+                effects: [
+                    this.language.reconfigure(modeExtension(mode)),
+                    // Where nothing else can indent this document, the parse
+                    // tree is asked to. Where a parser exists it already
+                    // indents better than a structural rule could, so it keeps
+                    // the job. See `modeHasParser`.
+                    setTreeIndent.of(!modeHasParser(mode))
+                ]
             });
         }
     }

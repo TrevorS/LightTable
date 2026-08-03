@@ -206,3 +206,71 @@ test('a file is renamed in the row it is in', async ({ window }) => {
         (do (object/raise lt.objs.workspace/current-ws :remove.folder! "${dir}") :removed)`);
     fs.rmSync(dir, { recursive: true, force: true });
 });
+
+test('emptying the workspace is saved, and an empty new one is not written', async ({ window }) => {
+    // Removing a folder appeared to do nothing, and the appearance was
+    // accurate: the workspace was only written when it had something in it, so
+    // taking the last root out left the old contents on disk and the folder
+    // came back on the next start.
+    const dir = scratchDir('ws-save');
+    fs.writeFileSync(path.join(dir, 'a.txt'), 'a\n');
+
+    const saved = () => evalClj(window, `
+        (let [f (lt.objs.files/join lt.objs.workspace/workspace-cache-path
+                                    (:file @lt.objs.workspace/current-ws))]
+          (if (lt.objs.files/exists? f) (:content (lt.objs.files/open-sync f)) "no file"))`);
+
+    // A workspace of exactly one folder, so removing it empties it.
+    await evalClj(window, `
+        (do (object/raise lt.objs.workspace/current-ws :clear!)
+            (object/raise lt.objs.workspace/current-ws :add.folder! "${dir}") :ok)`);
+    expect(await saved()).toContain(dir);
+
+    await evalClj(window, `
+        (do (object/raise lt.objs.workspace/current-ws :remove.folder! "${dir}") :ok)`);
+    await expect.poll(saved).not.toContain(dir);
+    expect(await saved()).toContain(':folders []');
+
+    // The other half of the same guard: a workspace that has never been saved
+    // is not written just for being empty, or every `New workspace` would leave
+    // a blank entry in the recents list.
+    const written = await evalClj(window, `
+        (do (object/raise lt.objs.workspace/current-ws :new!)
+            (let [f (lt.objs.files/join lt.objs.workspace/workspace-cache-path
+                                        (:file @lt.objs.workspace/current-ws))]
+              (lt.objs.files/exists? f)))`);
+    expect(written).toBe('false');
+
+    fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('clearing the workspace closes its editors, and removing one folder does not', async ({ window }) => {
+    // The two gestures read differently. Taking one root out of a workspace is
+    // a change to the workspace, and the file you are editing out of that
+    // folder is very often why you did it. Clearing is an ending.
+    const dir = scratchDir('ws-close');
+    const file = path.join(dir, 'kept.txt');
+    fs.writeFileSync(file, 'text\n');
+
+    const open = () => evalClj(window, `(count (pool/by-path "${file}"))`);
+
+    await evalClj(window, `
+        (do (object/raise lt.objs.workspace/current-ws :clear!)
+            (object/raise lt.objs.workspace/current-ws :add.folder! "${dir}")
+            (cmd/exec! :open-path "${file}") :ok)`);
+    await expect.poll(open).toBe('1');
+
+    // Removing the folder leaves the editor alone.
+    await evalClj(window, `
+        (do (object/raise lt.objs.workspace/current-ws :remove.folder! "${dir}") :ok)`);
+    expect(await open()).toBe('1');
+
+    // Clearing closes it. Added back first, so there is a root to be under —
+    // an editor on a file belonging to no project is nobody's to close.
+    await evalClj(window, `
+        (do (object/raise lt.objs.workspace/current-ws :add.folder! "${dir}") :ok)`);
+    await evalClj(window, `(do (object/raise lt.objs.workspace/current-ws :clear!) :ok)`);
+    await expect.poll(open).toBe('0');
+
+    fs.rmSync(dir, { recursive: true, force: true });
+});

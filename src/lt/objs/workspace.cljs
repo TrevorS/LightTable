@@ -239,11 +239,29 @@
 
 (behavior ::serialize-workspace
           :triggers #{:updated :serialize!}
+          :doc "An emptied workspace is saved emptied; an empty one that was
+                never anything else is not written at all.
+
+                Those are two different states and the guard here used to be
+                `(not (ws-empty? this))`, which conflated them: taking the last
+                folder out of your workspace left the old contents on disk, so
+                it came back on the next start. Removing a folder appeared to
+                do nothing, and the appearance was accurate — the workspace
+                file still said the folder was in it.
+
+                The guard is still needed for the other half. `:new!` gives the
+                workspace a fresh file and clears it, and writing at that moment
+                would put an empty workspace in the recents list every time
+                someone started one. Whether the file exists is what tells the
+                two apart: a workspace that has been saved is kept in step with
+                whatever it becomes, including nothing."
           :reaction (fn [this]
                       (when-not (@this :file)
                         (object/merge! this {:file (new-cached-file)}))
                       (when (and (@this :initialized?)
-                                 (not (ws-empty? this)))
+                                 (or (not (ws-empty? this))
+                                     (files/exists? (files/join workspace-cache-path
+                                                                (:file @this)))))
                         (save this (:file @this)))))
 
 (behavior ::reconstitute-last-workspace

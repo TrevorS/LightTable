@@ -51,6 +51,40 @@ mode managed for the same file:
 The mime table still decides indentation, commenting, bracket matching and
 folding. Only the colouring changes, and only where a grammar exists.
 
+## Indentation, where nothing else can do it
+
+Colouring is the first thing a parse tree is used for and not the most useful.
+The second is knowing where a line belongs.
+
+The obvious route is `indents.scm`, the query file Neovim's indenter reads —
+and of the grammars bundled here, exactly one ships one. So this is structural
+instead, from the tree every grammar has:
+
+> **Indentation is the number of distinct lines on which something still open
+> here was opened.**
+
+Not the number of enclosing nodes. That is the same trap `bracketDepths`
+avoids: grammars disagree wildly about how many wrapper nodes sit between a
+construct and its body, so counting ancestors indents the same code differently
+per language. A `function_declaration` and the `statement_block` inside it both
+begin on the line with the `{`; a reader sees one opening there and so does
+this. The one exception is a line that *closes* something — a `}` or an `end`
+belongs outside the block it finishes — which is one condition rather than a
+table of per-language delimiters.
+
+It is used only where nothing better exists: a language with a real parser has
+a real indenter written against a real grammar, and a structural rule that is
+right most of the time is a regression against one that is right. `modeHasParser`
+in `cm6-modes.ts` is that test, so this applies to Elixir and Zig today and to
+any future grammar-only language without anyone deciding again.
+
+One trap worth writing down, because it cost a working feature for the length
+of one build. CodeMirror's `getIndentation` walks the `indentService` facet and
+takes the **first result that is not `undefined`** — so `null` is an answer, and
+the answer it gives is "this line has no indentation". A service installed on
+every document that returns `null` to mean "not my business" turns smart indent
+off for the whole editor, language indenters included.
+
 ## A file is not always one language
 
 The `<script>` in an HTML file is JavaScript and the `<style>` is CSS. A Rust
