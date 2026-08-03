@@ -22,5 +22,31 @@ export default {
         },
         controls: { matchers: { color: /(background|color)$/i } }
     },
-    initialGlobals: { backgrounds: { value: 'base' } }
+    initialGlobals: { backgrounds: { value: 'base' }, skin: 'mocha' },
+
+    // The skins are real files under deploy/core/css/skins, and switching is
+    // what the editor does: swap the custom properties, redraw nothing. A
+    // component that only looks right on one ground is naming a colour
+    // somewhere it should be naming a role, and this toolbar is how that shows.
+    globalTypes: {
+        skin: {
+            description: 'Which ground the kit is drawn on',
+            toolbar: {
+                title: 'Skin',
+                icon: 'paintbrush',
+                items: [
+                    { value: 'mocha', title: 'Catppuccin Mocha (ships)' },
+                    { value: 'light', title: 'Light' }
+                ],
+                dynamicTitle: true
+            }
+        }
+    },
+
+    decorators: [
+        (story, context) => {
+            document.documentElement.dataset.skin = context.globals.skin ?? 'mocha';
+            return story();
+        }
+    ]
 };

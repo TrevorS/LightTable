@@ -6,17 +6,50 @@
   What to draw comes from [[lt.ui.story]], which the catalogue reads too —
   there is no story data here, and that is the point of module 2.
 
-  **Nothing here reaches the editor.** Thirty of the thirty-five aliases
-  require nothing but Replicant; the five that do not are `lt.ui.pane`'s two
-  and `lt.ui.kit`'s two, which reach the object world and the state atom.
-  Keeping them out is what lets this be a browser bundle with no Electron, no
-  bridge and no stubs — and a stub is a second implementation of the thing
-  under test, which is how a component passes in a gallery and fails in the
-  product."
-  (:require [lt.ui.chrome]
+  **Nothing here reaches the editor.** Twenty-six of the twenty-seven aliases
+  require nothing but Replicant; the one that does not is `lt.ui.pane/pane`,
+  which mounts a real CodeMirror — see [[lt.ui.stories.pane]] for why it has no
+  stories rather than a stubbed one. Keeping it out is what lets this be a
+  browser bundle with no Electron and no bridge.
+
+  (An earlier version of this docstring said thirty-five aliases and five that
+  reach the editor. That came from counting `defalias` with grep, which also
+  counts the `:refer-macros [defalias]` line in every namespace that uses it.)"
+  (:require [lt.ui.band]
+            [lt.ui.chrome]
+            [lt.ui.host]
+            [lt.ui.row]
+            [lt.ui.stories.band]
             [lt.ui.stories.chrome]
+            [lt.ui.stories.host]
+            [lt.ui.stories.pane]
+            [lt.ui.stories.row]
             [lt.ui.story :as story]
             [replicant.dom :as rdom]))
+
+(defn- install-dispatch!
+  "Teach Replicant that a handler may be data.
+
+  Without this, `:on {:click [[:tab/close 0 4]]}` is a vector where a function
+  was expected: Replicant throws inside its own render, catches it itself, logs
+  *\"you may have misbehaving aliases\"* with the exception as `[object Object]`,
+  and skips that render. `chrome/tab`'s closable state found exactly that here,
+  three commits after `lt.actions/install!` was documented as the fix for it in
+  the editor — which is the argument for a gallery that renders the real
+  components rather than pictures of them.
+
+  Logged rather than dispatched. `lt.actions/dispatch!` writes to
+  [[lt.state/app]] and performs effects, and neither exists in a browser with no
+  editor in it; what a story can honestly show is *which action this gesture
+  emits*, which is the thing worth checking about a handler anyway."
+  []
+  (rdom/set-dispatch!
+   (fn [_ handler-data]
+     (js/console.log "action" (pr-str handler-data)))))
+
+;; At load, like `lt.actions/install!` does for the editor: every namespace
+;; that draws requires this one, so it has to be true before the first paint.
+(install-dispatch!)
 
 (defn ^:export render!
   "Draw the story `id` into a fresh element and hand it back.

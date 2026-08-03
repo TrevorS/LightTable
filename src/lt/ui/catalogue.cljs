@@ -32,7 +32,15 @@
             [lt.ui.chrome :as chrome]
             [lt.ui.kit :as kit]
             [lt.ui.row :as row]
+            ;; Required for their `story/of` calls, which are what fill the
+            ;; registry every `told-card` below reads. Requiring the component
+            ;; namespaces is not enough: an alias exists without anything
+            ;; having described it.
+            [lt.ui.stories.band]
             [lt.ui.stories.chrome]
+            [lt.ui.stories.host]
+            [lt.ui.stories.pane]
+            [lt.ui.stories.row]
             [lt.ui.story :as story]
             [lt.ui.view :as view])
   (:require-macros [lt.macros :refer [behavior]]))
@@ -166,55 +174,13 @@
    ;; too. Module 3 converts the rest.
    (told-card ::chrome/status-dot)
 
-   (card {:ns "chrome/" :nm "status"
-          :desc "A dot with a word. The statusbar and the titlebar both need the pair, so the pair is the component."
-          :props [[":status" "one of the eight" "passed straight to status-dot"]
-                  [":pulse" "boolean" "executing and connecting"]
-                  ["body" "children" "the label"]]
-          :usage "view/statusbar · view/titlebar · band/result"}
-         [:div.kit__demo-row
-          [::chrome/status {:status :executing :pulse true} "executing"]
-          [::chrome/status {:status :queued} "3 runs"]
-          [::chrome/status {:status :finished} "nREPL 51423"]]
-         (note "the label is body text, not the status colour — the dot carries the state"))
+   (told-card ::chrome/status)
 
-   (card {:ns "chrome/" :nm "count-pill" :width :narrow
-          :desc "A count that belongs to the thing beside it. Never a notification."
-          :props [[":count" "number" ""]
-                  [":tone" ":agent | :result | :error | :neutral" "neutral by default"]]
-          :usage "row/list-row · chrome/tab · chrome/panel-header · view/statusbar"}
-         [:div.kit__demo-row
-          [::chrome/count-pill {:count 6 :tone :agent}]
-          [::chrome/count-pill {:count 11 :tone :result}]
-          [::chrome/count-pill {:count 2 :tone :error}]
-          [::chrome/count-pill {:count 34}]]
-         (note "mauve = proposed · sky = waiting on you · red = one of them went wrong · neutral = just a number"))
+   (told-card ::chrome/count-pill)
 
-   (card {:ns "chrome/" :nm "kbd" :width :narrow
-          :desc "A binding, never a button. Symbols only, never spelled out."
-          :props [[":keys" "string" "the symbol run"]]
-          :usage "view/statusbar · view/command-bar · view/settings"}
-         [:div.kit__demo-row
-          (for [k ["⏎" "⌥⏎" "⌘R" "⌘↓" "⎋" "⌃⇥"]]
-            [::chrome/kbd {:replicant/key k :keys k}])]
-         (note "subtext1 on text @ 6% — reads as a key, not a control"))
+   (told-card ::chrome/kbd)
 
-   (card {:ns "chrome/" :nm "chip"
-          :desc "A scoped fact: what a run will carry, or which frames a trace shows."
-          :props [["body" "children" "the label"]
-                  [":selected" "boolean" "sky @ 15%"]
-                  [":tone" ":neutral | :agent | :warning" "capability chips are agent"]]
-          :usage "view/command-bar"}
-         [:div.kit__demo-row
-          [::chrome/chip {:selected true} "fuzzy.ts:15"]
-          [::chrome/chip {} "selection, 1 line"]
-          [::chrome/chip {} "tsserver"]
-          [::chrome/chip {:tone :agent} "write: src-window"]]
-         [:div.kit__demo-row
-          [::chrome/chip {:selected true} "project"]
-          [::chrome/chip {} "clj"]
-          [::chrome/chip {} "java"]
-          [::chrome/chip {:tone :warning} "unsandboxed"]])
+   (told-card ::chrome/chip)
 
    (card {:ns "band/" :nm "gutter" :badge "not an alias"
           :desc "The line number column, and the only place a marker would replace the number."
@@ -257,25 +223,9 @@
                 punctuation overlay2 · comment overlay0 — as the active theme resolves them,
                 and these are catppuccin-mocha's"))
 
-   (card {:ns "chrome/" :nm "path-label"
-          :desc "A path where only the leaf matters. Directories recede, the file does not."
-          :props [[":path" "string" ""]
-                  [":range" "string?" "shown when it is an excerpt"]]
-          :usage "chrome/excerpt-header · view/multibuffer"}
-         [:div.kit__demo-row [::chrome/path-label {:path "src-worker/fuzzy.ts"}]]
-         [:div.kit__demo-row
-          [::chrome/path-label {:path "src-window/navigate.cljs" :range "lines 29–33 of 118"}]])
+   (told-card ::chrome/path-label)
 
-   (card {:ns "chrome/" :nm "elapsed" :width :narrow
-          :desc "Time, only while it is still running or still relevant."
-          :props [[":ms" "number" ""]
-                  [":live" "boolean" "sky while counting, overlay2 at rest"]]
-          :usage "band/result · chrome/connection-row"}
-         [:div.kit__demo-row
-          [::chrome/elapsed {:ms 8000 :live true}]
-          [::chrome/elapsed {:ms 14000}]
-          [::chrome/elapsed {:ms 180000}]
-          [::chrome/elapsed {:ms 7200000}]])))
+   (told-card ::chrome/elapsed)))
 
 ;;*********************************************************
 ;; 02 · rows and chrome
@@ -291,142 +241,25 @@
           results and the connection panel are all "
          [:span.kit__name "row/list-row"] ".")
 
-   (card {:ns "row/" :nm "list-row"
-          :desc "The one row primitive. Tree, queue, runs, commands, connections are all this."
-          :props [[":selected?" "boolean" ""]
-                  [":focused?" "boolean" "a keyboard has both"]
-                  [":tone" ":warning | :error | :agent | :disabled" ""]
-                  [":leading" "node?" "dot, disclosure or line number"]
-                  [":trailing" "node?" "count, time or hint"]
-                  [":on-select" "actions" "clicking it"]
-                  [":on-menu" "actions" "right-clicking it, which is the only other thing"]]
-          :usage "view/workspace · view/review-queue · view/command-bar · view/settings"}
-         [::row/list-row {} "rest"]
-         [::row/list-row {:selected? true} "selected — element.selected, sky @ 15%"]
-         [::row/list-row {:focused? true} "focused — a ring, because focus is not selection"]
-         [::row/list-row {:tone :disabled} "unavailable — text.disabled"]
-         [::row/list-row {:tone :warning} "touches your edit — warning.tint"]
-         [::row/list-row {:tone :error} "the process died — error.tint"]
-         [::row/list-row {:tone :agent :origin :run :trailing "6"} "port fuzzy to ranges"]
-         (note "no left-border accent, ever — the whole row tints or nothing does"))
+   (told-card ::row/list-row)
 
-   (card {:ns "row/" :nm "tree-row"
-          :desc "list-row with depth and disclosure. Dirty is a dot, not a colour change."
-          :props [[":name" "string" "as the body"]
-                  [":depth" "number" "14px each"]
-                  [":open?" "boolean?" "folders only"]
-                  [":dirty?" "boolean" "a dot, right-aligned"]]
-          :usage "view/workspace — the tree in the left sidebar"}
-         [::row/tree-row {:depth 0 :open? true} "src-worker"]
-         [::row/tree-row {:depth 1} "walkdir.ts"]
-         [::row/tree-row {:depth 1 :dirty? true :selected? true} "fuzzy.ts"]
-         [::row/tree-row {:depth 0 :open? false :trailing "12"} "src-window"]
-         (note "indent 14px per level · dirty dot is sky · counts only on collapsed folders"))
+   (told-card ::row/tree-row)
 
-   (card {:ns "chrome/" :nm "tab"
-          :desc "Lives in the titlebar. Active is the editor ground pulled up into the chrome."
-          :props [["body" "children" "the label"]
-                  [":active?" "boolean" "background becomes base"]
-                  [":dirty?" "boolean" "sky dot"]
-                  [":origin" ":run" "a run is a tab like any other"]
-                  [":count" "number?" "pill, agent tone for runs"]
-                  [":on-close" "actions?" "only when the close-button behavior is on"]
-                  [":on-menu" "actions" "right-clicking it"]
-                  [":draggable?" "boolean" "picked up and put down as state"]]
-          :usage "view/titlebar"}
-         [:div.kit__demo-row {:style {:gap "0"}}
-          [::chrome/tab {:active? true} "fuzzy.ts"]
-          [::chrome/tab {:dirty? true} "tabs.cljs"]
-          [::chrome/tab {:count 11} "Review"]
-          [::chrome/tab {:origin :run :count 6} "port fuzzy to ranges"]
-          [::chrome/tab {:on-close [[:tab/close 0 4]]} "closable.md"]]
-         (note "active = base · rest = overlay2 on crust · a run is a tab like any other"))
+   (told-card ::chrome/tab)
 
-   (card {:ns "chrome/" :nm "excerpt-header" :width :wide
-          :desc "Names the file and range a multibuffer region came from, and whose edit it is."
-          :props [[":path" "string" ""]
-                  [":range" "string" ""]
-                  [":origin" ":proposed | :yours | :conflict" "three, because your own edit is not unattributed"]]
-          :usage "view/multibuffer"}
-         [::chrome/excerpt-header {:path "src-worker/fuzzy.ts"
-                                   :range "lines 12–24 of 96 · 2 edits"
-                                   :origin :proposed}]
-         [::chrome/excerpt-header {:path "src-window/behaviors.cljs"
-                                   :range "line 44 of 210 · conflicts with your edit"
-                                   :origin :conflict}]
-         [::chrome/excerpt-header {:path "src-window/cm6-editor.ts"
-                                   :range "line 88 of 940"
-                                   :origin :yours}])
+   (told-card ::chrome/excerpt-header)
 
-   (card {:ns "chrome/" :nm "fold-row" :width :narrow
-          :desc "Stands in for the lines nobody needs to see. Never a number without a count."
-          :props [[":lines" "number" ""]]
-          :usage "view/multibuffer"}
-         [::chrome/fold-row {:lines 7}]
-         [::chrome/fold-row {:lines 1}])
+   (told-card ::chrome/fold-row)
 
-   (card {:ns "chrome/" :nm "breadcrumb"
-          :desc "The path you walked into a value. Every segment is still addressable."
-          :props [[":root" "string" ""]
-                  [":segments" "any[]" "printed, so a keyword still looks like one"]
-                  [":siblings" "[at total]" "position among peers"]]
-          :usage "the inspector"}
-         [:div.kit__demo-row
-          [::chrome/breadcrumb {:root "@multi" :segments [:tabsets 0] :siblings [2 3]}]])
+   (told-card ::chrome/breadcrumb)
 
-   (card {:ns "chrome/" :nm "cause-row" :width :wide
-          :desc "One link in a cause chain. The root is the only one that gets actions."
-          :props [[":depth" "number" "counts down to the root"]
-                  [":kind" "string" "the exception's own name"]
-                  [":root?" "boolean" "only the root carries actions"]]
-          :usage "the exception view"}
-         [::chrome/cause-row {:depth 2 :kind "SocketException"} "Connection reset by peer"]
-         [::chrome/cause-row {:depth 1 :kind "root cause · the process exited" :root? true}
-          "nREPL on 51423 stopped 8s ago, exit 137"
-          [::chrome/action-cluster {:tone :error}
-           [::chrome/action {:weight :primary} "Restart it"]
-           [::chrome/action {:weight :secondary} "Last 40 lines"]]])
+   (told-card ::chrome/cause-row)
 
-   (card {:ns "chrome/" :nm "action"
-          :desc "One button. The cluster is a separate alias because the row is the thing with an opinion about order."
-          :props [["body" "children" "the label"]
-                  [":weight" ":primary | :secondary | :tertiary" "tertiary by default"]
-                  [":on-select" "action vector" "[[:run/grant id cap]]"]]
-          :usage "chrome/action-cluster, and nowhere on its own"}
-         [:div.kit__demo-row
-          [::chrome/action {:weight :primary} "Restart it"]
-          [::chrome/action {:weight :secondary} "Last 40 lines"]
-          [::chrome/action {:weight :tertiary} "End the run"]]
-         (note "a real <button>, so it is focusable and a keyboard can reach it"))
+   (told-card ::chrome/action)
 
-   (card {:ns "chrome/" :nm "action-cluster"
-          :desc "Three weights, one row, and the narrowest grant is always leftmost."
-          :props [["body" "children" "the actions, in order"]
-                  [":tone" ":result | :agent | :warning | :error" "sets the primary fill"]]
-          :usage "chrome/empty-state · chrome/cause-row · band/conflict"}
-         [::chrome/action-cluster {:tone :agent}
-          [::chrome/action {:weight :primary} "Allow src-window too"]
-          [::chrome/action {:weight :secondary} "See what it wants to write"]
-          [::chrome/action {:weight :tertiary} "End the run"]]
-         (note "primary = the accent of the situation · secondary = text @ 6% · tertiary = bare"))
+   (told-card ::chrome/action-cluster)
 
-   (card {:ns "chrome/" :nm "connection-row" :width :wide
-          :desc "What an eval will actually reach. The agent is a client like the others."
-          :props [[":name-of" "string" ""]
-                  [":kind" ":nrepl | :agent | :self | :browser" ""]
-                  [":status" "one of the eight" ""]
-                  [":bound?" "boolean" "this editor evaluates here — read, not stored"]
-                  [":what" "string" "and what it reaches through"]
-                  [":on-menu" "actions" "disconnecting is in the menu, not on the row"]]
-          :usage "view/connections — the connect panel in the right bar"}
-         [::chrome/connection-row {:name-of "nREPL 51423" :what "clj · lt.objs.tabs"
-                                   :status :finished :bound? true :trailing "this tab"}]
-         [::chrome/connection-row {:name-of "claude · terminal" :kind :agent
-                                   :what "agent · evaluates through the first"
-                                   :status :executing :trailing "3 runs"}]
-         [::chrome/connection-row {:name-of "Light Table itself" :kind :self
-                                   :what "self · the window you are in"
-                                   :status :idle :trailing "idle"}])))
+   (told-card ::chrome/connection-row)))
 
 ;;*********************************************************
 ;; 03 · bands
@@ -454,24 +287,7 @@
           from its props alone, which is what lets the same alias draw here and
           in a live buffer.")
 
-   (card {:ns "band/" :nm "result" :width :wide
-          :desc "The thesis component. A value, on the line that produced it, in every state it has."
-          :props [[":line" "number" "zero-based, as every address in lt.state is"]
-                  [":value" "any" ""]
-                  [":mime" "string" "handed to value-content"]
-                  [":status" "one of the eight" ""]
-                  [":stale?" "boolean" "last known value, marked"]
-                  [":against-unapplied" "number?" "computed against edits you have not applied"]]
-          :usage "every editor pane — this is the one the product is for"}
-         [::band/result {:line 6 :status :finished :value "({:count 2} {:count 1})"}]
-         [::band/result {:line 12 :status :executing :value "({:count 2})"
-                         :note "previous"}]
-         [::band/result {:line 13 :status :connecting :note "nREPL 51423"}]
-         [::band/result {:line 14 :status :shutting-down :stale? true
-                         :value "({:count 2} {:count 1})"}]
-         [::band/result {:line 15 :status :lost :stale? true :value "({:count 2})"}]
-         [::band/result {:line 16 :status :finished :value "[{:start 0}]" :against-unapplied 2}]
-         (note "queued shows no band at all — the gutter dot carries it"))
+   (told-card ::band/result)
 
    (card {:ns "band/" :nm "value-content" :badge "public fn" :width :wide
           :desc "The value declares its type; the band picks who draws it."
@@ -486,82 +302,15 @@
                 says so rather than showing you asterisks and calling it a document —
                 which is also what LSP hover text currently falls back to."))
 
-   (card {:ns "band/" :nm "watch" :width :wide
-          :desc "A value under observation. Teal, because it re-reads itself."
-          :props [[":line" "number" ""]
-                  [":expression" "string" "the path being watched"]
-                  [":value" "any" "when there is only one"]
-                  [":history" "any[]" "when it is a recurrence"]
-                  [":reads" "number" ""]]
-          :usage "the watch bands in a live buffer"}
-         [::band/watch {:line 19 :expression "i " :history [0 1 2 3 4 5 6 7] :reads 8}]
-         [::band/watch {:line 24 :expression "(count tabs) " :value "3" :reads 1}]
-         (note "a walked path in the inspector can be promoted to this — inspection and
-                observation are one gesture apart"))
+   (told-card ::band/watch)
 
-   (card {:ns "band/" :nm "evidence" :width :wide
-          :desc "The whole argument of the design: what the value was, and what it becomes."
-          :props [[":rows" "[{:label :expr :value :tone}]" "before, after, types, callers"]
-                  [":ran-at" "number" "an age in ms — age is shown, not hidden"]
-                  [":client" "string" "which connection produced it"]
-                  [":before" "/ :after" "the two-row shorthand"]]
-          :usage "band/proposed-edit · view/multibuffer"}
-         [::band/evidence
-          {:ran-at 2000 :client "tsserver and node"
-           :rows [{:label "before" :expr "walk(\"src-worker\")" :value "TypeError" :tone :before}
-                  {:label "after" :expr "walk(\"src-worker\")" :value "(\"walkdir.ts\")" :tone :after}
-                  {:label "types" :expr "walkdir.ts" :value "1 error → clean" :tone :after}]}]
-         (note "three claims, not two — what it returned, what it will return, and what the
-                type checker says. A component that held only two would have chosen for you."))
+   (told-card ::band/evidence)
 
-   (card {:ns "band/" :nm "proposed-edit" :width :wide
-          :desc "Struck original, tinted replacement, both on the same code column."
-          :props [[":line" "number" ""]
-                  [":before" "string" ""]
-                  [":after" "string" ""]
-                  ["body" "children" "evidence, attached below"]]
-          :usage "view/multibuffer"}
-         [::band/proposed-edit {:line 14
-                                :before "const e = fs.readdir(dir)"
-                                :after "const e = fsp.readdir(dir)"}]
-         (note "the block is inset by exactly its own padding so the code lands on the gutter column"))
+   (told-card ::band/proposed-edit)
 
-   (card {:ns "band/" :nm "conflict" :width :wide
-          :desc "You edited a line a run had already read. Routine, not an error."
-          :props [[":line" "number" ""]
-                  [":yours" "string" "the line as you left it"]
-                  [":theirs" "string?" "what the run proposed for it"]
-                  [":age" "number" "how long ago you typed, in ms"]
-                  [":note" "string" "why the two are not the same change"]]
-          :usage "view/multibuffer"}
-         [::band/conflict {:line 44
-                           :yours "  (score nm q)"
-                           :theirs "  (score nm q {:as :range})"
-                           :age 40000
-                           :note "Yours changes the threshold, the proposal changes the return type — not the same change."}
-          [::chrome/action-cluster {:tone :warning}
-           [::chrome/action {:weight :primary} "Show both evaluated"]
-           [::chrome/action {:weight :secondary} "Re-run against mine"]
-           [::chrome/action {:weight :tertiary} "Keep mine"]]])
+   (told-card ::band/conflict)
 
-   (card {:ns "band/" :nm "diagnostic" :width :wide
-          :desc "An LSP diagnostic, in the buffer, with the reason beside the line."
-          :props [[":line" "number" ""]
-                  [":severity" ":error | :warning | :info" "error by default"]
-                  [":code" "string" "ts2769, clj-kondo …"]
-                  [":message" "string" ""]
-                  [":fix" "node?" "when the server offers one"]]
-          :usage "every editor pane with a language server"}
-         [::band/diagnostic {:line 27 :code "ts2769"
-                             :message "No overload matches this call — the options form is only on fs/promises."
-                             :fix [::chrome/action-cluster {}
-                                   [::chrome/action {:weight :secondary} "Import fs/promises"]]}]
-         [::band/diagnostic {:line 31 :severity :warning :code "clj-kondo"
-                             :message "unused binding: opts"}]
-         [::band/diagnostic {:line 44 :severity :info :code "clojure-lsp"
-                             :message "This can be a keyword lookup."}]
-         (note "no left border — Zed uses one here, this does not. Severity carries the tint,
-                so a warning does not arrive looking like an error."))))
+   (told-card ::band/diagnostic)))
 
 ;;*********************************************************
 ;; 04 · views
@@ -634,13 +383,7 @@
          (view/workspace demo-state)
          (note "one row per visible path — a folder that is shut is not descended into"))
 
-   (card {:ns "chrome/" :nm "panel-header" :width :narrow
-          :desc "A label and a count. Panels do not get toolbars."
-          :props [["body" "children" "the label"]
-                  [":count" "number?" ""]]
-          :usage "view/review-queue · view/connections · view/settings"}
-         [::chrome/panel-header {:count 11} "Waiting on you"]
-         [::chrome/panel-header {} "Connections"])
+   (told-card ::chrome/panel-header)
 
    (card {:ns "view/" :nm "statusbar" :width :wide
           :desc "What is working, what it said, and what waits on you. 28px, mantle."
@@ -666,16 +409,7 @@
          [:div {:style {:position "relative" :height "150px"}}
           (view/command-bar demo-state)])
 
-   (card {:ns "chrome/" :nm "empty-state" :width :wide
-          :desc "Says what is missing and offers the narrowest way to fix it. Never an illustration."
-          :props [[":what" "string" "what is missing"]
-                  ["body" "children" "why, in one sentence, then the actions"]]
-          :usage "every panel that can be empty"}
-         [::chrome/empty-state {:what "No connection for this editor"}
-          "A .cljs buffer needs a ClojureScript client before anything can be evaluated."
-          [::chrome/action-cluster {}
-           [::chrome/action {:weight :primary} "Connect shadow-cljs"]
-           [::chrome/action {:weight :tertiary} "Pick a client"]]])))
+   (told-card ::chrome/empty-state)))
 
 ;;*********************************************************
 ;; the kit is a table

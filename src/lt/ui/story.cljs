@@ -64,12 +64,21 @@
   "What to draw for one state.
 
   Props become an alias call; `:hiccup` is taken as written; `:children` are
-  what the alias receives as its second argument."
+  what the alias receives as its second argument.
+
+  `:hiccup` may be a function, called at render time with no arguments. That is
+  for the two components whose content is DOM somebody else owns — a static
+  registry cannot hold a node, and building one at namespace load would mean
+  this file could not be read under node, which is exactly what
+  `script/gen-stories.mts` does."
   [alias spec]
-  (or (:hiccup spec)
-      (let [props (dissoc spec :hiccup :children :doc)]
-        (cond-> [alias props]
-          (:children spec) (into (:children spec))))))
+  (let [h (:hiccup spec)]
+    (cond
+      (fn? h) (h)
+      h h
+      :else (let [props (dissoc spec :hiccup :children :doc)]
+              (cond-> [alias props]
+                (:children spec) (into (:children spec)))))))
 
 (defn of
   "Register everything known about `alias`.

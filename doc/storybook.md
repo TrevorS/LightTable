@@ -3,9 +3,9 @@
 `make storybook` opens the component kit on <http://localhost:6106>, rendered
 by the same ClojureScript the editor renders, outside the editor.
 
-Modules 1 and 2 of five are done: the path end to end, and stories as
-ClojureScript that the in-editor catalogue reads too. One component is
-described so far. The rest are listed at the bottom.
+All five modules are done. **91 stories over 26 components**, written in
+ClojureScript, drawn by the same registry the in-editor catalogue draws from.
+`make storybook-check` proves every one of them renders.
 
 ## One description, two surfaces
 
@@ -57,8 +57,8 @@ last rendered into a given node, and Storybook remounts a story whenever a
 control changes; handing back a node it has already discarded gives you the
 previous story's DOM with the new story's diff applied to it.
 
-**The stories.** ClojureScript, in `lt.ui.stories.*`, beside the components
-rather than inside them — `lt.ui.chrome` is eighteen aliases and nothing else
+**The stories.** ClojureScript, in `lt.ui.stories.*` — one namespace per
+component namespace, beside the components rather than inside them — `lt.ui.chrome` is eighteen aliases and nothing else
 and it stays that way.
 
 A state is **props, not markup**:
@@ -103,22 +103,33 @@ it disagrees with you when the product would.
 
 ## Nothing here reaches the editor
 
-Thirty of the thirty-five aliases require nothing but Replicant:
+Twenty-six of the twenty-seven aliases require nothing but Replicant:
 
 | namespace | aliases | requires |
 |---|---|---|
-| `lt.ui.chrome` | 18 | Replicant |
-| `lt.ui.band` | 7 | Replicant, chrome |
-| `lt.ui.row` | 3 | Replicant |
-| `lt.ui.host` | 2 | Replicant |
-| `lt.ui.kit` | 2 | `lt.state`, `lt.objs.command` |
-| `lt.ui.pane` | 2 | the object world — pool, opener, files |
+| `lt.ui.chrome` | 17 | Replicant |
+| `lt.ui.band` | 6 | Replicant, chrome |
+| `lt.ui.row` | 2 | Replicant |
+| `lt.ui.host` | 1 | Replicant |
+| `lt.ui.pane` | 1 | the object world — pool, opener, files |
+| `lt.ui.kit` | 0 | it manipulates the registry rather than adding to it |
+
+*(Earlier versions of this page said thirty-five aliases, thirty of them pure.
+That came from `grep -c defalias`, which also counts the `:refer-macros
+[defalias]` line in every namespace that uses it.)*
 
 So this build has no Electron in it, no bridge, and no stubs. That is a
 property worth keeping rather than an accident of where we started: **a stub is
 a second implementation of the thing under test**, and it is how a component
-passes in a gallery and fails in the product. The last five are module 4, and
-the question there is what to do about that rather than how to write the stub.
+passes in a gallery and fails in the product.
+
+`lt.ui.pane/pane` is the one that would need one, and module 4's finding was
+that it should not have it. Everything worth seeing about a pane is the
+CodeMirror inside it, so a version here would be a picture of a text area; the
+catalogue already draws it with a live editor. It is registered with a
+description and an `:excluded` reason instead, which is the difference between
+*nobody wrote stories for this* and *this one is drawn somewhere better* — and
+the completeness check reads that field to tell them apart.
 
 ## A build is not a render
 
@@ -131,7 +142,7 @@ drew anything: a story whose render throws shows an empty frame and a green
 build, which is the same shape of silence this project has paid for elsewhere
 more than once.
 
-The check earned itself immediately. The first hand-written story passed
+The check earned itself immediately, twice. The first hand-written story passed
 `{:tone :ok}` to `chrome/status-dot`, which takes `:status` — an alias silently
 ignores an attribute it does not destructure, so it rendered the *default*
 state under a story named for a different one. It drew, so the check passed,
@@ -143,18 +154,46 @@ the end-to-end suite drives Electron, which brings its own. `npx playwright
 install chromium` is a one-time ~95MB download. Whether CI pays for it is a
 module 5 question.
 
-## The modules
+## What the check catches
 
-1. **The harness** — done. The build, the bridge, one component, the check.
-2. **ClojureScript as a first-class story format** — done, and it grew a second
-   half on the way: the catalogue reads the same registry, so a component is
-   described once. `chrome/status-dot` is the first card told that way.
-3. **The pure kit.** Every state of the thirty aliases in chrome, row, band and
-   host, and the rest of the catalogue's cards converted to `told-card`.
-4. **The five that reach the editor.** `lt.ui.pane` and `lt.ui.kit`, and the
-   composed views in `lt.ui.view`. This is a design question, not a typing
-   exercise — see above on stubs.
-5. **Controls, themes, and the gate.** Args from the same prop tables the
-   catalogue lists, light and dark, and a check that every registered alias has
-   at least one story — which is what `test-e2e/catalogue.spec.ts` already does
-   for the catalogue.
+Three things, and each has caught something real.
+
+**A story that draws nothing.** A Storybook build succeeds whether or not a
+component rendered; a story whose render throws shows an empty frame and a
+green build.
+
+**A console error.** This is how `chrome/tab`'s closable state was found: it
+carries `:on-close [[:tab/close 0 4]]`, and nothing in this bundle had taught
+Replicant that a handler may be data — so it threw inside Replicant's own
+render, which catches it, logs *"you may have misbehaving aliases"*, and skips
+the render. That is the exact trap `lt.actions/install!` exists for in the
+editor, met again three commits after it was written down. `lt.ui.storybook`
+now installs a dispatch that **logs** the action rather than running it: there
+is no state atom here and no effects, and what a story can honestly show is
+which action a gesture emits.
+
+**A component nobody described.** The alias list comes from Replicant's own
+registry rather than from the story registry, so a component with no `story/of`
+shows up as zero states rather than not at all — the same completeness argument
+`test-e2e/catalogue.spec.ts` makes for the catalogue.
+
+It is not in `make check`, deliberately: that script exists so a lint error
+does not cost a ClojureScript build to discover, and this needs a cljs compile,
+a Vite build and a browser. `make storybook-check` is its own thing.
+
+## The modules, and what they turned into
+
+1. **The harness** — the build, the bridge, one component, the check.
+2. **ClojureScript as a first-class story format** — and, unplanned, the
+   unification: the catalogue reads the same registry, so a component is
+   described once.
+3. **The pure kit** — 91 stories over 26 components, and 24 of the catalogue's
+   hand-written cards replaced by `told-card`. The catalogue lost 255 lines and
+   gained nothing it did not have.
+4. **The one that reaches the editor** — a finding rather than a build. See
+   above.
+5. **Themes and the gate** — a skin toolbar, and the completeness check. The
+   light skin overrides only the role variables, so a component that looks
+   wrong on it has hard-coded a colour somewhere it should have named a role.
+   Light Table ships no light theme; this one is a test instrument and lives
+   beside the stories rather than in `deploy/core/css`.

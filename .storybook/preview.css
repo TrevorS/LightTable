@@ -12,3 +12,23 @@ body {
 .lt-story {
     padding: 16px;
 }
+
+/* A light ground, for the one question a gallery can answer that the editor
+ * cannot yet: does a component name a role or a colour?
+ *
+ * Only the roles are overridden — every rule in kit.css resolves through these,
+ * so a component that looks wrong here has hard-coded something. Light Table
+ * does not ship a light skin; this is a test instrument, which is why it lives
+ * beside the stories rather than in deploy/core/css. */
+
+:root[data-skin='light'] {
+  --lt-crust: #dce0e8;
+  --lt-mantle: #e6e9ef;
+  --lt-base: #eff1f5;
+  --lt-surface0: #ccd0da;
+  --lt-surface2: #acb0be;
+  --lt-overlay0: #9ca0b0;
+  --lt-overlay2: #7c7f93;
+  --lt-subtext1: #5c5f77;
+  --lt-text: #4c4f69;
+}

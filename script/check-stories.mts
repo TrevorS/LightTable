@@ -13,6 +13,7 @@
 //
 // Needs `npm run storybook:build` first. `make storybook-check` does both.
 
+import { execFileSync } from 'node:child_process';
 import * as http from 'node:http';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -74,11 +75,29 @@ for (const story of stories) {
 await browser.close();
 server.close();
 
+// Every alias in the kit has stories, or says why it does not.
+//
+// The same completeness argument `test-e2e/catalogue.spec.ts` makes for the
+// in-editor catalogue, made here: a component nobody wrote stories for is
+// invisible, and a gallery whose gaps are invisible is a gallery that stops
+// being true one component at a time. `:excluded` in the registry is how a
+// deliberate absence says so — `lt.ui.pane/pane` is drawn with a live editor by
+// the catalogue and would be a picture of a text area here.
+const aliases = JSON.parse(execFileSync(
+    process.execPath,
+    [path.join(import.meta.dirname, '..', 'target', 'stories-manifest.js'), '--aliases'],
+    { encoding: 'utf8' })) as { alias: string; states: number; excluded: string | null }[];
+const silent = aliases.filter((a) => !a.states && !a.excluded).map((a) => a.alias);
+
 for (const id of empty) console.error(`  FAIL ${id} — rendered nothing`);
 for (const line of noise) console.error(`  FAIL ${line}`);
+for (const alias of silent) console.error(`  FAIL ${alias} — no states and no :excluded reason`);
 
-if (empty.length || noise.length) {
-    console.error(`${stories.length} stories, ${empty.length} empty, ${noise.length} console errors`);
+if (empty.length || noise.length || silent.length) {
+    console.error(`${stories.length} stories, ${empty.length} empty, ` +
+                  `${noise.length} console errors, ${silent.length} undescribed`);
     process.exit(1);
 }
-console.log(`  ok   ${stories.length} stories render, no console errors`);
+const excluded = aliases.filter((a) => a.excluded).length;
+console.log(`  ok   ${stories.length} stories over ${aliases.length - excluded} components ` +
+            `render, no console errors` + (excluded ? `; ${excluded} deliberately excluded` : ''));
