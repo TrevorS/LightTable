@@ -19,8 +19,13 @@
                             (ed/scroll-to editor 0 y-position)))
                         (doc/save path final
                                   (fn []
-                                    (object/merge! editor {:dirty false
-                                                           :editor.generation (ed/->generation editor)})
+                                    ;; The document as saved is the clean one.
+                                    ;; It used to store a change generation
+                                    ;; here and compare counts, which could not
+                                    ;; tell "undone back to the file" from
+                                    ;; "edited twice more".
+                                    (ed/mark-clean! editor)
+                                    (object/merge! editor {:dirty false})
                                     (object/raise editor :saved)
                                     ;; `:clean` had a TODO here saying nothing
                                     ;; listened for it. Something does now —
@@ -33,7 +38,7 @@
           :throttle 100
           :triggers #{:change}
           :reaction (fn [obj]
-                      (let [dirty? (ed/dirty? obj (:editor.generation @obj 0))]
+                      (let [dirty? (ed/dirty? obj)]
                         (when (not= (:dirty @obj) dirty?)
                           (if dirty?
                             (do

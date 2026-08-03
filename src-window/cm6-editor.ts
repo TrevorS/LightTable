@@ -25,7 +25,7 @@ import type { Extension, Range, Text } from '@codemirror/state';
 import { EditorView, keymap, Decoration, WidgetType } from '@codemirror/view';
 import type { DecorationSet } from '@codemirror/view';
 import {
-    defaultKeymap, history, historyKeymap, historyField, undo, redo,
+    defaultKeymap, history, historyKeymap, historyField, undo, redo, isolateHistory,
     lineComment, lineUncomment, blockComment, blockUncomment, indentSelection
 } from '@codemirror/commands';
 import { codeFolding, foldCode, unfoldCode, syntaxTree } from '@codemirror/language';
@@ -216,7 +216,9 @@ export class Cm6Editor {
     private declared: Band[] = [];
     private widgets: Band[] = [];
     private widgetId = 0;
-    private cleanAt = 0;
+    private readonly history = new Compartment();
+    /** The document as it was when last marked clean. Null until it is. */
+    private cleanDoc: Text | null = null;
     private generation = 0;
     private markerId = 0;
     private query = '';
@@ -238,7 +240,7 @@ export class Cm6Editor {
                         indentUnit: 2,
                         ...defaults
                     }),
-                    history(),
+                    this.history.of(history()),
                     // The query state and the match highlighting, without
                     // CodeMirror 6's own search panel: Light Table has a find
                     // bar of its own and two would be one too many.
@@ -345,8 +347,25 @@ export class Cm6Editor {
 
     getValue(): string { return this.view.state.doc.toString(); }
 
+    /**
+     * Replace the whole document.
+     *
+     * **Not undoable, which is a deliberate deviation from CodeMirror 5.**
+     * Every caller of this is loading or transforming a document rather than
+     * editing one — opening a file, showing a different document in the same
+     * editor, applying the `:save+` chain on the way to disk — and none of
+     * those is a keystroke somebody expects `⌘Z` to walk back through. When it
+     * was undoable, opening a file put the file itself in the history, and one
+     * undo emptied the buffer.
+     *
+     * A real edit made through `replaceRange` or the keymap is unaffected, so
+     * this narrows what undo covers to what a person did.
+     */
     setValue(text: string): void {
-        this.view.dispatch({ changes: { from: 0, to: this.view.state.doc.length, insert: text } });
+        this.view.dispatch({
+            changes: { from: 0, to: this.view.state.doc.length, insert: text },
+            annotations: Transaction.addToHistory.of(false)
+        });
     }
 
     // Undefined rather than empty for a line that is not there, which is what
@@ -478,9 +497,69 @@ export class Cm6Editor {
 
     undo(): void { undo(this.view); }
     redo(): void { redo(this.view); }
+    /**
+     * A number that changes when the document does. Still monotonic, and still
+     * the honest answer to *has anything happened* — but no longer what
+     * dirtiness is computed from. See [[isClean]].
+     */
     changeGeneration(): number { return this.generation; }
-    isClean(gen?: number): boolean { return this.generation === (gen ?? this.cleanAt); }
-    clearHistory(): void { this.cleanAt = this.generation; }
+
+    /**
+     * This document is what it was when [[markClean]] was last called.
+     *
+     * It also closes the current undo group, which is what makes the *next*
+     * undo stop here rather than sailing past. CodeMirror 6 merges edits made
+     * within half a second of each other, and a save takes no time at all — so
+     * typing, saving and typing again was one undo event, and one `⌘Z` after a
+     * save threw away work from before it. `isolateHistory` is the annotation
+     * that exists for exactly this.
+     */
+    markClean(): void {
+        this.cleanDoc = this.view.state.doc;
+        this.view.dispatch({ annotations: isolateHistory.of('full') });
+    }
+
+    /**
+     * Whether the document matches what was last marked clean — by comparing
+     * the documents, which is the only thing that actually answers it.
+     *
+     * Two counters were tried first and each was wrong in its own way. A change
+     * counter only climbs, so a file undone to exactly what is on disk stayed
+     * dirty for ever. The undo history's *depth* goes both ways and looked
+     * right, but CodeMirror 6 coalesces edits made within half a second into
+     * one history event — so two quick keystrokes move the depth once, and
+     * anything comparing depths calls a changed buffer clean.
+     *
+     * `Text.eq` is a structural comparison of two ropes that usually share most
+     * of their structure, and the only caller is throttled to 100ms.
+     *
+     * It is also more correct than either counter for a reason neither could
+     * be: editing a line and then editing it back is clean, because the file
+     * and the buffer agree, which is the actual question.
+     */
+    isClean(): boolean {
+        return this.cleanDoc === null || this.view.state.doc.eq(this.cleanDoc);
+    }
+
+    /**
+     * Forget everything that has been done to this document.
+     *
+     * It used to move the clean marker and leave the history where it was,
+     * which is not what the name says and not what CodeMirror 5 did. The
+     * consequence was a file whose *loading* stayed undoable: one `⌘Z` in a
+     * freshly opened buffer emptied it, and — because CodeMirror 6 groups
+     * changes made within half a second of each other — the first edit was
+     * usually in that same group, so the undo took the edit and the file
+     * together and redo could not tell them apart.
+     *
+     * CodeMirror 6 has no command for this; reconfiguring the extension is how
+     * it is done, because a fresh `history()` is a fresh field.
+     */
+    clearHistory(): void {
+        this.view.dispatch({ effects: this.history.reconfigure([]) });
+        this.view.dispatch({ effects: this.history.reconfigure(history()) });
+        this.markClean();
+    }
 
     // --- view --------------------------------------------------------------
 

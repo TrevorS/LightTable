@@ -48,6 +48,9 @@
   [e]
   (.-parentElement (.getScrollerElement (->cm-ed e))))
 
+;; Defined with the rest of the history functions, below.
+(declare mark-clean!)
+
 (defn set-val
   "Set content value `v` of editor `e`'s CodeMirror object. Cursor position is lost. Returns `e`."
   [e v]
@@ -129,7 +132,11 @@
       (set-val e c)
       (clear-history e))
     (when-let [doc (:doc context)]
-      (set-val e (:text @doc)))
+      (set-val e (:text @doc))
+      ;; What was just put in is what is on disk, so this is the clean
+      ;; document. Without it the first change compares against nothing and an
+      ;; untouched file can report dirty.
+      (mark-clean! e))
     e))
 
 (defn on
@@ -640,12 +647,25 @@
   [e]
   (.changeGeneration (->cm-ed e)))
 
-(defn dirty?
-  "Returns true if document is not clean for generation `gen`. The document is not clean if it has been modified since it was in a clean state.
+(defn mark-clean!
+  "Remember this document as the one on disk. Returns `e`.
 
-  See [isClean](http://codemirror.net/doc/manual.html#isClean)."
-  [e gen]
-  (not (.isClean (->cm-ed e) gen)))
+  Called after a save, and after loading. What it remembers is the *document*
+  rather than a number — see `isClean` in src-window/cm6-editor.ts for the two
+  counters that were tried first and how each was wrong."
+  [e]
+  (.markClean (->cm-ed e))
+  e)
+
+(defn dirty?
+  "Whether `e` differs from what was last marked clean.
+
+  `gen` is accepted and ignored, because it no longer means anything: it was a
+  change generation, and dirtiness is now a comparison against the document
+  that was marked rather than against a count of edits. Kept as an arity so a
+  plugin passing one still works."
+  ([e] (not (.isClean (->cm-ed e))))
+  ([e _gen] (dirty? e)))
 
 (defn set-doc!
   "Show `doc`'s text in editor `e`, and remember which document it is.

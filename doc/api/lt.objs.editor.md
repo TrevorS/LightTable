@@ -49,7 +49,7 @@ Source: [`src/lt/objs/editor.cljs`](https://github.com/TrevorS/LightTable/blob/d
 | [`copy`](#var-copy) | Copies currently selected text from editor. |
 | [`cursor`](#var-cursor-2) | Return cursor position of editor `e`'s as js object. |
 | [`cut`](#var-cut) | Cut currently selected text from editor. |
-| [`dirty?`](#var-dirty) | Returns true if document is not clean for generation `gen`. |
+| [`dirty?`](#var-dirty) | Whether `e` differs from what was last marked clean. |
 | [`exec-command!`](#var-exec-command) | Run the CodeMirror command named `cmd` on editor `e`. |
 | [`find-marks`](#var-find-marks) | Returns marks found at `pos` in . |
 | [`find-next!`](#var-find-next) | Move to the next match, or the previous one when `reverse?`. |
@@ -73,6 +73,7 @@ Source: [`src/lt/objs/editor.cljs`](https://github.com/TrevorS/LightTable/blob/d
 | [`line-length`](#var-line-length) | Returns the length of line `l` from editor `e`. |
 | [`line-widget`](#var-line-widget) | Add line widget `elem` (an element), along with any options, at `line` to editor `e`. |
 | [`mark`](#var-mark) | Marks text in editor `e` within range of `from` and `to`. |
+| [`mark-clean!`](#var-mark-clean) | — |
 | [`move-cursor`](#var-move-cursor) | Moves editor `ed`'s cursor to position `pos`. |
 | [`off`](#var-off) | Remove event handler `ev`, which fires `func`, on editor `ed`'s CodeMirror object. |
 | [`on`](#var-on) | Register event handler `ev`, which fires `func`, on editor `ed`'s CodeMirror object. |
@@ -134,7 +135,7 @@ rather than warning at every one of them.
 
 Same as [`cursor`](#var-cursor-2) but returned as edn.
 
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L207)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L214)
 
 <a id="var-elem"></a>
 
@@ -160,7 +161,7 @@ Returns an integer that can be used to test if edits have occurred.
 
 See [changeGeneration](http://codemirror.net/doc/manual.html#changeGeneration).
 
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L636)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L643)
 
 <a id="var-mode"></a>
 
@@ -174,7 +175,7 @@ Return outer mode object for editor `e`.
 
 See [getMode](http://codemirror.net/doc/manual.html#getMode).
 
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L262)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L269)
 
 <a id="var-token"></a>
 
@@ -195,7 +196,7 @@ comes back unchanged, so every `(:string token)` in the editor was nil. That
 took out `find-symbol-at-cursor`, and with it documentation and
 jump-to-definition, for every language that asked.
 
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L168)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L175)
 
 <a id="var-token-type"></a>
 
@@ -209,7 +210,7 @@ Return the type of token located at position `pos` for editor `e`.
 
 See [getTokenTypeAt](http://codemirror.net/doc/manual.html#getTokenTypeAt).
 
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L188)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L195)
 
 <a id="var-val"></a>
 
@@ -221,7 +222,7 @@ See [getTokenTypeAt](http://codemirror.net/doc/manual.html#getTokenTypeAt).
 
 Return editor `e`'s buffer content.
 
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L163)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L170)
 
 <a id="var-line-class"></a>
 
@@ -236,7 +237,7 @@ Opposite of `+line-class`.
 
 See [removeLineClass](http://codemirror.net/doc/manual.html#removeLineClass).
 
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L553)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L560)
 
 <a id="var-line-class-2"></a>
 
@@ -250,7 +251,7 @@ Add CSS class name `class` to LineHandle `lh` at element `plane` for editor `e`.
 
 See [addLineClass](http://codemirror.net/doc/manual.html#addLineClass).
 
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L546)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L553)
 
 <a id="var-add-gutter"></a>
 
@@ -262,7 +263,7 @@ See [addLineClass](http://codemirror.net/doc/manual.html#addLineClass).
 
 Add gutter with `class-name` of specified `width` to editor `e`.
 
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L687)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L707)
 
 <a id="var-adjust-loc"></a>
 
@@ -276,7 +277,7 @@ Add gutter with `class-name` of specified `width` to editor `e`.
 Adjust position `loc` with integer offset `dir` and the key `axis`. Axis should either be `:line` or `:ch`.
 If `axis` is not specified, defaults to `:ch`.
 
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L561)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L568)
 
 <a id="var-block-comment"></a>
 
@@ -290,7 +291,7 @@ Wrap lines within range of `from` and `to` for editor `e`.
 
 See [blockComment](http://codemirror.net/doc/manual.html#blockComment).
 
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L621)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L628)
 
 <a id="var-blur"></a>
 
@@ -302,7 +303,7 @@ See [blockComment](http://codemirror.net/doc/manual.html#blockComment).
 
 Blurs input field `e`. Returns `e`.
 
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L284)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L291)
 
 <a id="var-bookmark"></a>
 
@@ -316,7 +317,7 @@ Insert bookmark at position `from` for widget `widg`.
 
 See [setBookmark](http://codemirror.net/doc/manual.html#setBookmark).
 
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L240)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L247)
 
 <a id="var-center-cursor"></a>
 
@@ -328,7 +329,7 @@ See [setBookmark](http://codemirror.net/doc/manual.html#setBookmark).
 
 Scrolls editor `ed` to the cursor and places it in the center of screen.
 
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L348)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L355)
 
 <a id="var-char-coords"></a>
 
@@ -342,7 +343,7 @@ Returns position and dimension, based off of `pos` for editor `e`, in map consis
 
 See [charChords](http://codemirror.net/doc/manual.html#charCoords).
 
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L421)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L428)
 
 <a id="var-clear-history"></a>
 
@@ -354,7 +355,7 @@ See [charChords](http://codemirror.net/doc/manual.html#charCoords).
 
 Clear the history of editor `e`. Returns `e`.
 
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L72)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L75)
 
 <a id="var-clear-search"></a>
 
@@ -366,7 +367,7 @@ Clear the history of editor `e`. Returns `e`.
 
 Forget the query, which takes the match highlighting with it.
 
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L468)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L475)
 
 <a id="var-copy"></a>
 
@@ -378,7 +379,7 @@ Forget the query, which takes the match highlighting with it.
 
 Copies currently selected text from editor.
 
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L405)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L412)
 
 <a id="var-cursor-2"></a>
 
@@ -398,7 +399,7 @@ Example:
 ;;=> {"line": 144, "ch": 9}
 ```
 
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L195)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L202)
 
 <a id="var-cut"></a>
 
@@ -410,21 +411,25 @@ Example:
 
 Cut currently selected text from editor.
 
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L410)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L417)
 
 <a id="var-dirty"></a>
 
 ### `dirty?`
 
 ```clojure
-(dirty? e gen)
+(dirty? e)
+(dirty? e _gen)
 ```
 
-Returns true if document is not clean for generation `gen`. The document is not clean if it has been modified since it was in a clean state.
+Whether `e` differs from what was last marked clean.
 
-See [isClean](http://codemirror.net/doc/manual.html#isClean).
+`gen` is accepted and ignored, because it no longer means anything: it was a
+change generation, and dirtiness is now a comparison against the document
+that was marked rather than against a count of edits. Kept as an arity so a
+plugin passing one still works.
 
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L643)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L660)
 
 <a id="var-exec-command"></a>
 
@@ -440,7 +445,7 @@ The command table is `cm6-commands.ts`. One place knows about it, rather than
 the fifty-odd commands in `lt.objs.editor.pool` that each used to decide
 where to look by not deciding.
 
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L445)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L452)
 
 <a id="var-find-marks"></a>
 
@@ -454,7 +459,7 @@ Returns marks found at `pos` in .
 
 See [findMarksAt](http://codemirror.net/doc/manual.html#findMarksAt).
 
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L233)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L240)
 
 <a id="var-find-next"></a>
 
@@ -466,7 +471,7 @@ See [findMarksAt](http://codemirror.net/doc/manual.html#findMarksAt).
 
 Move to the next match, or the previous one when `reverse?`.
 
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L463)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L470)
 
 <a id="var-find"></a>
 
@@ -482,7 +487,7 @@ A function rather than a command name, because the query is part of the
 editor's state rather than an argument to a global — see `lt.objs.find`,
 which does not know that.
 
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L454)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L461)
 
 <a id="var-first-line"></a>
 
@@ -496,7 +501,7 @@ Returns the first line of editor `e`.
 
 See [firstLine](http://codemirror.net/doc/manual.html#firstLine).
 
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L497)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L504)
 
 <a id="var-focus"></a>
 
@@ -510,7 +515,7 @@ Return focus of editor.
 
 See [focus](http://codemirror.net/doc/manual.html#focus).
 
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L269)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L276)
 
 <a id="var-fold-code"></a>
 
@@ -527,7 +532,7 @@ If the code is already folded then an attempt to unfold will occur.
 
 See [foldcode.js](http://codemirror.net/addon/fold/foldcode.js) addon.
 
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L659)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L679)
 
 <a id="var-get-char"></a>
 
@@ -541,7 +546,7 @@ Returns the characters found from integer offest `dir` to the current cursor pos
 
 See range.
 
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L570)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L577)
 
 <a id="var-get-history"></a>
 
@@ -553,7 +558,7 @@ See range.
 
 Returns the history of editor `e`.
 
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L78)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L81)
 
 <a id="var-indent-line"></a>
 
@@ -567,7 +572,7 @@ Indents the line `l` based on the `dir` specified for editor `e`.
 
 See [indent-line](http://codemirror.net/doc/manual.html#indentLine).
 
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L580)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L587)
 
 <a id="var-indent-lines"></a>
 
@@ -582,7 +587,7 @@ for editor `e`.
 
 See [indent-line](http://codemirror.net/doc/manual.html#indentLine).
 
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L587)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L594)
 
 <a id="var-indent-selection"></a>
 
@@ -594,7 +599,7 @@ See [indent-line](http://codemirror.net/doc/manual.html#indentLine).
 
 Intent current selection in editor `e` by integer offset `dir`.
 
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L600)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L607)
 
 <a id="var-input-field"></a>
 
@@ -608,7 +613,7 @@ Return input field element of editor.
 
 See [getInputField](http://codemirror.net/doc/manual.html#getInputField).
 
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L277)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L284)
 
 <a id="var-insert-at-cursor"></a>
 
@@ -620,7 +625,7 @@ See [getInputField](http://codemirror.net/doc/manual.html#getInputField).
 
 Insert into editor `ed` text `s` at cursor's position. Returns `ed`.
 
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L328)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L335)
 
 <a id="var-last-line"></a>
 
@@ -634,7 +639,7 @@ Returns the last line of editor `e`.
 
 See [lastLine](http://codemirror.net/doc/manual.html#lastLine).
 
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L504)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L511)
 
 <a id="var-lh-line"></a>
 
@@ -648,7 +653,7 @@ Given LineHandle object `lh`, returns integer for corresponding line from editor
 
 See [getLineNumber](http://codemirror.net/doc/manual.html#getLineNumber).
 
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L518)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L525)
 
 <a id="var-line"></a>
 
@@ -662,7 +667,7 @@ Returns the content of line `l` from editor `e`.
 
 See [getLine](http://codemirror.net/doc/manual.html#getLine).
 
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L490)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L497)
 
 <a id="var-line-comment"></a>
 
@@ -676,7 +681,7 @@ Changes lines within range of `from` and `to` into line comments for editor `e`.
 
 See [lineComment](http://codemirror.net/doc/manual.html#lineComment).
 
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L605)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L612)
 
 <a id="var-line-count"></a>
 
@@ -690,7 +695,7 @@ Returns the number of lines in the editor.
 
 See [lineCount](http://codemirror.net/doc/manual.html#lineCount).
 
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L321)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L328)
 
 <a id="var-line-handle"></a>
 
@@ -704,7 +709,7 @@ Returns `LineHandle` object from editor `e` for line `l`.
 
 See [getLineHandle](http://codemirror.net/doc/manual.html#getLineHandle).
 
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L511)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L518)
 
 <a id="var-line-length"></a>
 
@@ -716,7 +721,7 @@ See [getLineHandle](http://codemirror.net/doc/manual.html#getLineHandle).
 
 Returns the length of line `l` from editor `e`.
 
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L525)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L532)
 
 <a id="var-line-widget"></a>
 
@@ -730,7 +735,7 @@ Add line widget `elem` (an element), along with any options, at `line` to editor
 
 See [addLineWidget](http://codemirror.net/doc/manual.html#addLineWidget).
 
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L478)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L485)
 
 <a id="var-mark"></a>
 
@@ -744,7 +749,15 @@ Marks text in editor `e` within range of `from` and `to`.
 
 See [markText](http://codemirror.net/doc/manual.html#markText).
 
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L226)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L233)
+
+<a id="var-mark-clean"></a>
+
+### `mark-clean!`
+
+*Undocumented.*
+
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L52)
 
 <a id="var-move-cursor"></a>
 
@@ -758,7 +771,7 @@ Moves editor `ed`'s cursor to position `pos`. If `pos` is nil then default posit
 
 See [setCursor](http://codemirror.net/doc/manual.html#setCursor).
 
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L334)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L341)
 
 <a id="var-off"></a>
 
@@ -770,7 +783,7 @@ See [setCursor](http://codemirror.net/doc/manual.html#setCursor).
 
 Remove event handler `ev`, which fires `func`, on editor `ed`'s CodeMirror object.
 
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L140)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L147)
 
 <a id="var-on"></a>
 
@@ -782,7 +795,7 @@ Remove event handler `ev`, which fires `func`, on editor `ed`'s CodeMirror objec
 
 Register event handler `ev`, which fires `func`, on editor `ed`'s CodeMirror object.
 
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L135)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L142)
 
 <a id="var-on-click"></a>
 
@@ -796,7 +809,7 @@ Add function `func` to trigger when `:mousedown` fires.
 
 Returns editor `e`.
 
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L436)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L443)
 
 <a id="var-operation"></a>
 
@@ -810,7 +823,7 @@ Returns `e` rather than the return value of your function `func`.
 
 See [operation](http://codemirror.net/doc/manual.html#operation).
 
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L428)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L435)
 
 <a id="var-option"></a>
 
@@ -824,7 +837,7 @@ Return value for option name `o` on editor `e`.
 
 See [getOption](http://codemirror.net/doc/manual.html#getOption).
 
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L247)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L254)
 
 <a id="var-paste"></a>
 
@@ -836,7 +849,7 @@ See [getOption](http://codemirror.net/doc/manual.html#getOption).
 
 Paste into editor's current cursor position
 
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L416)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L423)
 
 <a id="var-pos-index"></a>
 
@@ -855,7 +868,7 @@ Position consists of line and character indexes as JSON, such as:
 
 Reverse of [posFromIndex](http://codemirror.net/doc/manual.html#posFromIndex).
 
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L214)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L221)
 
 <a id="var-range"></a>
 
@@ -869,7 +882,7 @@ Returns text between positions `from` and `to`.
 
 See [getRange](http://codemirror.net/doc/manual.html#getRange).
 
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L314)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L321)
 
 <a id="var-redo"></a>
 
@@ -883,7 +896,7 @@ Redo one edit for editor `e`, if any exist.
 
 See [redo](http://codemirror.net/doc/manual.html#redo).
 
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L398)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L405)
 
 <a id="var-refresh"></a>
 
@@ -897,7 +910,7 @@ Refreshes editor. Returns `e`.
 
 See [refresh](http://codemirror.net/doc/manual.html#refresh).
 
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L290)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L297)
 
 <a id="var-remove-gutter"></a>
 
@@ -909,7 +922,7 @@ See [refresh](http://codemirror.net/doc/manual.html#refresh).
 
 Remove gutter with `class-name` from editor `e`.
 
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L695)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L715)
 
 <a id="var-remove-line-widget"></a>
 
@@ -921,7 +934,7 @@ Remove gutter with `class-name` from editor `e`.
 
 Remove widget `widg` from editor `e`. Opposite of `line-widget`.
 
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L485)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L492)
 
 <a id="var-replace"></a>
 
@@ -936,7 +949,7 @@ Replace text starting at position `from` for editor with text `v`. If provided, 
 
 See [replaceRange](http://codemirror.net/doc/manual.html#replaceRange).
 
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L305)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L312)
 
 <a id="var-replace-selection"></a>
 
@@ -950,7 +963,7 @@ Replace selection with `neue` for editor `e`.
 
 See [replaceSelection](http://codemirror.net/doc/manual.html#replaceSelection).
 
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L384)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L391)
 
 <a id="var-replace-2"></a>
 
@@ -962,7 +975,7 @@ See [replaceSelection](http://codemirror.net/doc/manual.html#replaceSelection).
 
 Replace the current match with `text`, or every match when `all?`.
 
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L473)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L480)
 
 <a id="var-scratch"></a>
 
@@ -981,7 +994,7 @@ that the positions stay right while the text underneath them changes. That
 used to be a CodeMirror 5 `Doc`, which was the same idea with a lighter
 object behind it.
 
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L105)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L108)
 
 <a id="var-scroll-to"></a>
 
@@ -995,7 +1008,7 @@ Scroll editor to pixel position `x`,`y`.
 
 See [scrollTo](http://codemirror.net/doc/manual.html#scrollTo).
 
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L341)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L348)
 
 <a id="var-select-all"></a>
 
@@ -1007,7 +1020,7 @@ See [scrollTo](http://codemirror.net/doc/manual.html#scrollTo).
 
 Select all lines from editor `e`.
 
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L530)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L537)
 
 <a id="var-selection"></a>
 
@@ -1021,7 +1034,7 @@ Returns currently selected text in editor.
 
 See [getSelection](http://codemirror.net/doc/manual.html#getSelection).
 
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L370)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L377)
 
 <a id="var-selection-bounds"></a>
 
@@ -1033,7 +1046,7 @@ See [getSelection](http://codemirror.net/doc/manual.html#getSelection).
 
 When text is selected, returns position `{:from x :to y}` where `x` and `y` are the cursor's start and end values.
 
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L363)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L370)
 
 <a id="var-selection-2"></a>
 
@@ -1047,7 +1060,7 @@ True if text is selected in editor.
 
 See [somethingSelected](http://codemirror.net/doc/manual.html#somethingSelected).
 
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L356)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L363)
 
 <a id="var-set-doc"></a>
 
@@ -1062,7 +1075,7 @@ Show `doc`'s text in editor `e`, and remember which document it is.
 The text, because a document is a file's identity here rather than a buffer
 two editors can share — see `lt.objs.document`.
 
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L650)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L670)
 
 <a id="var-set-history"></a>
 
@@ -1074,7 +1087,7 @@ two editors can share — see `lt.objs.document`.
 
 Set the history of editor `e` with provided value `v`.
 
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L83)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L86)
 
 <a id="var-set-line"></a>
 
@@ -1086,7 +1099,7 @@ Set the history of editor `e` with provided value `v`.
 
 Replace content at line `l` with `text` for editor `e`.
 
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L537)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L544)
 
 <a id="var-set-mode"></a>
 
@@ -1100,7 +1113,7 @@ Set mode option for editor `e`.
 
 See [getOption](http://codemirror.net/doc/manual.html#getOption).
 
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L254)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L261)
 
 <a id="var-set-options"></a>
 
@@ -1113,7 +1126,7 @@ See [getOption](http://codemirror.net/doc/manual.html#getOption).
 Given a map of options, set each pair as an option on editor `e`'s
 CodeMirror object. Returns `e`.
 
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L64)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L67)
 
 <a id="var-set-selection"></a>
 
@@ -1127,7 +1140,7 @@ Sets editor's selection to `start` and `end` positions.
 
 See [setSelection](http://codemirror.net/doc/manual.html#setSelection).
 
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L377)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L384)
 
 <a id="var-set-val"></a>
 
@@ -1139,7 +1152,7 @@ See [setSelection](http://codemirror.net/doc/manual.html#setSelection).
 
 Set content value `v` of editor `e`'s CodeMirror object. Cursor position is lost. Returns `e`.
 
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L51)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L54)
 
 <a id="var-set-val-and-keep-cursor"></a>
 
@@ -1151,7 +1164,7 @@ Set content value `v` of editor `e`'s CodeMirror object. Cursor position is lost
 
 Same as [`set-val`](#var-set-val) but current cursor position is kept.
 
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L57)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L60)
 
 <a id="var-toggle-comment"></a>
 
@@ -1163,7 +1176,7 @@ Same as [`set-val`](#var-set-val) but current cursor position is kept.
 
 Toggle comment and if multiline toggle apply block comment
 
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L628)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L635)
 
 <a id="var-uncomment"></a>
 
@@ -1179,7 +1192,7 @@ Returns `true` if comment range was successfully removed.
 
 See [uncomment](http://codemirror.net/doc/manual.html#uncomment).
 
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L612)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L619)
 
 <a id="var-undo"></a>
 
@@ -1193,4 +1206,4 @@ Undo one edit for editor `e`, if any exist.
 
 See [undo](http://codemirror.net/doc/manual.html#undo).
 
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L391)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor.cljs#L398)
