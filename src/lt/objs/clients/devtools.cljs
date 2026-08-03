@@ -6,7 +6,6 @@
             [lt.objs.files :as files]
             [lt.objs.console :as console]
             [lt.objs.app :as app]
-            [lt.objs.clients :as clients]
             [lt.ui :as ui]
             [lt.ui.host :as host]
             [lt.util.dom :as dom]

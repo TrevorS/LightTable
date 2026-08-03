@@ -359,7 +359,7 @@
                                     {:exts [:e], :mime "text/x-eiffel", :tags [:editor.eiffel], :name "Eiffel"}
                                     {:exts [:ejs] :mime "application/x-ejs" :tags [:editor.ejs] :name "EJS"}
                                     {:exts [:erb] :mime "application/x-erb" :tags [:editor.erb] :name "ERB"}
-                                    {:exts [:ex :exs], :mime "plaintext", :tags [:editor.elixir], :name "Elixir"}
+                                    {:exts [:ex :exs], :mime "text/x-elixir", :tags [:editor.elixir], :name "Elixir"}
                                     {:exts [:erl], :mime "text/x-erlang", :tags [:editor.erlang], :name "Erlang"}
                                     {:exts [:fs :fsi :fsx], :mime "text/x-fsharp", :tags [:editor.fsharp], :name "F#"}
                                     {:exts [:f :f90 :for :f77], :mime "text/x-fortran", :tags [:editor.fortran], :name "Fortran"}
@@ -443,7 +443,7 @@
                                     {:exts [:v], :mime "text/x-verilog", :tags [:editor.verilog], :name "Verilog"}
                                     {:exts [:xml], :mime "application/xml", :tags [:editor.xml], :name "XML"}
                                     {:exts [:xy :xquery], :mime "application/xquery", :tags [:editor.xquery], :name "XQuery"}
-                                    {:exts [:zig], :mime "plaintext", :tags [:editor.zig], :name "Zig"}
+                                    {:exts [:zig], :mime "text/x-zig", :tags [:editor.zig], :name "Zig"}
                                     {:exts [:yml :yaml], :mime "text/x-yaml", :tags [:editor.yaml], :name "YAML"}
                                     {:exts [:z80], :mime "text/x-z80", :tags [:editor.z80], :name "Z80 Assembly"}]]
 

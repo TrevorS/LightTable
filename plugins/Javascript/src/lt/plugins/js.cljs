@@ -11,7 +11,6 @@
             [lt.objs.sidebar.command :as cmd]
             [lt.objs.popup :as popup]
             [lt.plugins.watches :as watches]
-            [lt.util.load :as load]
             [clojure.string :as string]
             [lt.ui :as ui]
             [lt.util.dom :refer [$ append]])

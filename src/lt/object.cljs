@@ -4,7 +4,6 @@
   (:refer-clojure :exclude [set!])
   (:require [lt.ui.hiccup :as hiccup]
             [clojure.set :as set]
-            [lt.util.cljs :as cljs]
             [lt.util.dom :refer [replace-with] :as dom]
             [lt.util.js :refer [throttle debounce]])
   (:require-macros [lt.macros :refer [behavior with-time aloop]]))

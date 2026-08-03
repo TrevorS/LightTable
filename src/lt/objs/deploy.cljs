@@ -2,7 +2,6 @@
   "Provide behaviors to check for app updates and fns for downloading
   and unpacking downloaded assets"
   (:require [lt.object :as object]
-            [lt.objs.clients :as clients]
             [lt.objs.files :as files]
             [lt.objs.popup :as popup]
             [lt.objs.cache :as cache]

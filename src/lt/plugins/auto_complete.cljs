@@ -3,7 +3,6 @@
   (:require [lt.object :as object]
             [lt.objs.keyboard :as keyboard]
             [lt.objs.command :as cmd]
-            [lt.util.load :as load]
             [lt.objs.thread :as thread]
             [lt.objs.sidebar.command :as scmd]
             [lt.objs.editor.pool :as pool]

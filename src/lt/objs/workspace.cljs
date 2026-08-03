@@ -10,7 +10,6 @@
             [lt.objs.console :as console]
             [clojure.set]
             [cljs.reader :as reader]
-            [lt.util.load :as load]
             [lt.util.js :refer [now]]
             [lt.util.cljs])
   (:require-macros [lt.macros :refer [behavior]]))

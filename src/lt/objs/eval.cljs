@@ -2,10 +2,7 @@
   "Provide objects for doing evals through clients and displaying inline
   results from evals"
   (:require [lt.object :as object]
-            [lt.objs.canvas :as canvas]
             [lt.objs.editor :as ed]
-            [lt.objs.menu :as menu]
-            [lt.objs.files :as files]
             [lt.objs.editor.pool :as pool]
             [lt.objs.clients :as clients]
             [lt.util.cljs]

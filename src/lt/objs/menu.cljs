@@ -5,7 +5,6 @@
             [lt.objs.keyboard :as keyboard]
             [lt.objs.platform :as platform]
             [lt.objs.repo :as repo]
-            [lt.objs.app :as app]
             [lt.util.dom :as dom]
             [lt.util.bridge :as bridge]
             [clojure.string :as string])

@@ -165,3 +165,36 @@ test('a compound token from a legacy mode is translated, not warned about', asyn
         .toContain('cm-property');
     expect(warnings.join(' | ')).not.toContain('Unknown highlighting tag');
 });
+
+test('a language with no mode still knows what a comment looks like', async ({ window }) => {
+    // Elixir and Zig have a tree-sitter grammar and no CodeMirror mode, which
+    // used to mean the mime was `plaintext` and `Toggle comment` did nothing —
+    // the worse of the two states, because the colours said the language was
+    // supported. What CodeMirror needs is not a tokenizer but `languageData`,
+    // so that is what they have.
+    //
+    // Toggling rather than reading the table: `commentTokens` sitting in an
+    // object proves it was written, not that anything reads it.
+    const commented = await window.evaluate(async () => {
+        const w = globalThis as any;
+        const out: Record<string, string> = {};
+        for (const [mode, line] of [['elixir', 'x = 1'], ['zig', 'const x = 1;'],
+                                    ['plaintext', 'x = 1']] as [string, string][]) {
+            const host = document.createElement('div');
+            document.body.appendChild(host);
+            const ed = w.ltCm6Editor.makeCm6Editor(host, { value: line + '\n' });
+            ed.setOption('mode', mode);
+            ed.refresh();
+            ed.lineComment({ line: 0, ch: 0 }, { line: 0, ch: line.length });
+            out[mode] = ed.getValue().split('\n')[0];
+            host.remove();
+        }
+        return out;
+    });
+
+    expect(commented.elixir).toBe('# x = 1');
+    expect(commented.zig).toBe('// const x = 1;');
+    // The control: plaintext has no comment syntax and must stay untouched, so
+    // the two above are the language data being read rather than a default.
+    expect(commented.plaintext).toBe('x = 1');
+});

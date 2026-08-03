@@ -3,7 +3,6 @@
   Children divs are #multi (tabs), #side, #right-bar and #bottombar"
   (:refer-clojure :exclude [rem])
   (:require [lt.object :as object]
-            [lt.objs.context :as ctx]
             [lt.util.dom :refer [$ append] :as dom])
   (:require-macros [lt.macros :refer [behavior]]))
 

@@ -2,17 +2,12 @@
   "Provide sidebar for finding and opening files"
   (:require [lt.object :as object]
             [lt.objs.workspace :as workspace]
-            [lt.objs.context :as ctx]
             [lt.objs.sidebar.command :as cmd]
             [lt.objs.files :as files]
-            [lt.objs.notifos :as notifos]
-            [lt.objs.keyboard :as keyboard]
             [lt.objs.opener :as opener]
             [lt.objs.sidebar :as sidebar]
             [lt.ui :as ui]
             [lt.ui.host :as host]
-            [lt.util.dom :as dom]
-            [lt.util.load :as load]
             [lt.objs.thread :as thread])
   (:require-macros [lt.macros :refer [behavior]]))
 

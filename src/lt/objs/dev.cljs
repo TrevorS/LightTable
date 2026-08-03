@@ -5,8 +5,7 @@
             [lt.objs.cache :as cache]
             [lt.objs.notifos :as notifos]
             [lt.objs.command :as cmd]
-            [lt.util.bridge :as bridge]
-            [lt.objs.app :as app]))
+            [lt.util.bridge :as bridge]))
 
 (cmd/command {:command :dev-inspector
               :desc "Dev: Open Developer Tools"

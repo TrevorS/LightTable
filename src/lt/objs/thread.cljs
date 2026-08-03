@@ -2,7 +2,6 @@
   "Provide worker thread for background processes"
   (:require [lt.object :as object]
             [lt.objs.files :as files]
-            [lt.objs.platform :as platform]
             [lt.objs.console :as console]
             [lt.util.bridge :as bridge]
             [cljs.reader :as reader])

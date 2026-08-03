@@ -27,7 +27,7 @@ Source: [`src/lt/objs/editor/pool.cljs`](https://github.com/TrevorS/LightTable/b
 
 Return editor objects that edit given path
 
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor/pool.cljs#L50)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor/pool.cljs#L49)
 
 <a id="var-containing-path"></a>
 
@@ -39,7 +39,7 @@ Return editor objects that edit given path
 
 Return editor objects that edit paths containing given path string
 
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor/pool.cljs#L57)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor/pool.cljs#L56)
 
 <a id="var-create"></a>
 
@@ -51,7 +51,7 @@ Return editor objects that edit paths containing given path string
 
 Create a :lt.objs.editor/editor object with given info map and add it to current pool
 
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor/pool.cljs#L176)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor/pool.cljs#L175)
 
 <a id="var-focus-last"></a>
 
@@ -63,7 +63,7 @@ Create a :lt.objs.editor/editor object with given info map and add it to current
 
 Focus the most recently active editor.
 
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor/pool.cljs#L79)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor/pool.cljs#L78)
 
 <a id="var-last-active"></a>
 
@@ -75,7 +75,7 @@ Focus the most recently active editor.
 
 Return current editor object (last active in pool)
 
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor/pool.cljs#L72)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor/pool.cljs#L71)
 
 <a id="var-unsaved"></a>
 
@@ -87,4 +87,4 @@ Return current editor object (last active in pool)
 
 Return truthy if any editors are currently dirty/unsaved?
 
-[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor/pool.cljs#L45)
+[source](https://github.com/TrevorS/LightTable/blob/develop/src/lt/objs/editor/pool.cljs#L44)

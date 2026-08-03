@@ -1,7 +1,6 @@
 (ns lt.objs.search
   "Provide search and replace functionality across files"
   (:require [lt.object :as object]
-            [lt.objs.proc :as proc]
             [lt.objs.tabs :as tabs]
             [lt.objs.files :as files]
             [lt.objs.command :as cmd]
@@ -13,8 +12,11 @@
             [lt.objs.workspace :as workspace2]
             [lt.objs.workspace-edit :as workspace-edit]
             [lt.ui :as ui]
+            ;; No alias: required so it loads, not so it can be called. The
+            ;; process client registers behaviors and nothing else in the
+            ;; bundle reaches it — `lt.core-test` is what says so.
+            [lt.objs.proc]
             [lt.util.js]
-            [lt.util.load :as load]
             [clojure.string :as string]
             [lt.objs.editor :as editor]
             [lt.objs.editor.pool :as pool])

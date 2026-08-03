@@ -6,7 +6,6 @@
             [lt.objs.command :as cmd]
             [lt.objs.app :as app]
             [lt.objs.keyboard :as keyboard]
-            [lt.util.load :as load]
             [lt.window.modules :as window]
             [lt.ui :as ui]
             [lt.ui.filter :as filter-view]

@@ -1,15 +1,10 @@
 (ns lt.objs.style
   "Provide styling behaviors, themes and skins"
   (:require [lt.object :as object]
-            [lt.objs.sidebar.command :as cmd]
             [lt.objs.app :as app]
             [lt.objs.tabs :as tabs]
-            [lt.objs.context :as ctx]
             [lt.objs.plugins :as plugins]
             [lt.objs.editor :as editor]
-            [lt.objs.editor.pool :as pool]
-            [lt.objs.files :as files]
-            [lt.objs.deploy :as deploy]
             [lt.util.dom :as dom]
             [lt.util.load :as load]
             [lt.ui :as ui]

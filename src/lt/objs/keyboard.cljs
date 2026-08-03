@@ -7,8 +7,7 @@
             [lt.objs.command :as cmd]
             [lt.objs.platform :as platform]
             [lt.objs.context :as ctx]
-            [lt.util.js :refer [wait]]
-            [lt.util.events :as utev])
+            [lt.util.js :refer [wait]])
   (:require-macros [lt.macros :refer [behavior]]))
 
 (def capturing? true)

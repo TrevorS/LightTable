@@ -3,7 +3,6 @@
   (:require [lt.object :as object]
             [lt.objs.command :as cmd]
             [lt.objs.editor :as editor]
-            [lt.objs.editor.pool :as pool]
             [lt.objs.context :as ctx]
             [lt.objs.keyboard :as keyboard :refer [passthrough]])
   (:require-macros [lt.macros :refer [behavior]]))

@@ -5,7 +5,6 @@
             [lt.objs.document :as doc]
             [lt.objs.keyboard :as kb]
             [lt.objs.files :as files]
-            [lt.objs.canvas :as canvas]
             [lt.objs.sidebar.command :as cmd]
             [lt.objs.popup :as popup]
             [lt.objs.notifos :as notifos]

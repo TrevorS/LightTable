@@ -5,16 +5,17 @@
             [lt.objs.editor.pool :as pool]
             [lt.objs.document :as doc]
             [lt.objs.sidebar.command :as cmd]
-            [lt.objs.editor.file :as fed]
             [lt.objs.workspace :as workspace]
             [lt.objs.dialogs :as dialogs]
             [lt.objs.popup :as popup]
             [lt.objs.tabs :as tabs]
-            [lt.objs.app :as app]
             [lt.objs.console :as console]
             [lt.objs.notifos :as notifos]
             [lt.objs.files :as files]
-            [lt.util.dom :as dom]
+            ;; No alias: required so it loads, not so it can be called. The
+            ;; file editor is the thing an opened path becomes, and nothing
+            ;; else in the bundle reaches it — `lt.core-test` is what says so.
+            [lt.objs.editor.file]
             [lt.util.cljs])
   (:use-macros [lt.macros :only [behavior]]))
 

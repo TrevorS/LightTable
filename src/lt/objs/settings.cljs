@@ -13,8 +13,6 @@
             [lt.objs.editor.pool :as pool]
             [lt.objs.workspace :as workspace]
             [clojure.string :as string]
-            [lt.objs.sidebar.command :as scmd]
-            [lt.util.dom :as dom]
             [lt.util.cljs :refer [str-contains?]]
             [cljs.reader :as reader])
   (:require-macros [lt.macros :refer [behavior]]))

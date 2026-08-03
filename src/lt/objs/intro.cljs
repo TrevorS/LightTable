@@ -5,7 +5,6 @@
             [lt.objs.repo :as repo]
             [lt.objs.cli :as cli]
             [lt.objs.command :as cmd]
-            [lt.objs.app :as app]
             [lt.objs.tabs :as tabs]
             [lt.util.dom :as dom]
             [lt.ui :as ui])

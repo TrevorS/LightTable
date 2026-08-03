@@ -15,6 +15,11 @@
 // running one mode inside another — and none belongs to a language this editor
 // supports first class.
 //
+// Two are here for the opposite reason. Elixir and Zig never had a CodeMirror
+// mode and no longer need one, because tree-sitter colours them — but a
+// language is not only colouring, and what a comment looks like still has to
+// be written down somewhere. See METADATA.
+//
 // Generated once from the installed packages and then edited by hand; the
 // generator is not kept, because this is a list that changes when someone
 // decides it should rather than when a dependency moves.
@@ -438,6 +443,49 @@ const FALLBACK: Record<string, string | null> = {
     'yaml-frontmatter': 'markdown'
 };
 
+/**
+ * Languages whose colouring is tree-sitter's, and whose *editing* still has to
+ * come from somewhere.
+ *
+ * A language is two things that were always bundled together and are not the
+ * same. One is colouring, which tree-sitter now does better than any of these
+ * modes could — see `lt.objs.editor.treesitter`. The other is what a comment
+ * looks like, how far a block indents, which brackets close: facts about the
+ * language that no parse tree of a *particular file* answers, and that
+ * CodeMirror reads out of `languageData`.
+ *
+ * Elixir and Zig had neither. They got a grammar and were suddenly the worse
+ * state of the two: coloured correctly, so they looked supported, while
+ * `Toggle comment` did nothing because plaintext has no comment syntax to
+ * toggle. This is the missing half, and it is data rather than a tokenizer
+ * because the tokenizer is not what was missing.
+ *
+ * The token function consumes each line and returns no style on purpose. This
+ * has to be a `Language` for CodeMirror to read `languageData` from it at all,
+ * and anything it coloured would be a second opinion competing with the tree.
+ */
+const METADATA: Record<string, Record<string, unknown>> = {
+    elixir: {
+        commentTokens: { line: '#' },
+        indentOnInput: /^\s*(end|else|catch|rescue|after)$/,
+        closeBrackets: { brackets: ['(', '[', '{', '"', "'"] }
+    },
+    zig: {
+        commentTokens: { line: '//' },
+        indentOnInput: /^\s*\}$/,
+        closeBrackets: { brackets: ['(', '[', '{', '"'] }
+    }
+};
+
+/** A language that is nothing but its `languageData`. */
+function metadataOnly(name: string, data: Record<string, unknown>): Extension {
+    return StreamLanguage.define({
+        name,
+        token(stream) { stream.skipToEnd(); return null; },
+        languageData: data
+    });
+}
+
 const loaded = new Map<string, Extension>();
 
 /**
@@ -569,7 +617,8 @@ const MIME_MODES: Record<string, string> = {
  */
 function resolve(name: string): string {
     const stripped = (name || '').replace(/^text\/x-|^application\/x-|^text\//, '').toLowerCase();
-    if (stripped in LEZER || stripped in LEGACY || stripped in FALLBACK) return stripped;
+    if (stripped in LEZER || stripped in LEGACY || stripped in FALLBACK
+        || stripped in METADATA) return stripped;
     return MIME_MODES[(name || '').toLowerCase()] ?? stripped;
 }
 
@@ -602,6 +651,8 @@ export function modeExtension(name: string): Extension {
         if (parser && typeof parser.token === 'function') {
             extension = StreamLanguage.define({ ...parser, tokenTable: { ...LEGACY_TOKENS, ...parser.tokenTable } });
         }
+    } else if (METADATA[mode]) {
+        extension = metadataOnly(mode, METADATA[mode]);
     } else if (mode in FALLBACK) {
         const to = FALLBACK[mode];
         extension = to ? modeExtension(to) : [];
@@ -613,7 +664,8 @@ export function modeExtension(name: string): Extension {
 
 /** Every mode name this can answer for. */
 export function knownModes(): string[] {
-    return [...new Set([...Object.keys(LEZER), ...Object.keys(LEGACY), ...Object.keys(FALLBACK)])].sort();
+    return [...new Set([...Object.keys(LEZER), ...Object.keys(LEGACY),
+                        ...Object.keys(METADATA), ...Object.keys(FALLBACK)])].sort();
 }
 
 /** The ones with no CodeMirror 6 grammar, and what they fall back to. */

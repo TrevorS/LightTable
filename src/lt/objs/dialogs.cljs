@@ -1,7 +1,6 @@
 (ns lt.objs.dialogs
   "Provide Electron-based dialogs"
   (:require [lt.object :as object]
-            [lt.util.dom :as dom]
             [lt.util.bridge :as bridge])
   (:require-macros [lt.macros]))
 

@@ -1,12 +1,10 @@
 (ns lt.objs.proc
   "Provide fns to spawn processes and manage them. Used by language plugins"
   (:require [lt.object :as object]
-            [lt.objs.clients :as clients]
             [lt.objs.files :as files]
             [lt.objs.platform :as platform]
             [lt.objs.app :as app]
             [lt.objs.notifos :as notifos]
-            [lt.util.load :as load]
             [clojure.string :as string]
             [lt.util.bridge :as bridge])
   (:require-macros [lt.macros :refer [behavior]]))

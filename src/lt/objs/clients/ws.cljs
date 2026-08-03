@@ -4,8 +4,7 @@
   (:require [lt.object :as object]
             [lt.objs.files :as files]
             [lt.objs.clients :as clients]
-            [lt.util.bridge :as bridge]
-            [lt.util.load :as load])
+            [lt.util.bridge :as bridge])
   (:require-macros [lt.macros :refer [behavior]]))
 
 (def sockets (atom {}))
