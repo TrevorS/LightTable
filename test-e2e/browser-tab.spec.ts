@@ -56,9 +56,15 @@ test('and redrawing the chrome does not replace the webview', async ({ window })
     await expect.poll(async () => await window.locator('#browser .url-bar').inputValue())
         .toBe('https://example.invalid/one');
 
-    expect(await evalData(window,
+    // Polled rather than read once. The url-bar settling says *a* render
+    // finished, not that no further render is queued, and between two of them
+    // `querySelector` can return nothing — which reads back as nil and looks
+    // exactly like a webview that was replaced. Polling cannot hide a real
+    // replacement: a fresh webview has no `ltProbe` and never grows one, so
+    // this still fails, it just fails for the right reason.
+    await expect.poll(async () => await evalData(window,
         '(.-ltProbe ^js (js/document.querySelector "#browser webview"))'),
-    'the webview was torn down and rebuilt by a redraw').toBe('original');
+    { message: 'the webview was torn down and rebuilt by a redraw' }).toBe('original');
 
     // And again, several times over, because a key that is wrong intermittently
     // is worse than one that is wrong every time.
@@ -67,7 +73,7 @@ test('and redrawing the chrome does not replace the webview', async ({ window })
     }
     await expect.poll(async () => await window.locator('#browser .url-bar').inputValue())
         .toBe('https://example.invalid/5');
-    expect(await evalData(window,
+    await expect.poll(async () => await evalData(window,
         '(.-ltProbe ^js (js/document.querySelector "#browser webview"))')).toBe('original');
     expect(await window.locator('#browser webview').count()).toBe(1);
 

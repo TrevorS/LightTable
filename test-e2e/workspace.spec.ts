@@ -17,7 +17,42 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { test, expect, evalClj, scratchDir } from './fixtures';
 
+// `.wstree__tree` rather than `.wstree` throughout, and it is not cosmetic.
+// The panel holds *either* the tree or the list of workspaces you can switch
+// to — `lt.ui.view/workspace` picks one — and the recents list draws
+// `row/list-row`, so `.wstree .row` matches rows belonging to a view that may
+// not be the one on screen a moment later. Playwright resolves such a row,
+// starts its actionability checks, and the view swaps underneath it:
+//
+//     waiting for locator('#side .wstree .row').filter({ hasText: '…' })
+//     element was detached from the DOM, retrying
+//
+// which is what `a file is renamed in the row it is in` did on the first
+// attempt of six consecutive Linux CI runs, passing on retry in two seconds
+// every time. Scoping the locator to the tree makes the ambiguity impossible
+// to hit.
 
+
+
+test('the tree and the recents list are never both drawn', async ({ window }) => {
+    // The invariant the locators above depend on, asserted rather than assumed.
+    // `lt.ui.view/workspace` shows one or the other, and both draw `row`, so a
+    // selector scoped only to `.wstree` matches rows from whichever view is not
+    // on screen the moment it swaps.
+    await evalClj(window, '(do (lt.objs.command/exec! :workspace.show :force) :shown)');
+    await evalClj(window, `
+        (do (object/raise lt.objs.workspace/current-ws :add.folder! "${scratchDir('ws-views')}") :added)`);
+    await expect(window.locator('#side .wstree__tree')).toHaveCount(1);
+
+    await evalClj(window, '(do (lt.actions/dispatch! [[:workspace/show-recents]]) :recents)');
+    await expect(window.locator('#side .wstree__tree')).toHaveCount(0);
+    // And the recents list draws rows of its own, which is the whole point: an
+    // unscoped `.wstree .row` would match these.
+    expect(await window.locator('#side .wstree .row').count()).toBeGreaterThan(0);
+
+    await evalClj(window, '(do (lt.actions/dispatch! [[:workspace/show-tree]]) :tree)');
+    await expect(window.locator('#side .wstree__tree')).toHaveCount(1);
+});
 
 test('a folder can be taken out of the workspace again', async ({ window, ltErrors }) => {
     const dir = scratchDir('ws');
@@ -60,14 +95,14 @@ test('the tree draws the folder, and opening it reads the folder', async ({ wind
     await evalClj(window, `
         (do (object/raise lt.objs.workspace/current-ws :add.folder! "${dir}") :added)`);
 
-    const names = () => window.locator('#side .wstree .tree__name').allInnerTexts();
+    const names = () => window.locator('#side .wstree__tree .tree__name').allInnerTexts();
     await expect.poll(names).toContain(path.basename(dir));
 
     // Closed, so what is in it is not drawn — not hidden, not there. That is
     // the difference between a tree of data and a tree of nodes.
     expect(await names()).not.toContain('top.txt');
 
-    await window.locator('#side .wstree .row', { hasText: path.basename(dir) }).first().click();
+    await window.locator('#side .wstree__tree .row', { hasText: path.basename(dir) }).first().click();
     await expect.poll(names).toContain('top.txt');
     expect(await names()).toContain('inner');
     // Folders before files, each by name — decided once, where the directory is
@@ -79,7 +114,7 @@ test('the tree draws the folder, and opening it reads the folder', async ({ wind
     expect(drawn).not.toContain('deep.txt');
 
     // Clicking a file opens it, which is the other half of what a tree is for.
-    await window.locator('#side .wstree .row', { hasText: 'top.txt' }).first().click();
+    await window.locator('#side .wstree__tree .row', { hasText: 'top.txt' }).first().click();
     await expect.poll(async () => await evalClj(window,
         `(boolean (seq (lt.objs.editor.pool/by-path "${path.join(dir, 'top.txt')}")))`)).toBe('true');
 
@@ -133,7 +168,7 @@ test('and what a menu item does is the action it dispatches', async ({ window, l
     await evalClj(window, '(do (lt.objs.command/exec! :workspace.show :force) :shown)');
     await evalClj(window, `
         (do (object/raise lt.objs.workspace/current-ws :add.folder! "${dir}") :added)`);
-    await window.locator('#side .wstree .row', { hasText: path.basename(dir) }).first().click();
+    await window.locator('#side .wstree__tree .row', { hasText: path.basename(dir) }).first().click();
 
     const before = (await ltErrors()).length;
     await evalClj(window, `(do (lt.actions/dispatch! [[:tree/new-file "${dir}"]]) :new)`);
@@ -146,7 +181,7 @@ test('and what a menu item does is the action it dispatches', async ({ window, l
         (boolean (seq (lt.objs.editor.pool/by-path "${path.join(dir, 'untitled.txt')}")))`)).toBe('true');
 
     await evalClj(window, '(do (lt.objs.command/exec! :workspace.rename.cancel!) :cancelled)');
-    await expect.poll(async () => await window.locator('#side .wstree .tree__name').allInnerTexts())
+    await expect.poll(async () => await window.locator('#side .wstree__tree .tree__name').allInnerTexts())
         .toContain('untitled.txt');
 
     const after = await ltErrors();
@@ -170,10 +205,10 @@ test('a file is renamed in the row it is in', async ({ window }) => {
     await evalClj(window, '(do (lt.objs.command/exec! :workspace.show :force) :shown)');
     await evalClj(window, `
         (do (object/raise lt.objs.workspace/current-ws :add.folder! "${dir}") :added)`);
-    await window.locator('#side .wstree .row', { hasText: path.basename(dir) }).first().click();
+    await window.locator('#side .wstree__tree .row', { hasText: path.basename(dir) }).first().click();
 
     const input = window.locator('#side .wstree .tree__rename');
-    const names = () => window.locator('#side .wstree .tree__name').allInnerTexts();
+    const names = () => window.locator('#side .wstree__tree .tree__name').allInnerTexts();
     await expect.poll(names).toContain('before.txt');
 
     await evalClj(window, `

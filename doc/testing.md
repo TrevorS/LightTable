@@ -220,6 +220,46 @@ error. The exceptions are real but few: driving a second window before its
 control surface exists, and reading the DOM, which has no ClojureScript
 equivalent.
 
+## A locator that matches two views
+
+Six consecutive Linux CI runs reported `a file is renamed in the row it is in`
+as flaky. Retries hid it: the first attempt timed out after thirty seconds,
+the retry passed in two, every time. macOS never failed.
+
+The message was the whole answer, once it was read rather than summarised:
+
+```
+waiting for locator('#side .wstree .row').filter({ hasText: '…' })
+element was detached from the DOM, retrying
+```
+
+`lt.ui.view/workspace` draws **either** the tree **or** the list of workspaces
+you can switch to, and both draw `row/list-row`. So `.wstree .row` matched rows
+belonging to whichever view was not going to be on screen: Playwright resolved
+one, began its actionability checks, and the view swapped underneath it.
+Scoping every one of them to `.wstree__tree` makes that impossible to hit, and
+`the tree and the recents list are never both drawn` asserts the invariant the
+scoping relies on — including that the recents list really does draw `.row`,
+which is what made the ambiguity reachable.
+
+Worth recording what this was **not**, because each was checked and none of it
+needs checking again: the rows are keyed and an identical re-render keeps every
+node; a click survives the tree being re-rendered every 60ms; `:tree/roots`
+prunes the nodes of a removed root rather than leaving them behind; and
+`:tree/changed` on an unloaded directory is a no-op.
+
+The lesson is narrower than "avoid flaky selectors". **A selector scoped to a
+container that holds one of two things is ambiguous by construction**, and the
+symptom is a detachment rather than a wrong match — so it reads as timing and
+gets retried instead of fixed.
+
+The same run reported `and redrawing the chrome does not replace the webview`
+flaky, for a different reason with the same shape: it read `querySelector
+("#browser webview")` once, and between two renders that can return nothing,
+which comes back as nil and is indistinguishable from a webview that was
+replaced. It polls now. Polling cannot hide the failure it is there to catch —
+a replacement webview has no probe on it and never grows one.
+
 ## The scripts are TypeScript
 
 Everything in `script/` is `.mts`, which node runs directly by stripping the
