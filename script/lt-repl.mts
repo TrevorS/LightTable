@@ -47,7 +47,23 @@ interface CdpTarget {
     webSocketDebuggerUrl: string;
 }
 
-const PORT = 8315;
+/**
+ * The DevTools port to attach to, which must be the one the app opened —
+ * `LT_REMOTE_DEBUGGING_PORT`, exactly as `config.ts` reads it.
+ *
+ * This was the constant 8315 while the application had already been made
+ * configurable, and the two disagreeing is worse than it sounds. The port is
+ * *fixed*, so a second editor cannot have it: whichever one started first keeps
+ * it, and every later instance is unreachable. Nothing says so. A probe against
+ * a freshly launched build is then answered by the editor that has been open
+ * since this morning, and it answers perfectly — the wrong build's PATH,
+ * console and behaviors, reported as the new one's.
+ *
+ * That is not hypothetical. It is how a fix that worked was measured as broken,
+ * and then looked for in the wrong place. So: set this to reach a second
+ * instance, and set it on the instance too.
+ */
+const PORT = Number(process.env['LT_REMOTE_DEBUGGING_PORT']) || 8315;
 const STATE = path.join(os.tmpdir(), 'lt-repl.json');
 const EVAL_TIMEOUT_MS = 15000;
 
