@@ -41,6 +41,23 @@ is what found it.
 
 ---
 
+### `notify-init-window` tells the main process something nothing uses
+
+`lt.objs.app/notify-init-window` sends `initWindow` over the bridge on every
+`:init`, and the main process no longer listens. It used to answer by attaching a
+focus-forwarding listener — a *second* one, since `createWindow` already attaches
+exactly that, so every focus was reported to the renderer twice. It also
+accumulated, once per load, which became reachable the moment a window could
+reload rather than only ever load once.
+
+The duplicate handler is gone. What is left is a behavior, a bridge capability
+(`window.init`) and an ipc channel that carry no information. Removing it means
+touching `default.behaviors`, and renaming or unwiring a behavior has twice
+silently detached one in this repository — so it is written down rather than done
+in a commit about white screens.
+
+---
+
 ## Open — claims the code does not keep
 
 ### Syntax highlighting is reported to go, and has not been caught

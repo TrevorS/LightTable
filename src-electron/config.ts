@@ -122,3 +122,44 @@ export function resolveDebugPort(env: Record<string, string | undefined>): Debug
     }
     return { port, reason: 'configured' };
 }
+
+/** How a window can fail badly enough that it stops being a window. */
+export type WindowFailure = 'gone' | 'load' | 'unresponsive';
+
+/** What to do about it. */
+export type Recovery = 'reload' | 'ask' | 'destroy';
+
+/**
+ * What to do when a window fails: reload it, ask, or dispose of it.
+ *
+ * Here rather than inside the event handler in main.ts because it is the part
+ * with the reasoning in it, and because the three cases that matter are awkward
+ * to reach by hand — a renderer has to actually die twice, without loading in
+ * between, on a build that is not headless.
+ *
+ * `failures` counts how many times this window has failed *without a successful
+ * load in between*, this one included, so the first call for a window is 1.
+ *
+ * - **A crash or a failed load reloads, once.** Asking preserves nothing: the
+ *   renderer that had the unsaved work is already gone, and Light Table restores
+ *   the open files from the session on load. VS Code asks instead, because its
+ *   editor state lives in the renderer it is abandoning; here it is on disk.
+ *
+ * - **The second one asks**, because a renderer that dies while starting would
+ *   otherwise reload, die and reload for ever — a worse failure than a blank
+ *   window, since it never settles and burns a core doing it.
+ *
+ * - **Unresponsive never reloads.** That renderer is alive and may come back, so
+ *   reloading it would be throwing away work that is still there. VS Code offers
+ *   Keep Waiting for the same reason.
+ *
+ * - **Headless never asks.** A modal in a test run is a hang rather than a
+ *   failure, and nobody is there to click it. It is the dialog that is skipped,
+ *   not the recovery: a headless window still reloads on its first crash, which
+ *   is both the right behaviour and the reason the reload path is reachable from
+ *   a test at all.
+ */
+export function recoveryFor(kind: WindowFailure, failures: number, isHeadless: boolean): Recovery {
+    if (kind !== 'unresponsive' && failures <= 1) return 'reload';
+    return isHeadless ? 'destroy' : 'ask';
+}

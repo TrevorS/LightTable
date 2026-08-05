@@ -15,7 +15,8 @@
 import * as electron from 'electron';
 import * as fs from 'node:fs';
 import { parseArgs } from 'node:util';
-import { windowOptions, resolveDebugPort, headless } from './config';
+import { windowOptions, resolveDebugPort, headless, recoveryFor } from './config';
+import type { WindowFailure } from './config';
 
 const { app, BrowserWindow, ipcMain, dialog, Menu, MenuItem, shell, clipboard } = electron;
 
@@ -97,6 +98,130 @@ const USAGE = [
 // Keep a global reference of the window object, if you don't, the window will
 // be closed automatically when the javascript object is GCed.
 const windows: Record<number, electron.BrowserWindow | null> = {};
+
+/**
+ * Tell a window something, if there is still anything there to tell.
+ *
+ * Every `webContents.send` in this file used to be bare, and a send to a
+ * renderer that is gone **throws** — `Render frame was disposed before
+ * WebFrameMain could be accessed`. Which turns one dead renderer into a
+ * main-process exception on the next window event, from a handler that has no
+ * business failing: blurring a window should not be able to raise anything.
+ *
+ * Not `if (window.webContents)`, which is what the win32 branch checked and is
+ * not a check at all — `webContents` is a getter that is always truthy,
+ * including on a window whose renderer has died. It read like a guard, which is
+ * worse than not having one.
+ *
+ * **And not `isDestroyed()` alone either**, which is what this tried first and
+ * what a crashed renderer walks straight through: the *frame* is disposed while
+ * the `WebContents` object is still very much alive, so both `isDestroyed()`
+ * calls answer false and the send throws anyway. Verified by killing a renderer
+ * with `kill -9` and watching it come back out of here.
+ *
+ * So `isCrashed()`, which is the state Electron actually exposes for this — and
+ * then a `try` around the send regardless. There is no predicate that makes a
+ * cross-process call safe, and the thing being protected is a blur handler:
+ * nothing about switching windows should be able to raise.
+ */
+function sendTo(window: electron.BrowserWindow, channel: string, ...args: unknown[]): void {
+    if (window.isDestroyed() || window.webContents.isDestroyed() || window.webContents.isCrashed()) return;
+    try {
+        window.webContents.send(channel, ...args);
+    } catch {
+        // A renderer that went away between the check and the send. Nothing to
+        // tell and nobody to tell it to.
+    }
+}
+
+/**
+ * What to do when a window's renderer dies, wedges, or never loads.
+ *
+ * There was nothing here, and nothing is what it looked like: the renderer
+ * process goes away, the window stays exactly where it was — a white rectangle,
+ * the right size, with a title bar — and the application carries on as though it
+ * has a window. Nothing is logged and nothing is said. It is indistinguishable
+ * from the editor having hung, so the reasonable thing to do is force-quit it,
+ * and then it looks like Light Table crashes on startup.
+ *
+ * This is VS Code's `onWindowError`, read from `windowImpl.ts`: the same three
+ * events, the same native dialog, and `destroy()` rather than `close()` for the
+ * same reason.
+ *
+ * **It reloads rather than asking**, the first time. Asking looks more careful
+ * and preserves nothing: a dead renderer has already lost whatever was unsaved,
+ * so there is no choice being offered — only a dialog between the user and a
+ * working editor. Light Table restores the open files from the session on load,
+ * so reloading is close to where they were. VS Code asks because its editor
+ * state lives in the renderer it is about to abandon; here the session is on
+ * disk.
+ *
+ * **Then it stops.** A renderer that dies *while starting* would otherwise
+ * reload, die, and reload for ever, which is a worse failure than a blank
+ * window because it never settles and burns a core doing it. The second failure
+ * for a window asks instead, and the count is per window and not global so one
+ * bad window does not spend another's chance.
+ *
+ * **A dialog that is not parented to the window.** Attached to a `BrowserWindow`
+ * a message box is a sheet, and a sheet on a window whose renderer is gone does
+ * not draw — checked, and the reason the first version of this appeared to do
+ * nothing at all. Unparented it is application-modal, which is both visible and
+ * closer to true: the window it would be attached to is the thing that failed.
+ *
+ * **`destroy()`, not `close()`.** `close` is intercepted below and handed to the
+ * renderer, because Light Table asks the editor about unsaved changes before
+ * letting a window go. With no renderer nobody answers, so `close()` on a dead
+ * window does nothing at all — which is how a blank window becomes one that
+ * cannot even be dismissed.
+ *
+ * **And nothing modal when headless.** A dialog in a test run is a hang rather
+ * than a failure, and there is no one to click it. VS Code makes the same
+ * exception for its smoke driver. The test still hears about it, because the log
+ * line happens either way — `windows.spec.ts` asserts that a window reports no
+ * errors while starting, and this is exactly the kind of error that means.
+ */
+const windowFailures: Record<number, number> = {};
+
+function onWindowError(window: electron.BrowserWindow, kind: WindowFailure, what: string,
+                       details: { reason?: string; exitCode?: number | null }): void {
+    const said = `reason: ${details.reason ?? '<unknown>'}, code: ${details.exitCode ?? '<unknown>'}`;
+    console.error(`window ${window.id}: ${what} (${said})`);
+
+    if (window.isDestroyed()) return;
+
+    const failures = (windowFailures[window.id] ?? 0) + 1;
+    windowFailures[window.id] = failures;
+
+    const recovery = recoveryFor(kind, failures, headless(process.env));
+    console.error(`window ${window.id}: ${recovery}`);
+
+    if (recovery === 'reload') { window.reload(); return; }
+    if (recovery === 'destroy') { window.destroy(); return; }
+
+    const recoverable = kind !== 'unresponsive';
+
+    // Asynchronous on purpose: the synchronous variant blocks the main process,
+    // and this can arrive while another window is mid-event.
+    dialog.showMessageBox({
+        type: 'warning',
+        buttons: ['Reload', 'Close'],
+        defaultId: 0,
+        cancelId: 1,
+        message: `The Light Table window ${what}`,
+        detail: `${said}\n\n`
+                + (recoverable
+                   ? 'It has already been reloaded once and failed again, so this may not be '
+                     + 'recoverable. '
+                   : '')
+                + 'Reloading starts the editor again in this window and restores the files '
+                + 'you had open from the session. Unsaved changes since the last save are '
+                + 'gone either way.'
+    }).then(({ response }) => {
+        if (window.isDestroyed()) return;
+        if (response === 0) window.reload();
+        else window.destroy();
+    }).catch((e: unknown) => { console.error(`window ${window.id}: could not ask`, e); });
+}
 global.browserOpenFiles = []; // Track files for open-file event
 
 const packageJSON = require(__dirname + '/package.json');
@@ -108,58 +233,109 @@ function createWindow(): electron.BrowserWindow {
     // taught us the difference.
     // A hidden window under LT_HEADLESS, which is how a test run stops opening
     // windows across somebody's desktop. See config.ts.
+    // Created hidden and shown once it has painted, which is the other white
+    // screen. Electron shows a window as soon as it exists, and an Electron
+    // window with nothing drawn in it yet is **white** — so every launch flashed
+    // a white rectangle the size of the editor before the dark skin arrived.
+    // `backgroundColor` in browserWindowOptions makes that gap the right colour
+    // rather than white; not showing until `ready-to-show` means there is no gap
+    // to colour. Both, because they fail differently.
     const window = new BrowserWindow(
-        windowOptions(packageJSON.browserWindowOptions, __dirname,
-                      headless(process.env) ? { show: false } : {}));
+        windowOptions(packageJSON.browserWindowOptions, __dirname, { show: false }));
     windows[window.id] = window;
-    // A hidden window that focuses itself takes the keyboard from whatever you
-    // were typing in, which under a test run is your editor.
-    if (!headless(process.env)) window.focus();
+
+    if (!headless(process.env)) {
+        let shown = false;
+        const reveal = () => {
+            if (shown || window.isDestroyed()) return;
+            shown = true;
+            window.show();
+            // A hidden window that focuses itself takes the keyboard from
+            // whatever you were typing in, which under a test run is your
+            // editor. So this waits for the window to be shown at all.
+            window.focus();
+        };
+        window.once("ready-to-show", reveal);
+        // And a deadline, for the same reason lt.objs.proc/on-env-ready has one:
+        // `ready-to-show` is tied to the first paint, so anything that stops the
+        // renderer painting — a script that throws while starting, a stylesheet
+        // that never arrives — would leave the window hidden for ever. An
+        // application that does not appear is a worse bug than one that appears
+        // unpainted, and it is the same bug class as a gate only success opens.
+        setTimeout(reveal, 4000);
+    }
     window.webContents.on("will-navigate", function(e) {
         e.preventDefault();
-        window.webContents.send("app", "will-navigate");
+        sendTo(window, "app", "will-navigate");
     });
 
-    if (process.platform == 'win32') {
-        window.on("blur", function() {
-            if (window.webContents)
-                window.webContents.send("app", "blur");
-        });
-        window.on("focus", function() {
-            if (window.webContents)
-                window.webContents.send("app", "focus");
-        });
-    } else {
-        window.on("blur", function() {
-            window.webContents.send("app", "blur");
-        });
-        window.on("focus", function() {
-            window.webContents.send("app", "focus");
-        });
-    }
+    // A dead, wedged or unloadable renderer, which used to be a white rectangle
+    // and silence. See onWindowError.
+    window.webContents.on("render-process-gone", function(_e, details) {
+        onWindowError(window, 'gone', "terminated unexpectedly",
+                      { reason: details.reason, exitCode: details.exitCode });
+    });
+    window.webContents.on("did-fail-load", function(_e, errorCode, errorDescription, url, isMainFrame) {
+        // Subframe failures are not the window failing, and `-3` is
+        // ERR_ABORTED — what a navigation that was deliberately replaced
+        // reports, including the `will-navigate` interception just above.
+        if (!isMainFrame || errorCode === -3) return;
+        onWindowError(window, 'load', "could not load", { reason: `${errorDescription} (${url})`, exitCode: errorCode });
+    });
+    // A window that loaded is a window that is well, so its history does not
+    // count against it. Without this the second crash in a long session gets the
+    // "already reloaded once and failed again" treatment for a reload that
+    // worked fine an hour ago.
+    window.webContents.on("did-finish-load", function() {
+        delete windowFailures[window.id];
+    });
+    window.on("unresponsive", function() {
+        // Not while a debugger is attached: a breakpoint stops the renderer, and
+        // Electron reports that as unresponsive. VS Code carves out the same case
+        // and gives the same reason.
+        if (window.webContents.isDevToolsOpened()) return;
+        onWindowError(window, 'unresponsive', "is not responding", {});
+    });
+
+    // The blur/focus branch used to differ by platform because the win32 side
+    // had a guard that did nothing — see sendTo. One arrangement now.
+    window.on("blur", function() { sendTo(window, "app", "blur"); });
+    window.on("focus", function() { sendTo(window, "app", "focus"); });
+
     // These are webContents events, not BrowserWindow ones. They were attached
     // to the window, where they never fired, so the devtools client was never
     // told to drop its connection when devtools opened — the two compete for
     // the same debugging port. The type checker caught it during the port.
     window.webContents.on("devtools-opened", function() {
-        window.webContents.send("devtools", "disconnect");
+        sendTo(window, "devtools", "disconnect");
     });
     window.webContents.on("devtools-closed", function() {
-        window.webContents.send("devtools", "reconnect!");
+        sendTo(window, "devtools", "reconnect!");
     });
 
     // and load the index.html of the app.
     window.loadURL('file://' + __dirname + '/LightTable.html?id=' + window.id);
 
-    // Notify LT that the user requested to close the window/app
+    // Notify LT that the user requested to close the window/app.
+    //
+    // Intercepted, because Light Table asks the editor about unsaved changes
+    // before a window goes — so the renderer decides, and calls back.
+    //
+    // Which means `preventDefault` had to stop being unconditional. With the
+    // renderer gone there is nobody to call back, so cancelling the close made a
+    // window that cannot be closed: not by the red button, not by ⌘W, not by
+    // Quit. A blank window is a bad afternoon; a blank window that will not go
+    // away is a force-quit and a bug report about Light Table hanging.
     window.on("close", function(evt) {
-        window.webContents.send("app", "close!");
+        if (window.webContents.isDestroyed()) return;
+        sendTo(window, "app", "close!");
         evt.preventDefault();
     });
 
     // Emitted when the window is closed.
     window.on('closed', function() {
         windows[window.id] = null;
+        delete windowFailures[window.id];
     });
 
     return window;
@@ -363,14 +539,21 @@ function onReady(): void {
     // Both of these took the window id from the renderer, which let a window
     // name one it did not own. They are only ever called with the sender's own
     // id, so the sender is where it comes from now.
-    ipcMain.on("initWindow", function(event) {
-        // Moving this to createWindow() causes js loading issues
-        const window = windowFor(event);
-        if (!window) return;
-        window.on("focus", function() {
-            window.webContents.send("app", "focus");
-        });
-    });
+    // The renderer saying it is up. It used to answer that by adding a
+    // focus-forwarding listener — a second one, because `createWindow` already
+    // attaches exactly that, so every focus was reported to the renderer twice.
+    //
+    // Worse, it *accumulated*: this arrives on every load, and a window can load
+    // more than once. That had no way to happen before, so the leak was
+    // unreachable and the comment here said only that moving it caused loading
+    // issues. It has a way now — onWindowError offers to reload a window rather
+    // than leaving it blank — so a crash and a reload would have meant three
+    // focus messages, then four.
+    //
+    // Nothing to do, then, and no listener: an `ipcRenderer.send` with nobody
+    // listening is dropped, which is what this amounted to already.
+    // `lt.objs.app/notify-init-window` is now telling the main process something
+    // it does not use, and is noted in doc/hygiene.md rather than unwired here.
 
     ipcMain.on("toggleDevTools", function(event) {
         windowFor(event)?.webContents.toggleDevTools();
@@ -465,7 +648,8 @@ function start(): void {
         const open = Object.keys(windows);
         if (open.length > 0) {
             open.forEach(function(id) {
-                windows[Number(id)]?.webContents.send('openFileAfterStartup', path);
+                const window = windows[Number(id)];
+                if (window) sendTo(window, 'openFileAfterStartup', path);
             });
         } else {
             global.browserOpenFiles.push(path);

@@ -5,6 +5,7 @@
   "main": "main.js",
   "browserWindowOptions": {
     "icon": "img/lticon.png",
+    "backgroundColor": "#3b3f41",
     "width": 1024,
     "height": 700,
     "minWidth": 400,

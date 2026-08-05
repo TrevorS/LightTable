@@ -27,9 +27,18 @@ hgroup, nav, section {
 	display:block;
 }
 
+/* No background, deliberately, where this said `white`.
+ *
+ * The skin is injected by a behavior — `lt.objs.style/set-skin` — so it arrives
+ * after this stylesheet has already applied. Between the two the body was
+ * white, full size, under a dark editor, which is the white flash on startup.
+ *
+ * Left unset rather than set to the dark skin's colour: with no background the
+ * body is transparent and the window's own `backgroundColor` shows through, so
+ * there is one place that decides what an unpainted editor looks like instead of
+ * two that have to agree. */
 body {
 	line-height: 1.5;
-	background: white;
 }
 
 table {

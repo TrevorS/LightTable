@@ -12,7 +12,7 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { test, expect, evalClj, evalData, ready, launch, editorWindow, scratchDir } from './fixtures';
+import { test, expect, evalClj, evalData, ready, launch, teardown, editorWindow, scratchDir } from './fixtures';
 
 test('the editor builds itself in the first window', async ({ window }) => {
     expect(await window.evaluate("typeof lt.objs.app")).toBe('object');
@@ -147,4 +147,68 @@ test('a plugin built against another release is refused by name', async () => {
 
     await app.close().catch(() => { /* already gone */ });
     fs.rmSync(home, { recursive: true, force: true });
+});
+
+test('a window whose renderer dies comes back, instead of sitting there blank', async () => {
+    // The white screen, as an event rather than a description. A renderer that
+    // goes away used to leave the window exactly where it was — right size, title
+    // bar, nothing in it — with nothing logged and nothing said, which is
+    // indistinguishable from a hang. `test-electron/window-recovery.test.ts` pins
+    // the decision and that the listeners are attached; only this can say that a
+    // real dead renderer becomes a working editor again.
+    //
+    // Its own application, and no `window` fixture: crashing a renderer leaves
+    // Playwright's `Page` unusable, and the shared per-test cleanup resets the
+    // editor *through* that page, so borrowing the fixture window fails in
+    // teardown with `Target crashed` after the test itself has passed.
+    const app = await launch();
+    try {
+        await ready(await editorWindow(app));
+
+        // Through Electron's own API for it, from the main process, so this takes
+        // the same event path as a genuine crash.
+        await app.evaluate(({ BrowserWindow }) => {
+            const [first] = BrowserWindow.getAllWindows();
+            first!.webContents.forcefullyCrashRenderer();
+        });
+
+        // Asserted from the main process rather than through Playwright, which
+        // marks a crashed `Page` unusable for good — the window reloads into the
+        // same BrowserWindow, so there is never a new page to attach to and the
+        // old handle stays crashed for ever. `executeJavaScript` runs in whatever
+        // renderer is there *now*, which is exactly the thing under test.
+        const revived = await app.evaluate(async ({ BrowserWindow }) => {
+            const [first] = BrowserWindow.getAllWindows();
+            const wc = first!.webContents;
+
+            const deadline = Date.now() + 90_000;
+            const settle = () => new Promise((r) => setTimeout(r, 250));
+            // A live renderer that has finished loading and built the editor. All
+              // three, because a fresh but empty renderer would satisfy the first two.
+            for (;;) {
+                if (Date.now() > deadline) return { ok: false, why: 'never came back' };
+                if (!wc.isCrashed() && !wc.isLoading()) {
+                    try {
+                        const kind = await wc.executeJavaScript("typeof lt.objs.app");
+                        if (kind === 'object') {
+                            const count = await wc.executeJavaScript(
+                                "cljs.core.count(cljs.core.deref(lt.object.behaviors))");
+                            const children = await wc.executeJavaScript("document.body.children.length");
+                            return { ok: true, count, children, crashed: wc.isCrashed() };
+                        }
+                    } catch {
+                        // Still starting: the bundle has not defined `lt` yet.
+                    }
+                }
+                await settle();
+            }
+        });
+
+        expect(revived).toMatchObject({ ok: true, crashed: false });
+        // An editor, not merely a document that loaded.
+        expect((revived as { count: number }).count).toBeGreaterThan(500);
+        expect((revived as { children: number }).children).toBeGreaterThan(0);
+    } finally {
+        await teardown(app);
+    }
 });
