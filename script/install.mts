@@ -103,10 +103,41 @@ function describe(dir: string): void {
     }
 }
 
+/**
+ * Refuses when the thing about to be replaced is open.
+ *
+ * Installing *removes* the old bundle, and on macOS removing files a running
+ * process has open succeeds — the inode survives until it closes. So this does
+ * not fail; it half-works. The editor keeps running on a bundle that is no longer
+ * there, and then loads a resource it had not read yet from a directory that has
+ * been replaced underneath it. What that looks like is a window that goes blank,
+ * which says nothing about the cause and has already been mistaken for a bug in
+ * the build once.
+ *
+ * `pgrep -f` against the destination path rather than the process name: the
+ * process is called `Electron`, and one of those running from a checkout is not
+ * a reason to refuse.
+ */
+function runningAt(target: string): number[] {
+    try {
+        return execFileSync('pgrep', ['-f', target], { encoding: 'utf8' })
+            .split('\n').map((l) => Number(l.trim())).filter((n) => Number.isFinite(n) && n > 0);
+    } catch {
+        // pgrep exits 1 when nothing matches, which is the common case.
+        return [];
+    }
+}
+
 function installMac(bundle: string, dest: string): void {
     const target = path.join(dest, 'LightTable.app');
 
     if (!fs.existsSync(dest)) fail(`${dest} does not exist.`);
+
+    const running = runningAt(target);
+    if (running.length) {
+        fail(`${target} is running (pid ${running.join(', ')}), and installing over it `
+             + 'would replace the bundle underneath it.\nQuit it first, then run this again.');
+    }
     try {
         fs.accessSync(dest, fs.constants.W_OK);
     } catch {
@@ -145,6 +176,12 @@ function installMac(bundle: string, dest: string): void {
 function installLinux(dir: string, prefix: string): void {
     const opt = path.join(prefix, 'opt', 'lighttable');
     const bin = path.join(prefix, 'bin');
+
+    const running = runningAt(opt);
+    if (running.length) {
+        fail(`${opt} is running (pid ${running.join(', ')}), and installing over it `
+             + 'would replace it underneath itself.\nQuit it first, then run this again.');
+    }
 
     fs.mkdirSync(path.dirname(opt), { recursive: true });
     fs.mkdirSync(bin, { recursive: true });
