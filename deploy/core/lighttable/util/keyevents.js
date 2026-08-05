@@ -183,9 +183,13 @@
      * @param {Function} callback
      * @returns void
      */
-    function _addEvent(object, type, callback) {
+    function _addEvent(object, type, callback, capture) {
         if (object.addEventListener) {
-            object.addEventListener(type, callback, false);
+            /** START LIGHT TABLE DEVIATION **/
+            // ADDED the `capture` argument, defaulting to the upstream `false`.
+            // See the keydown binding at the bottom of this file for why.
+            object.addEventListener(type, callback, !!capture);
+            /** END LIGHT TABLE DEVIATION **/
             return;
         }
 
@@ -919,7 +923,32 @@
 
         // start!
         _addEvent(targetElement, 'keypress', _handleKeyEvent);
-        _addEvent(targetElement, 'keydown', _handleKeyEvent);
+        /** START LIGHT TABLE DEVIATION **/
+        // ADDED `true` — keydown is listened for in the *capture* phase.
+        //
+        // Upstream listens on the bubble, which was fine while CodeMirror 5 read
+        // input through a hidden textarea and Light Table installed its bindings
+        // into CodeMirror's own keymap. CodeMirror 6 owns its keys through its
+        // extension system and its handler is on `.cm-content` — deeper than
+        // this document listener, so on the bubble it ran *first*.
+        //
+        // What that did to `cmd-enter`: CodeMirror inserted a newline and moved
+        // the cursor to it, and only then did Light Table run
+        // `:eval-editor-form`, which read the cursor, found the blank line it had
+        // just been moved to, and evaluated nothing. So the visible behaviour of
+        // "evaluate this form" was the cursor moving down one line. Every editor
+        // binding on a key CodeMirror also handles — enter, tab, the arrows,
+        // backspace, escape — had the editor's action happen as well as the
+        // command.
+        //
+        // Capture makes the keymap authoritative, which is what it is for. It is
+        // safe for typing because of the deviation in `_handleKeyEvent`: an
+        // unmodified character key is not in `_MAP`, so `handleKey` is never
+        // called for it and nothing is intercepted. And an unbound key returns
+        // no match, so nothing is prevented and CodeMirror still gets it —
+        // `lt.objs.keyboard/passthrough` is the explicit form of the same thing.
+        _addEvent(targetElement, 'keydown', _handleKeyEvent, true);
+        /** END LIGHT TABLE DEVIATION **/
         _addEvent(targetElement, 'keyup', _handleKeyEvent);
     }
 

@@ -21,7 +21,7 @@ npm pack mousetrap@1.6.5 && tar xzf mousetrap-1.6.5.tgz
 diff -u package/mousetrap.js deploy/core/lighttable/util/keyevents.js
 ```
 
-That diff is 46 lines, and every one of them is inside a marked block.
+Every line of that diff is inside a marked block.
 
 1. **`keyDownOnly`** — whether an event is a key that only produces `keydown`.
 2. **`_handleKeyUp`** — a hook to override, which upstream has no equivalent of.
@@ -29,10 +29,19 @@ That diff is 46 lines, and every one of them is inside a marked block.
    separately so a character can be paired with its keycode.
 4. **`Mousetrap.prototype.handleKeyUp`** — publishes the hook, the way upstream
    publishes `handleKey`. `lt.objs.keyboard` replaces both.
+5. **`keydown` is listened for in the capture phase**, with a `capture` argument
+   added to `_addEvent` to say so. Upstream listens on the bubble, which was fine
+   while CodeMirror 5 read input through a hidden textarea; CodeMirror 6's handler
+   is on `.cm-content`, deeper than this document listener, so on the bubble it
+   ran first — and `cmd-enter` inserted a newline, moved the cursor to it, and
+   *then* let `:eval-editor-form` read the cursor and evaluate the blank line it
+   had been moved to. Capture makes the keymap authoritative, which is what it is
+   for; typing is unaffected because of deviation 3, and an unbound key prevents
+   nothing so the editor still gets it.
 
 ## Upgrading
 
-This was 1.6.0 until it was moved to 1.6.5 by re-applying the four blocks above
+This was 1.6.0 until it was moved to 1.6.5 by re-applying the blocks above
 onto the newer upstream. It was cheap: 1.6.0 → 1.6.5 is 28 lines, and one of the
 two substantive changes was a numpad fix
 ([PR #258](https://github.com/ccampbell/mousetrap/pull/258)) that Light Table

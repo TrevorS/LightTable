@@ -39,7 +39,7 @@ as real requires, since it is a node process and those are node's.
 
 | file | lines | why |
 |---|---|---|
-| `deploy/core/lighttable/util/keyevents.js` | 1,097 | Mousetrap 1.6.5 with four marked deviations. Typing it would destroy the only thing keeping it maintainable — a mechanical diff against upstream. See `util/VENDORED.md`. |
+| `deploy/core/lighttable/util/keyevents.js` | 1,097 | Mousetrap 1.6.5 with five marked deviations. Typing it would destroy the only thing keeping it maintainable — a mechanical diff against upstream. See `util/VENDORED.md`. |
 
 ## Tooling, not shipped code
 
