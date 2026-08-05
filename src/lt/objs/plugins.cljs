@@ -15,10 +15,15 @@
             [lt.objs.tabs :as tabs]
             [lt.util.js :as js-util :refer [wait]]
             [lt.objs.platform :as platform]
+            [lt.objs.plugins.attribution :as attribution]
             [lt.objs.plugins.capabilities :as caps]
             [lt.objs.plugins.local-modules :as local-modules]
             [lt.objs.plugins.node-modules :as node-modules]
             [lt.objs.plugins.require-shim :as require-shim]
+            [lt.objs.plugins.scopes :as scopes]
+            [lt.objs.workspace :as workspace]
+            [lt.util.bridge :as bridge]
+            [lt.util.bridge.guard :as guard]
             [cljs.reader :as reader]
             [lt.ui :as ui]
             [lt.util.kahn :as kahn]
@@ -274,6 +279,174 @@
                          #(:used (audit %))
                          local-modules/require-from))
 
+;;*********************************************************
+;; The bridge as a permission system
+;;*********************************************************
+
+;; Level 2, at call time. `allowed-to-load?` above holds a plugin to its
+;; manifest by reading its code once; this holds it while it runs, which is the
+;; half that was missing — see doc/permissions.md and
+;; [[lt.util.bridge.guard]].
+;;
+;; Everything here is the *editor's* half of that: which plugins exist, what
+;; each declared, and where `:self` and `:workspace` actually are. The guard
+;; knows none of it and is handed all four of the functions it needs.
+
+(defonce ^:private constrained
+  ;; Whether any loaded plugin could be refused anything, cached against the
+  ;; identity of the plugin map it was computed from.
+  ;;
+  ;; This is the fast path, and it is the reason the guard costs nothing in a
+  ;; window with no plugins: attribution reads a stack, a stack costs 1.3-2.7µs,
+  ;; and `files/existsSync` itself costs about 0.4µs. Paying for a stack on
+  ;; every call in order to discover there was nothing to check would be a
+  ;; permission system that made the editor slower for the people not using it.
+  (atom {:for ::none :answer false}))
+
+(defn- any-constrained?
+  []
+  (let [plugins (::plugins @app/app)
+        cached @constrained]
+    (if (identical? plugins (:for cached))
+      (:answer cached)
+      (let [answer (boolean (some (fn [plugin]
+                                    (or (caps/scoped? plugin)
+                                        (when-let [declared (caps/declared plugin)]
+                                          (not= caps/known declared))))
+                                  (vals plugins)))]
+        (reset! constrained {:for plugins :answer answer})
+        answer))))
+
+(defn- resolved-path
+  "`path`, absolute, and with symlinks resolved as far as it exists.
+
+  The walk is [[lt.objs.plugins.scopes/resolve-through]], which is pure and
+  therefore tested; this supplies the two filesystem answers it needs and makes
+  the path absolute first, because a relative one resolves against the working
+  directory and a scope is not a relative question.
+
+  Both come from [[lt.util.bridge/raw-files]] deliberately. The guarded `files`
+  would ask this function whether it may resolve the path it is resolving."
+  [path]
+  (scopes/resolve-through #(.existsSync bridge/raw-files %)
+                          #(.realpathSync bridge/raw-files %)
+                          (.resolve bridge/path path)))
+
+(defn plugin-roots
+  "Where `plugin` may use `capability`, resolved.
+
+  `:all` stays `:all`. Everything else becomes a list of absolute resolved
+  paths, with the three names the manifest may use expanded here because this
+  is the only layer that knows what they mean:
+
+  | | |
+  |---|---|
+  | `:self` | the plugin's own directory |
+  | `:workspace` | every folder and file the workspace holds |
+  | `~/…` | under the user's home |"
+  [plugin capability]
+  (let [roots (caps/roots plugin capability)]
+    (if (= :all roots)
+      :all
+      (into []
+            (comp (mapcat (fn [root]
+                            (case root
+                              :self [(:dir plugin)]
+                              :workspace (concat (:folders @workspace/current-ws)
+                                                 (:files @workspace/current-ws))
+                              [(if (string/starts-with? (str root) "~")
+                                 (files/home (subs (str root) 1))
+                                 (str root))])))
+                  (remove nil?)
+                  (map resolved-path))
+            roots))))
+
+(defn bridge-verdict
+  "Whether `plugin` may make this call: `:allow`, `:warn` or `:refuse`.
+
+  Two questions with deliberately different answers, and the difference is the
+  one design decision in here worth arguing about.
+
+  **A capability it never declared** is governed by [[enforcement]], the same
+  mode `allowed-to-load?` uses, because it is the same claim. Refusing by
+  default would break a plugin whose manifest is honestly incomplete, and the
+  shipped default has always preferred a warning to that.
+
+  **A path or host outside a root it did declare** is refused whatever the mode
+  says. Roots exist only because an author wrote them, so enforcing them is
+  keeping a promise rather than second-guessing one — and a root that is not
+  enforced is a comment. Nothing in this repository declares roots yet, so this
+  is not a break; it is the shape the first one will meet.
+
+  Note what is *not* here: inference. `allowed-to-load?` reads JavaScript with
+  regular expressions and can be wrong. This reads a stack and an argument, and
+  is a fact about the call being made. That is the argument for eventually
+  moving the default, and it is module 4's open question rather than something
+  to change quietly."
+  [plugin capability paths hosts]
+  (let [declared (caps/declared plugin)]
+    (cond
+      ;; Reaching it implies nothing — path arithmetic, this window's zoom.
+      (nil? capability) :allow
+
+      ;; No manifest at all: a plugin that predates them, which is the
+      ;; migration `allowed-for` already describes. It claimed nothing, so it
+      ;; broke nothing.
+      (nil? declared) :allow
+
+      (not (contains? declared capability))
+      (case (enforcement)
+        :refuse :refuse
+        :report :allow
+        :warn)
+
+      (and (seq paths)
+           (not (scopes/permits? (plugin-roots plugin capability)
+                                 (map resolved-path paths))))
+      :refuse
+
+      (and (seq hosts)
+           (not (scopes/permits-hosts? (caps/roots plugin capability) hosts)))
+      :refuse
+
+      :else :allow)))
+
+(defn- bridge-refused
+  "Say what was refused, and answer the call.
+
+  Shaped after the shim's refusals on purpose: a denial the plugin can see,
+  naming the capability and the path, rather than a stack trace from inside
+  `fs`. A plugin author debugging one of these is the common case.
+
+  A warning returns nil and the call proceeds; a refusal throws, because there
+  is no honest value to return for `readFileSync` and a nil would be read as an
+  empty file."
+  [plugin capability paths hosts group member refuse?]
+  (let [subject (or (first paths) (first hosts) (str group "/" member))
+        line (scopes/describe-denial (:name plugin) capability subject
+                                     (if (seq hosts)
+                                       (caps/roots plugin capability)
+                                       (plugin-roots plugin capability)))]
+    (if refuse?
+      (do (console/error line)
+          (throw (js/Error. (str line " (called " group "/" member ")"))))
+      (console/error (str line " — allowed, because capability enforcement is set to "
+                          (name (enforcement)) ".")))))
+
+(defn install-bridge-policy!
+  "Start checking bridge calls against manifests.
+
+  Called from [[install-node-compatibility!]], which already runs before any
+  plugin loads and for the same reason: everything the window does before that
+  point is Light Table's own, and a policy installed earlier would be answering
+  questions about a registry that is still empty."
+  []
+  (guard/install!
+   {:checking? any-constrained?
+    :caller #(attribution/caller-plugin (::plugins @app/app))
+    :verdict bridge-verdict
+    :refused bridge-refused}))
+
 (defn install-node-compatibility!
   "Put [[plugin-require]] in the window as `require`, and Node's globals with
   it.
@@ -286,7 +459,12 @@
   []
   (aset js/window "require" plugin-require)
   (doseq [[nm value] (node-modules/globals)]
-    (aset js/window nm value)))
+    (aset js/window nm value))
+  ;; The other half of the same decision. `require` is what a plugin written
+  ;; before contextIsolation reaches a capability through; the bridge is what
+  ;; one written today reaches it through, and until this line the second was
+  ;; unguarded.
+  (install-bridge-policy!))
 
 (defn set-enforcement!
   "Persist `mode`. Takes effect for plugins loaded from here on, which in
@@ -326,6 +504,15 @@
                          (string/join "\n"
                                       (concat ["Plugin capabilities. Declared comes from :capabilities in"
                                                "plugin.edn; used is inferred from the JavaScript each plugin loads."
+                                               ;; First, because "is the guard
+                                               ;; even on" is the first question
+                                               ;; anyone debugging a denial has,
+                                               ;; and the report above is only
+                                               ;; about what was *declared*.
+                                               (str "Bridge guard: " (guard/describe))
+                                               (str "Enforcement: " (name (enforcement))
+                                                    " (a capability never declared). A path outside a"
+                                                    " declared root is always refused.")
                                                ""]
                                               (map report-line reports))))
                         (notifos/set-msg! (str "Reported on " (count reports) " plugins"))))})

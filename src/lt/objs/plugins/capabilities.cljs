@@ -15,8 +15,11 @@
   enforced before `contextIsolation` is ever turned on.
 
   This namespace is deliberately dependency-free so it can be tested without an
-  editor around it. Walking a plugin lives in [[lt.objs.plugins]]."
-  (:require [clojure.string :as string]))
+  editor around it. Walking a plugin lives in [[lt.objs.plugins]], and where a
+  capability *reaches* is [[lt.objs.plugins.scopes]] — which is dependency-free
+  for the same reason."
+  (:require [clojure.string :as string]
+            [lt.objs.plugins.scopes :as scopes]))
 
 (def capabilities
   "The capability vocabulary, each with the evidence that implies it.
@@ -28,7 +31,7 @@
   [{:capability :files
     :desc "Read and write the filesystem"
     :patterns [#"lt\.objs\.files\.[a-zA-Z_]"
-               #"lt\.util\.bridge\.files"
+               #"lt\.util\.bridge\.(?:raw_)?files"
                #"require\(\s*['\"](?:fs|path)['\"]"]}
 
    {:capability :processes
@@ -98,6 +101,12 @@
   {"shell"     :desktop
    "clipboard" :clipboard
    "files"     :files
+   ;; The unguarded filesystem, which exists so that the policy can resolve a
+   ;; path without asking itself for permission to resolve it. Classified the
+   ;; same as `files` and matched by the same patterns, because a plugin that
+   ;; found this name would be reaching the filesystem by a route with no check
+   ;; on it — which is exactly the thing worth reporting.
+   "raw-files" :files
    "processes" :processes
    "net"       :network
    "servers"   :network
@@ -153,10 +162,31 @@
   "The capability set a plugin declares, or nil when it declares nothing.
 
   Nil and the empty set mean different things: nil is a plugin that predates
-  manifests, and `#{}` is one that asserts it needs nothing."
+  manifests, and `#{}` is one that asserts it needs nothing.
+
+  Two manifest forms reach here and both answer this question the same way — a
+  set of names, and a map from a name to where it may reach. Which one a plugin
+  wrote is [[lt.objs.plugins.scopes]]'s business; every existing caller of this
+  only wants the names, and gets them unchanged."
   [plugin]
-  (when-let [caps (:capabilities plugin)]
-    (set caps)))
+  (scopes/declared-capabilities (:capabilities plugin)))
+
+(defn roots
+  "Where `plugin` may use `capability`, as `:all` or a vector of roots.
+
+  Unresolved: `:self` and `:workspace` are still keywords here and `~` is still
+  a tilde. Resolving them needs the filesystem and this namespace does not have
+  one — see [[lt.objs.plugins/plugin-roots]]."
+  [plugin capability]
+  (scopes/declared-roots (:capabilities plugin) capability))
+
+(defn scoped?
+  "Has `plugin` narrowed any capability below `:all`?
+
+  What the bridge's fast path asks about every loaded plugin before it reads a
+  stack."
+  [plugin]
+  (scopes/scoped? (:capabilities plugin)))
 
 (defn undeclared
   "Capabilities a plugin uses without declaring them.

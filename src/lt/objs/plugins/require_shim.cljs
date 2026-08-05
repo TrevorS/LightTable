@@ -17,43 +17,20 @@
   says. What contains a plugin is the bridge's surface — the list in
   src-electron/preload.ts — and that is true before and after this exists.
 
-  Attribution is by stack frame. Light Table evaluates plugin code with a
-  `sourceURL`, so a frame inside a plugin names its file and the plugin's
-  directory is a prefix of that path. Measured at 1.3-2.7µs per stack on
-  Electron 43, against a `require` that happens once at plugin load rather than
-  per operation."
-  (:require [clojure.string :as string]
+  Attribution is by stack frame, and it lives in
+  [[lt.objs.plugins.attribution]] — it moved there when the bridge needed the
+  same answer. Measured at 1.3-2.7µs per stack on Electron 43, against a
+  `require` that happens once at plugin load rather than per operation."
+  (:require [lt.objs.plugins.attribution :as attribution]
             [lt.objs.plugins.capabilities :as caps]))
 
-(defn frames
-  "Stack frames of the caller, innermost first."
-  []
-  (-> (.-stack (js/Error.))
-      (or "")
-      (string/split #"\n")))
-
-(defn- in-dir?
-  "Is `frame` a path inside `dir`?
-
-  The separator matters. A plain substring test says plugins/C is where
-  plugins/Clojure's code lives, because one path is a prefix of the other —
-  so the Clojure plugin was refused `net` on the grounds that a plugin called
-  C had not asked for it, and failed to load. Any plugin whose name is a
-  prefix of another's would have done it."
-  [frame dir]
-  (string/includes? frame (str dir "/")))
-
-(defn plugin-for-frames
-  "The plugin whose directory appears in `frames`, given `plugins` by name.
-
-  Takes the innermost matching frame: a plugin calling through another
-  plugin's helper is asking on its own behalf, not the helper's."
-  [plugins frames]
-  (first (for [frame frames
-               plugin (vals plugins)
-               :let [dir (:dir plugin)]
-               :when (and dir (in-dir? frame dir))]
-           plugin)))
+;; `frames` and `plugin-for-frames` were here. They are
+;; [[lt.objs.plugins.attribution]]'s now, and re-exported rather than inlined at
+;; their call sites below because the shim's own tests name them and because a
+;; plugin author reading this namespace should not have to follow a require to
+;; find out how attribution works.
+(def frames attribution/frames)
+(def plugin-for-frames attribution/plugin-for-frames)
 
 (defn allowed-for
   "Capabilities `require` will serve to `plugin`.
