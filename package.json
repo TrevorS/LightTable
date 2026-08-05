@@ -1,6 +1,6 @@
 {
   "name": "lighttable-build",
-  "version": "0.10.0",
+  "version": "0.10.0-rc.1",
   "private": true,
   "description": "Build tooling for Light Table's ClojureScript and main-process sources.",
   "devDependencies": {

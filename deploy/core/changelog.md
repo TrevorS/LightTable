@@ -84,6 +84,16 @@ working at all.
 * FIXED: Multiple cursors were implemented and unreachable — no key was bound to them
 * FIXED: A code-action popup dismissed rather than answered left its object behind, tagged and reachable, holding a closure over the editor. The client selector had the same defect and the same fix
 
+* ADDED: **A settings screen.** Every setting is a behavior that says it is yours, so the screen is generated rather than written: a behavior has declared its own parameters and their types since 2013, and each one becomes the control its type calls for. It says which file a value came from, which is the question a settings screen usually cannot answer. The keys are the other half — every binding that would fire where you are, rebound by clicking it and pressing the new one. **Settings: Open settings**
+* ADDED: **Project-wide search runs a bundled ripgrep**, which is what VS Code does. On this repository, reading the whole tree either way, it is 4.6x faster and finds precisely the same thing; as shipped it is faster again because it honours your `.gitignore`. `Searcher: Let .gitignore narrow a workspace search` turns that off. The binary is fetched at build time, pinned to a version and checked against the sha256 upstream publishes beside it — there is still no binary in the repository
+* ADDED: **A plugin's capabilities can say where they reach.** `:capabilities {:files [:self :workspace]}` scopes a plugin to its own directory and your workspace instead of the whole disk, and the bridge holds it to that at call time rather than only when it loads. A path is compared after symlinks are resolved, so a link out of the scope is not a way out of it
+* CHANGED: Search results are sorted by path and arrive together rather than file by file. ripgrep searches in parallel and reports in no stable order, and a list that reshuffles between identical searches is worse than one that appears at once — which at 12ms is not a wait
+* CHANGED: A popup's options are reachable from the keyboard. Choosing which client evaluates a file, or which code action to run, let you arrow between *cancel* and nothing; the arrows walk the choices now and Enter takes the highlighted one
+* FIXED: **Clicking a connection did nothing.** The row's whole purpose is to say where an evaluation goes, and it wrote a key nothing read — so the panel showed the truth and the click lied about changing it. Picking one now binds it for the buffer you are in, and refuses a connection that cannot evaluate rather than sending it something it will not answer
+* FIXED: A doc opened over an inline result on the same line left the result's node on screen with nothing holding it — a plot followed by a doc was the case
+* FIXED: A split window drew one tab strip and one editor, both the first column's, in the *Window as a view* tab
+* FIXED: Workspace search read a developer's own `~/.config/ripgrep/config` if they had one, so a setting there could silently follow symlinks or hide results the editor had been asked for
+
 ## 0.9.0
 
 The development branch had stopped launching. This release is the work to get
