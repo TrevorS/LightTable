@@ -161,12 +161,30 @@ body { -webkit-user-select: none; }
 #right-bar .content > * { width:0; height:0; overflow:hidden; }
 #right-bar .content > .active { width:100%; height:100%; }
 
-#right-bar .docs-search { width: 100%; }
+/* `position:relative` is what keeps this panel's absolutely-positioned children
+   inside it, and without it they were not inside anything.
+
+   `.types` below is `position:absolute; top:0; right:0`, meaning the top-right of
+   the docs panel. It had no positioned ancestor nearer than `#right-bar`, which
+   is `position:fixed` — so `right:0` meant the right edge of *that*, and
+   `#right-bar` is 0 wide and parked at the window's edge whenever the sidebar is
+   collapsed. The language chip therefore sat at the top-right of the window, over
+   the tab strip, in every screenshot of the editor including one with no file
+   open. The `overflow:hidden` on the panel could not clip it: overflow only
+   clips descendants whose containing block is the element itself or below it, and
+   this one's was three levels up.
+
+   `#side .tab-settings .filter-list` already does this, for the same reason. */
+#right-bar .docs-search { width: 100%; position: relative; }
 #right-bar .docs-search input { width:100%; padding:10px; font-size:11pt; }
 #right-bar .docs-search > ul {display:block; }
 #right-bar .docs-search li { border:none; -webkit-user-select:text; padding:5px 5px; cursor:default; overflow:hidden; width:100%; box-sizing:border-box; white-space:nowrap; }
 #right-bar .docs-search .types { position:absolute; top:0px; right:0px; display:block; z-index:100; text-align:right;}
-#right-bar .docs-search .types > span { padding:4px 10px;  font-size:10pt; background:red; display:inline-block; border-radius:0px; position:static; }
+/* No `background:red`, which is what this said. A debug colour that shipped, and
+   only invisible because the skin overrides it — so the chip was red for anyone
+   whose skin failed to load, and structure.css is not where a colour belongs
+   anyway. */
+#right-bar .docs-search .types > span { padding:4px 10px;  font-size:10pt; display:inline-block; border-radius:0px; position:static; }
 #right-bar .docs-search .types > ul { display:none; background:none; position:static; padding-top:2px; border-radius:0px; }
 #right-bar .docs-search .types > ul li { padding:5px 10px; font-size:10pt; border-radius:0px; margin-bottom:1px; }
 #right-bar .docs-search .types:hover > ul { display:block; }

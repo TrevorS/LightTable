@@ -17,20 +17,36 @@ a {
 }
 .button,
 button {
-  background: #616161;
-  color: #f4f4f4;
+  background: var(--lt-surface0);
+  color: var(--lt-text);
 }
+
+/* Hover was `background: #ccc !important; color: #555` — on every button in the
+ * application, and on focus as well as hover. So a button in a dark editor turned
+ * light grey under the pointer, and stayed light grey after being clicked because
+ * focus does not go away. The `!important` meant no component could say otherwise
+ * about its own buttons; the plugin manager's Installed/Available pair is where
+ * that showed, one dark and one washed-out grey with grey-on-grey text.
+ *
+ * A lift rather than an inversion, from the tokens, and `.active` separated out —
+ * hover and selected are two different things and were the same declaration. */
 .button:hover,
 .button:focus,
 button:hover,
-button:focus,
-button.active {
-  background: #ccc !important;
-  color: #555;
+button:focus {
+  background: var(--lt-surface2);
+  color: var(--lt-text);
 }
+
+.button.active,
+button.active {
+  background: var(--lt-element-selected);
+  color: var(--lt-text);
+}
+
 input {
-  color: #f4f4f4;
-  background: #616161;
+  color: var(--lt-text);
+  background: var(--lt-base);
 }
 ::-webkit-scrollbar {
   width: 7px;
@@ -46,7 +62,7 @@ input {
   background: transparent;
 }
 ::-webkit-input-placeholder {
-  color: #aaa;
+  color: var(--lt-text-disabled);
 }
 ::-webkit-scrollbar {
   background: transparent;
@@ -55,8 +71,8 @@ input {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #606970;
-  border: 1px solid #606970;
+  background: var(--lt-surface2);
+  border: 1px solid var(--lt-surface2);
 }
 ::-webkit-scrollbar-thumb:hover {
   background: #999;
@@ -201,8 +217,8 @@ input {
   box-shadow: 0 0 10px #000;
 }
 #side ::-webkit-scrollbar-thumb {
-  background: #606970;
-  border: 1px solid #606970;
+  background: var(--lt-surface2);
+  border: 1px solid var(--lt-surface2);
 }
 /* The workspace tree is not skinned here. It is a view, and every colour in it
    is a role the token sheet resolves — see css/kit.css. */
@@ -274,8 +290,8 @@ input {
   background: #3b3f41 !important;
 }
 #browser ::-webkit-scrollbar-thumb {
-  background: #606970;
-  border: 1px solid #606970;
+  background: var(--lt-surface2);
+  border: 1px solid var(--lt-surface2);
 }
 .search-results .path,
 .search-results .line {
@@ -363,102 +379,88 @@ input {
   height: 30px;
   width: 100%;
 }
+/* The search field, which was a #616161 block filling the whole toolbar — the one
+ * light-grey bar in the window, and the reason the plugin manager looked like it
+ * belonged to a different application. `.settings-screen__filter` is the same
+ * control written against the tokens, so this is that. */
 .plugin-manager input {
-  background: #616161;
-  -webkit-flex: 1;
+  flex: 1;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: var(--lt-radius-sm);
+  background: var(--lt-base);
+  color: var(--lt-text);
+  font-family: var(--lt-sans);
+  font-size: 12px;
 }
+.plugin-manager input::placeholder { color: var(--lt-text-disabled); }
 .plugin-manager button {
-  background: #616161;
+  background: var(--lt-surface0);
+  color: var(--lt-text);
+  border: 0;
+  border-radius: var(--lt-radius-sm);
+  padding: 4px 10px;
 }
-.plugin-manager .install {
-  box-sizing: border-box;
-  color: #3e6b6b;
-  background: #7ffffd;
-  display: inline-block;
-  height: 25px;
-  position: absolute;
-  right: 0;
-  top: 0;
-  width: 5px;
-  -webkit-transition: width 0.1s ease-in-out;
-  cursor: pointer;
-}
-.plugin-manager .uninstall {
-  box-sizing: border-box;
-  color: #5e3870;
-  background: #dfc7ff;
-  display: inline-block;
-  height: 25px;
-  position: absolute;
-  right: 0;
-  top: 0;
-  width: 5px;
-  -webkit-transition: width 0.1s ease-in-out;
-  cursor: pointer;
-}
-.plugin-manager .update {
-  box-sizing: border-box;
-  background: #ffa6a6;
-  display: inline-block;
-  height: 25px;
-  position: absolute;
-  right: 0;
-  top: 50px;
-  width: 5px;
-  -webkit-transition: width 0.1s ease-in-out;
-  cursor: pointer;
-}
-.plugin-manager li:hover .update {
-  width: 70px;
-  overflow: hidden;
-}
-.plugin-manager li:hover .update:before {
-  color: #73404c;
-  padding: 4px 8px;
-  display: inline-block;
-  content: "update";
-}
-.plugin-manager li:hover .uninstall {
-  width: 70px;
-  overflow: hidden;
-}
-.plugin-manager li:hover .uninstall:before {
-  padding: 4px 8px;
-  display: inline-block;
-  content: "uninstall";
-}
-.plugin-manager li:hover .install {
-  width: 70px;
-  overflow: hidden;
-}
-.plugin-manager li:hover .install:before {
-  padding: 4px 8px;
-  display: inline-block;
-  content: "install";
-}
+/* The three row actions, and the "website" link with them.
+ *
+ * They were the only pastel things in a dark editor — #7ffffd, #ffa6a6, #dfc7ff
+ * and #c7e6ff, hard-coded, from before the token sheet existed. Four light
+ * stripes stacked at the right edge of every plugin row, which read as rendering
+ * artefacts rather than as buttons. Each is a role now, and the roles are the
+ * obvious ones: adding is green, an update wants attention, deleting is red, and
+ * a link is blue.
+ *
+ * The collapse-and-expand is kept — it is the design, and a 5px stripe that grows
+ * to a labelled button on hover is a reasonable way to keep a destructive action
+ * out from under the pointer. What changed is that the label is real text in the
+ * row (`.plugin-action__label`, see lt.objs.plugins) instead of a CSS `content:`,
+ * so it is a thing a screen reader can read and a search can find. `overflow`
+ * hides it while the stripe is 5px wide, which is a stylesheet's business. */
+
+.plugin-manager .install,
+.plugin-manager .update,
+.plugin-manager .uninstall,
 .plugin-manager .source {
-  color: transparent;
-  position: absolute;
-  height: 25px;
-  width: 5px;
-  top: 25px;
-  right: 0;
-  background: #c7e6ff;
-  overflow: hidden;
-  -webkit-transition: width 0.1s ease-in-out, right 0.1s ease-in-out;
-}
-.plugin-manager .source a {
-  color: transparent;
-  padding: 4px 8px;
+  box-sizing: border-box;
   display: inline-block;
-  width: 100%;
+  position: absolute;
+  right: 0;
+  width: 5px;
+  height: 25px;
+  overflow: hidden;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: width 0.1s ease-in-out;
 }
-.plugin-manager li:hover .source {
-  width: 70px;
+
+.plugin-manager .install   { top: 0;    background: var(--lt-green); }
+.plugin-manager .update    { top: 50px; background: var(--lt-yellow); }
+.plugin-manager .uninstall { top: 0;    background: var(--lt-red); }
+.plugin-manager .source    { top: 25px; background: var(--lt-blue); }
+
+/* Expanded, the stripe becomes a tinted button and the accent moves to the text —
+ * a solid block of accent behind a label is louder than any of these actions is. */
+.plugin-manager li:hover .install,
+.plugin-manager li:hover .update,
+.plugin-manager li:hover .uninstall,
+.plugin-manager li:hover .source { width: 76px; }
+
+.plugin-action__label {
+  display: inline-block;
+  padding: 4px 8px;
+  font-size: 11px;
+  text-decoration: none;
 }
-.plugin-manager li:hover .source a {
-  color: #505d6b;
-}
+
+.plugin-manager li:hover .install   { background: color-mix(in srgb, var(--lt-green) 18%, var(--lt-base)); }
+.plugin-manager li:hover .update    { background: color-mix(in srgb, var(--lt-yellow) 18%, var(--lt-base)); }
+.plugin-manager li:hover .uninstall { background: color-mix(in srgb, var(--lt-red) 18%, var(--lt-base)); }
+.plugin-manager li:hover .source    { background: color-mix(in srgb, var(--lt-blue) 18%, var(--lt-base)); }
+
+.plugin-manager li:hover .install   .plugin-action__label { color: var(--lt-green); }
+.plugin-manager li:hover .update    .plugin-action__label { color: var(--lt-yellow); }
+.plugin-manager li:hover .uninstall .plugin-action__label { color: var(--lt-red); }
+.plugin-manager li:hover .source    .plugin-action__label { color: var(--lt-blue); }
 /**********************************************************
 * Theme specific
 ***********************************************************/

@@ -207,11 +207,22 @@
 
 /* The one row primitive. Tree, queue, runs, commands, connections are all this.
  * A row tints entirely or not at all — no left-border accent strips. */
+/* `min-height`, not `height`, and that is the difference between a list and a
+ * pile. A row is *at least* one line tall; content taller than one line has to
+ * make it grow, because the alternative is what the settings screen was doing —
+ * every `.setting` is three stacked parts and about 86px, each one drawn inside a
+ * 26px row, so every row overflowed 60px into the next and the whole screen was
+ * two layers of text on top of each other. It was unreadable and it was shipped.
+ *
+ * One-line rows are unaffected: 12.5px text in an 18.75px line box, centred in a
+ * 26px box, is the same box it was. Nothing measures a row from script — no
+ * virtualised list, no computed offsets — so there is nothing for this to
+ * surprise. */
 .row {
   display: flex;
   align-items: center;
   gap: 8px;
-  height: 26px;
+  min-height: 26px;
   padding: 0 8px;
   border-radius: var(--lt-radius-sm);
   font-family: var(--lt-mono);
@@ -418,9 +429,17 @@
 /* A fixed column so what a client *is* lines up down the list, and a name that
  * runs past it truncates rather than wrapping — a row is one line, and a
  * two-line one puts the kind beside the wrong half of the name. */
+/* `flex-shrink: 1` with a floor, where this was `flex-shrink: 0`. The column is
+ * still 140px wherever there is room, so the alignment above still holds — but in
+ * the right sidebar the whole row is about 280px, and an unshrinkable 140px name
+ * plus the gaps left roughly 120px for the two columns after it. So `claude`
+ * occupied 140px to say six characters while what it *was* rendered as `control …`
+ * and `agent · th…`: everything the row exists to tell you, ellipsised, next to
+ * half a column of empty space. */
 .connection__name {
   width: 140px;
-  flex-shrink: 0;
+  flex-shrink: 1;
+  min-width: 72px;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -1005,11 +1024,39 @@
   padding: 4px 6px 12px;
 }
 
+/* A setting is a block, so the rows holding them are padded rather than packed.
+ * Without this each three-part setting ended flush against the next one's
+ * description and there was no telling where one stopped — a list of blocks
+ * needs the air between them to be a list at all. Padding rather than margin so
+ * that the hover highlight covers the whole setting, air included. */
+.settings-screen .panel > .row { padding: 7px 8px; }
+.settings-screen .panel > .row + .row { margin-top: 2px; }
+
+/* The switch column, reserved whether or not this setting has a switch.
+ *
+ * A behavior with no parameters *is* its switch, so those rows have a leading
+ * toggle and the rest have nothing — and `lt.ui.row/list-row` only emits
+ * `.row__leading` when it is given one, so descriptions started at two different
+ * x positions down the list. Every setting row passes the slot now, empty when
+ * there is nothing in it, and this is what gives the empty one its width. */
+.setting__switch { display: inline-flex; justify-content: center; width: 14px; }
+
 /* One setting. The description leads, because it is the thing you are looking
  * for; the tag and the file it came from are the answer to "why is this not the
  * default", which is a second question and is drawn as one. */
-.setting { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-.setting__desc { color: var(--lt-text); }
+/* `flex: 1` so the block fills the row rather than shrinking to its text. As a
+ * default flex item it was `0 1 auto`, so every setting was exactly as wide as
+ * its own longest line — which made the input inside it a different width on
+ * every row, a ragged column of boxes down the screen, and left long
+ * descriptions wrapping early while the rest of the row sat empty. */
+.setting { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 0; }
+
+/* Sans, against the monospace `.row` inherits from. A row is usually a filename,
+ * a command or a keyword and monospace is right for those; a setting's
+ * description is a sentence, and eighty sentences in a column of monospace is
+ * what this screen looked like. `.setting__where` deliberately keeps the mono it
+ * inherits — a tag and a behaviors file are both code. */
+.setting__desc { color: var(--lt-text); font-family: var(--lt-sans); font-size: 12px; }
 
 .setting__where {
   display: flex;
@@ -1028,11 +1075,27 @@
   margin-top: 2px;
 }
 
+/* An input wide enough to hold what is in it, which the default was not. `<input>`
+ * sizes itself from an ancient `size` attribute — about 170px — so
+ * `:editor.clj.jump-to-current-ns` was displayed as `:editor.clj.jump-to-c` and
+ * the rest of a value you were being asked to check was simply not shown.
+ *
+ * `flex: 1 1 240px` with the wrap already on the container: one field takes the
+ * row, two share it, and the cap keeps a one-word value from being a field the
+ * width of the window. */
+.setting__fields > .field { flex: 1 1 240px; min-width: 0; max-width: 460px; }
+.setting__fields > .field .field__input,
+.setting__fields > .field .field__select { width: 100%; box-sizing: border-box; }
+/* Except a number, which is 84px on purpose and should not be stretched. */
+.setting__fields > .field .field__input--number { width: 84px; }
+
 /* A label wrapping its control, so clicking the label focuses the right box
  * without generating an id that would not survive a re-render. */
+/* Sans on the label and the note for the reason `.setting__desc` is sans: these
+ * are words about the value, not the value. The input itself stays monospace. */
 .field { display: flex; flex-direction: column; gap: 2px; font-size: 11px; }
-.field__label { color: var(--lt-subtext0); }
-.field__note { color: var(--lt-text-disabled); font-size: 10.5px; }
+.field__label { color: var(--lt-subtext0); font-family: var(--lt-sans); }
+.field__note { color: var(--lt-text-disabled); font-size: 10.5px; font-family: var(--lt-sans); }
 
 .field__input,
 .field__select {
@@ -1070,7 +1133,21 @@
 
 /* A binding is the affordance: clicking the key is what rebinds it. */
 .keys__kbd { cursor: pointer; }
-.keys__actions { font-size: 11.5px; color: var(--lt-subtext0); margin-left: auto; }
+
+/* Two left-aligned columns, which is what a keymap is for.
+ *
+ * `.keys__actions` had `margin-left: auto` and so was pushed to the right edge of
+ * the row — in a 1200px window that put `cmd-1` at x=220 and `tabs.goto` at
+ * x=1350, with eleven hundred pixels of nothing in between. Reading the list
+ * meant tracking each key across the whole screen to find its command, and every
+ * command ended at a different left edge because they were flush right. VS Code's
+ * keybindings list is columns for the same reason.
+ *
+ * The key column is `min-width` rather than a width: a binding wider than the
+ * column pushes its own command over instead of being clipped, which loses the
+ * alignment on that one row and keeps the binding legible — the right way round. */
+.keys .row__leading { min-width: 120px; }
+.keys__actions { font-size: 11.5px; color: var(--lt-subtext0); }
 
 .keys__capture {
   width: 96px;

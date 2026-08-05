@@ -509,10 +509,16 @@
   written here — see [[lt.ui.field/control]]. A behavior with no parameters is a
   switch, because attaching it *is* the setting."
   [{:keys [tag behavior desc params values from exclusive?]}]
+  ;; The slot is always passed, and empty when this setting has no switch.
+  ;; `list-row` only draws `.row__leading` when it is given something, so a list
+  ;; that mixes the two started its descriptions at two different x positions —
+  ;; visibly ragged down sixty rows. `.setting__switch` is what reserves the
+  ;; width; see kit.css.
   [::row/list-row {:replicant/key [tag behavior]
-                   :leading (when (empty? params)
-                              [::field/toggle {:on? true
-                                               :on-change [[:settings/attach tag behavior false]]}])}
+                   :leading [:span.setting__switch
+                             (when (empty? params)
+                               [::field/toggle {:on? true
+                                                :on-change [[:settings/attach tag behavior false]]}])]}
    [:div.setting
     [:div.setting__desc desc]
     [:div.setting__where

@@ -371,8 +371,16 @@
 (deftest a-behavior-with-no-parameters-is-a-switch
   (let [rows (h/find-all (view/settings settings-state) :lt.ui.row/list-row)
         leading (keep (comp :leading h/attrs-of) rows)]
-    (is (= 1 (count leading))
-        "attaching it is the setting, so the row leads with a toggle and has no fields")))
+    ;; Every row has the slot, and exactly one has a toggle in it. It used to be
+    ;; the slot itself that was counted, because only the switch row passed one —
+    ;; and `list-row` draws `.row__leading` only when it is given something, so
+    ;; the descriptions in a list that mixes the two started at two different x
+    ;; positions. Visibly ragged over sixty rows, which is why the slot is always
+    ;; there now and why this counts the toggles instead.
+    (is (= (count rows) (count leading))
+        "the switch column is reserved on every row, so descriptions line up")
+    (is (= 1 (count (filter #(seq (h/find-all % :lt.ui.field/toggle)) leading)))
+        "attaching it is the setting, so that row leads with a toggle and has no fields")))
 
 (deftest the-filter-is-over-both-the-description-and-the-tag
   (is (= 1 (count (h/find-all (view/settings (assoc-in settings-state [:settings :query] "theme"))

@@ -890,7 +890,7 @@
 (defn- source-button [plugin]
   (let [url (:url plugin (:source plugin))]
     [:span.source {:on {:click (fn [e] (stop e) (platform/open-url url))}}
-     [:a {:href url} "website"]]))
+     [:a.plugin-action__label {:href url} "website"]]))
 
 (defn- update! [plugin]
   (discover-deps plugin (fn []
@@ -901,7 +901,14 @@
                                        (notifos/set-msg! (str "Updated " (:name plugin) " " (:version plugin))))))))
 
 (defn- update-button [plugin]
-  [:span.update {:on {:click (fn [e] (stop e) (update! plugin))}}])
+  ;; The word is here rather than in the stylesheet. The skin drew all three of
+  ;; these labels with `content: "update"` on a `:before`, so the only text in
+  ;; the button was in CSS — invisible to a screen reader, unreachable by a
+  ;; search of the source for the thing you clicked, and impossible to translate.
+  ;; The collapsed width plus `overflow:hidden` is what hides it until hover, and
+  ;; that is a stylesheet's job; the word is not.
+  [:span.update {:on {:click (fn [e] (stop e) (update! plugin))}}
+   [:span.plugin-action__label "update"]])
 
 (defn- install-button [plugin]
   ;; The row this is in used to be removed from the DOM by the handler, with
@@ -916,7 +923,8 @@
                                    (object/raise manager :refresh!)
                                    (cmd/exec! :behaviors.reload)
                                    (wait 1000 (fn []
-                                                (notifos/set-msg! (str "Installed " (:name plugin) " " (:version plugin))))))))}}])
+                                                (notifos/set-msg! (str "Installed " (:name plugin) " " (:version plugin))))))))}}
+   [:span.plugin-action__label "install"]])
 
 (defn- plugin-title [plugin]
   (let [url (:url plugin (:source plugin))]
@@ -950,7 +958,8 @@
                                  changes you may have made, and cannot be undone."]
                                  :buttons [{:label "Delete plugin"
                                             :action (fn [] (uninstall plugin))}
-                                           {:label "Cancel"}]}))}}])
+                                           {:label "Cancel"}]}))}}
+   [:span.plugin-action__label "uninstall"]])
 
 (defn- installed-plugin-ui [server-plugins plugin]
   (let [cached (-> server-plugins (get (keyword (:name plugin))) :latest-version)
