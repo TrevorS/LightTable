@@ -386,9 +386,26 @@ installed globally is worse than a version skew nobody has hit yet.
 npm install --save-dev typescript-language-server    # or -g
 ```
 
-On macOS the `PATH` half works only because `lt.objs.proc/set-path-OSX` sources
-the login shell's at startup: an application launched from Finder inherits
-almost nothing, so a version manager's shims are otherwise invisible.
+The `PATH` half works only because `lt.objs.proc/resolve-shell-env` asks the
+user's own shell for an environment at startup, login *and* interactive, the way
+VS Code's `shellEnv.ts` does. An application launched from Finder or a desktop
+entry inherits almost nothing, so a version manager's shims are otherwise
+invisible — and `-i` is the half that matters, because fnm, nvm, asdf and mise
+all hook themselves into `~/.zshrc`, which a login shell does not read.
+
+Asking a shell is not instant, so **`lt.objs.proc/on-env-ready` stands in front
+of `::use-language-server`**. Without it, an editor restored at startup asks for
+a server before the `PATH` that would find one has arrived, and losing that race
+costs the whole session rather than a moment: the server is recorded as not
+installed and nothing asks again. That waiting is bounded, for the reason the
+docstring gives — a gate only something-going-right can open would be a worse
+bug than the one it fixes.
+
+And a server found in the project's own `node_modules/.bin` **does not escape
+this**, which is what made it look like several bugs: `node_modules/.bin/biome`
+is a script beginning `#!/usr/bin/env node`, so finding it and running it are
+different questions. Without a `node` on `PATH` the local server fails to exec
+while the global one fails to be found, and the two report differently.
 
 A project with no server installed is not an error — nothing starts, and
 nothing else about the editor changes. Which makes it indistinguishable from a

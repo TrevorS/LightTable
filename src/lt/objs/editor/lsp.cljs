@@ -44,6 +44,7 @@
             [lt.objs.jump-stack :as jump-stack]
             [lt.objs.notifos :as notifos]
             [lt.objs.popup :as popup]
+            [lt.objs.proc :as proc]
             [lt.objs.providers :as providers]
             [lt.objs.search :as search]
             [lt.objs.sidebar.command :as scmd]
@@ -196,10 +197,17 @@
   perfectly good server is installed globally is worse than a version skew
   nobody has hit yet.
 
-  On macOS `PATH` is worth having only because `lt.objs.proc/set-path-OSX`
-  sources the login shell's at startup; an application launched from Finder
-  inherits almost nothing, so a version manager's shims are invisible without
-  it."
+  `PATH` is worth having only because `lt.objs.proc/resolve-shell-env` asks the
+  user's shell for one at startup. An application launched from Finder or a
+  desktop entry inherits almost nothing, so a version manager's shims are
+  invisible without it — and that resolution is not instant, which is why
+  [[lt.objs.proc/on-env-ready]] stands in front of the behavior that calls this.
+
+  **And the project's own copy does not save you**, which is the part that made
+  this look like several bugs. `node_modules/.bin/biome` is a script beginning
+  `#!/usr/bin/env node`, so finding it by path and running it are different
+  questions: without a `node` on `PATH` the local server fails to exec while the
+  global one fails to be found, and the two report differently."
   [root command]
   (let [local (str root "/node_modules/.bin/" command)]
     (if (.existsSync bridge/files local)
@@ -359,41 +367,50 @@
                 starts, and everything else about the editor is unaffected."
           :type :user
           :reaction (fn [this & _]
-                      (when-let [path (-> @this :info :path)]
-                        (doseq [server (servers-for (:tags @this))
-                                :let [root (project-root path (:root server))]
-                                :when root
-                                :let [conn (ensure-connection! root server)]
-                                ;; Already connected, which this is raised
-                                ;; often enough to reach: :lt.object/tags-added
-                                ;; fires for every tag an editor earns,
-                                ;; including the ones earned here.
-                                :when (and conn (not (some #{conn} (conns this))))]
-                          ;; One document, shared. The version counter belongs
-                          ;; to the file rather than to a server, and every
-                          ;; server is told about every change, so one sequence
-                          ;; is what each of them sees.
-                          (let [doc (or (::doc @this) (sync/document path (:language-id server)))]
-                            (object/merge! this {::doc doc
-                                                 ::conns (conj (conns this) conn)})
-                            ;; A server that was already up when this editor
-                            ;; opened has answered `initialize` long ago, so
-                            ;; ::tag-from-capabilities will not fire again for
-                            ;; it.
-                            (doseq [tag (capability-tags (lsp/server-capabilities conn))]
-                              (object/add-tags this [tag]))
-                            (when (open-close? conn)
-                              (lsp/notify! conn "textDocument/didOpen"
-                                           {:textDocument
-                                            ;; Its own languageId, not the
-                                            ;; document's: two servers for one
-                                            ;; file can name its language
-                                            ;; differently, and each was
-                                            ;; declared with the name it knows.
-                                            {:uri (:uri doc)
-                                             :languageId (:language-id server)
-                                             :version (:version doc)
-                                             :text (editor/->val this)}})))))))
+                      ;; Waited for, because finding a server is a `PATH`
+                      ;; question and `PATH` arrives from a shell that is still
+                      ;; starting. Deferred rather than retried: `@this` is read
+                      ;; again on the other side, so what runs is what the editor
+                      ;; is then — including having been closed, which is why it
+                      ;; is checked. See [[lt.objs.proc/on-env-ready]] for why
+                      ;; this cannot wait for ever.
+                      (proc/on-env-ready
+                       (fn []
+                         (when-let [path (and @this (-> @this :info :path))]
+                           (doseq [server (servers-for (:tags @this))
+                                   :let [root (project-root path (:root server))]
+                                   :when root
+                                   :let [conn (ensure-connection! root server)]
+                                   ;; Already connected, which this is raised
+                                   ;; often enough to reach: :lt.object/tags-added
+                                   ;; fires for every tag an editor earns,
+                                   ;; including the ones earned here.
+                                   :when (and conn (not (some #{conn} (conns this))))]
+                             ;; One document, shared. The version counter belongs
+                             ;; to the file rather than to a server, and every
+                             ;; server is told about every change, so one sequence
+                             ;; is what each of them sees.
+                             (let [doc (or (::doc @this) (sync/document path (:language-id server)))]
+                               (object/merge! this {::doc doc
+                                                    ::conns (conj (conns this) conn)})
+                               ;; A server that was already up when this editor
+                               ;; opened has answered `initialize` long ago, so
+                               ;; ::tag-from-capabilities will not fire again for
+                               ;; it.
+                               (doseq [tag (capability-tags (lsp/server-capabilities conn))]
+                                 (object/add-tags this [tag]))
+                               (when (open-close? conn)
+                                 (lsp/notify! conn "textDocument/didOpen"
+                                              {:textDocument
+                                               ;; Its own languageId, not the
+                                               ;; document's: two servers for one
+                                               ;; file can name its language
+                                               ;; differently, and each was
+                                               ;; declared with the name it knows.
+                                               {:uri (:uri doc)
+                                                :languageId (:language-id server)
+                                                :version (:version doc)
+                                                :text (editor/->val this)}})))))))))
 
 (behavior ::sync-on-change
           :triggers #{:change}

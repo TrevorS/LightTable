@@ -1,7 +1,7 @@
 [
  [:app :lt.objs.cache/init]
  [:app :lt.objs.settings/load-behaviors]
- [:app :lt.objs.proc/set-path-OSX]
+ [:app :lt.objs.proc/resolve-shell-env]
  [:app :lt.objs.workspace/reconstitute-last-workspace]
  ;; After the workspace, on the same trigger: the session is only
  ;; applied when its folders match the workspace that was restored.

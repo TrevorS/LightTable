@@ -369,7 +369,15 @@ export interface LightTableBridge {
     processes: {
         /** Start a program. */
         spawn(command: string, args: string[], options: SpawnOptions): ProcessHandle;
-        /** Run a command through the shell and collect what it printed. */
+        /**
+         * Run `command` through the platform shell and hand back what it said.
+         *
+         * No timeout, and nothing here needs one: a caller that must bound how
+         * long a program gets wants `spawn` instead, which hands back a handle
+         * with a `kill` on it. Resolving the user's shell environment is the case
+         * that proved it — it needs a bound *and* two levels of quoting rather
+         * than the three this adds, so it spawns the shell itself.
+         */
         exec(command: string, callback: (error: string | null, stdout: string, stderr: string) => void): void;
         /**
          * Fork a node script that talks back over an ipc channel. Used for
