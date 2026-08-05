@@ -56,13 +56,34 @@ function git(...args: string[]): string | null {
  * instead rather than deriving one from the other and getting the number of
  * `..`s wrong.
  */
+/**
+ * Is this directory a packaged application, rather than just a directory that
+ * happens to be in `builds/`?
+ *
+ * Asked, because `builds/` is not only for builds. `script/screenshot.mts` writes
+ * `builds/screenshots/` and `script/uiscan.mts` writes `builds/uiscan/`, and this
+ * used to treat every directory in there as a candidate — so it refused to install
+ * anything at all, on the grounds that there were two builds and it could not
+ * choose, after somebody took a screenshot. The safety was right and the premise
+ * was wrong.
+ *
+ * By what is *inside* it: a `.app` on a Mac, an unpacked Electron tree elsewhere.
+ * A name pattern would work today and break the first time the release naming
+ * changes.
+ */
+function isBuild(dir: string): boolean {
+    return fs.existsSync(path.join(dir, 'LightTable.app'))
+        || fs.existsSync(path.join(dir, 'resources', 'app'));
+}
+
 function build(): { dir: string; bundle: string | null; name: string } {
     if (!fs.existsSync(BUILDS)) fail('No builds/ — run `make build` first.');
     const entries = fs.readdirSync(BUILDS)
         .map((e) => path.join(BUILDS, e))
-        .filter((p) => fs.statSync(p).isDirectory());
+        .filter((p) => fs.statSync(p).isDirectory())
+        .filter(isBuild);
 
-    if (!entries.length) fail('Nothing in builds/ — run `make build` first.');
+    if (!entries.length) fail('No packaged build in builds/ — run `make build` first.');
     if (entries.length > 1) {
         // Two builds means two versions, and picking one for you is how the
         // wrong one gets installed. `make clean` or name it with DEST.
