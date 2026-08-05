@@ -725,11 +725,13 @@ test('a modal is what it was created with, and selecting is arithmetic', async (
 
     // Moving the selection used to be two `dom/add-class` calls against a
     // NodeList. It is a number on the object, and the class is drawn from it.
-    expect(await evalClj(window, '(:button @p)')).toBe('0');
+    // `:active` rather than `:button`, because it indexes the options as well as
+    // the buttons now — this popup has no options, so the numbering is the same.
+    expect(await evalClj(window, '(:active @p)')).toBe('0');
     await expect(card.locator('li.button.active')).toHaveText('cancel');
 
     await evalClj(window, '(do (cmd/exec! :popup.move-active 1) :moved)');
-    expect(await evalClj(window, '(:button @p)')).toBe('1');
+    expect(await evalClj(window, '(:active @p)')).toBe('1');
     await expect(card.locator('li.button.active')).toHaveText('second');
 
     // And it wraps, which is the reason it was a `mod` in the first place.
@@ -743,32 +745,100 @@ test('a modal is what it was created with, and selecting is arithmetic', async (
     await expect(window.locator('.popup')).toHaveCount(0);
 });
 
-test('and a choice in a modal body is still a choice', async ({ window }) => {
-    // Three callers put their options in the body rather than in `:buttons` —
-    // which client should evaluate this, which LSP code action to run — because
-    // there can be many and they are the question rather than a confirmation.
-    // Those were DOM nodes spliced into hiccup, which Replicant cannot render,
-    // so they moved with the popup.
+test('and an option is a choice the object knows about', async ({ window }) => {
+    // Two callers needed a *list* of choices rather than a confirmation — which
+    // client should evaluate this, which LSP code action to run — and `:options`
+    // did not exist, so they built `li.button` hiccup in `:body` with a click
+    // closure inside it. The choices then existed only in the rendered document,
+    // which is why the automation surface read them back with a
+    // `querySelectorAll`.
+    //
+    // They are `:options` now. Same idea, on the object.
     await evalClj(window, `
         (do (def chosen (atom nil))
             (def q (atom nil))
             (reset! q (lt.objs.popup/popup!
                        {:header "Which client?"
-                        :body [:ul [:li.button {:on {:click (fn []
-                                                              (reset! chosen "the one")
-                                                              (object/raise @q :close!))}}
-                                    "the one"]]
+                        :body [:p "There are two."]
+                        :options [{:label "the one" :action #(reset! chosen "the one")}
+                                  {:label "the other" :action #(reset! chosen "the other")}]
                         :buttons [lt.objs.popup/cancel-button]}))
             :open)`);
 
-    // The automation surface reads both kinds, which is why it stays a DOM
-    // read: a reader that trusted `:buttons` would offer only "cancel" here.
+    // Options above the buttons, and structurally distinguishable from them —
+    // which is what the `.lsp-action` class each caller used to add was for.
+    const card = window.locator('.popup');
+    expect(await card.locator('ul.options li.button').allTextContents())
+        .toEqual(['the one', 'the other']);
+    expect(await card.locator('ul.buttons li.button').allTextContents())
+        .toEqual(['cancel']);
+
+    // The automation surface reads both kinds from the object now. A reader that
+    // trusted `:buttons` alone would offer only "cancel" here, which is the
+    // failure the DOM read existed to avoid.
     const prompt = (await control(window, 'prompts')).prompts[0];
-    expect(prompt.choices).toEqual(['the one', 'cancel']);
+    expect(prompt.choices).toEqual(['the one', 'the other', 'cancel']);
     expect(prompt.header).toBe('Which client?');
 
-    await window.locator('.popup li.button', { hasText: 'the one' }).click();
-    expect(await evalClj(window, '@chosen')).toBe('"the one"');
+    // And it can *answer* one, which is the half that used to mean synthesising
+    // a click on whichever node was at that index.
+    await control(window, 'answer', { prompt: prompt.id, choice: 'the other' });
+    expect(await evalClj(window, '@chosen')).toBe('"the other"');
+    await expect(window.locator('.popup')).toHaveCount(0);
+});
+
+test('and the arrow keys reach an option, which they did not before', async ({ window }) => {
+    // The gap this closes: `:active` was `:button` and indexed the buttons alone,
+    // so a popup whose entire purpose was to ask which of several things you
+    // wanted let you arrow between *cancel* and nothing — and Enter on a chooser
+    // cancelled it.
+    await evalClj(window, `
+        (do (def took (atom nil))
+            (def p (lt.objs.popup/popup!
+                    {:header "Which one?"
+                     :options [{:label "first" :action #(reset! took :first)}
+                               {:label "second" :action #(reset! took :second)}]
+                     :buttons [lt.objs.popup/cancel-button]}))
+            :open)`);
+
+    const card = window.locator('.popup');
+
+    // The first option is highlighted, not the cancel button — the popup is a
+    // question and the highlight is the answer it is proposing.
+    expect(await evalClj(window, '(:active @p)')).toBe('0');
+    await expect(card.locator('li.button.active')).toHaveText('first');
+
+    await evalClj(window, '(do (cmd/exec! :popup.move-active 1) :moved)');
+    await expect(card.locator('li.button.active')).toHaveText('second');
+
+    // Past the last option is the buttons, because `:active` indexes one list in
+    // the order it is on screen.
+    await evalClj(window, '(do (cmd/exec! :popup.move-active 1) :moved)');
+    await expect(card.locator('ul.buttons li.button.active')).toHaveText('cancel');
+
+    // And it wraps back round to the first option.
+    await evalClj(window, '(do (cmd/exec! :popup.move-active 1) :wrapped)');
+    await expect(card.locator('ul.options li.button.active')).toHaveText('first');
+
+    // Enter takes the highlighted option, which is what changed: it used to
+    // cancel, because cancel was the only thing the selection could be on.
+    await evalClj(window, '(do (cmd/exec! :popup.move-active 1) :moved)');
+    await evalClj(window, '(do (cmd/exec! :popup.exec-active) :ran)');
+    expect(await evalClj(window, '@took')).toBe(':second');
+    await expect(window.locator('.popup')).toHaveCount(0);
+});
+
+test('and clicking an option runs it and closes the modal', async ({ window }) => {
+    await evalClj(window, `
+        (do (def picked (atom nil))
+            (lt.objs.popup/popup!
+             {:header "Pick"
+              :options [{:label "only" :action #(reset! picked :only)}]
+              :buttons [lt.objs.popup/cancel-button]})
+            :open)`);
+
+    await window.locator('.popup ul.options li.button', { hasText: 'only' }).click();
+    expect(await evalClj(window, '@picked')).toBe(':only');
     await expect(window.locator('.popup')).toHaveCount(0);
 });
 

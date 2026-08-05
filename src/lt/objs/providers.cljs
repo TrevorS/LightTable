@@ -81,3 +81,41 @@
   "Is anything in `clients` answering `surface`?"
   [clients surface]
   (boolean (provider clients surface)))
+
+(def ^:private eval-prefix
+  "What an evaluation command is called, whatever the language.
+
+  A prefix rather than a suffix, which is why this is not one of the `surfaces`
+  above: the Clojure plugin advertises `:editor.eval.cljs`, Python
+  `:editor.eval.python`, and the browser `:editor.eval.cljs.exec` — they agree
+  at the front and diverge at the back, where a doc command agrees at the back
+  and diverges at the front."
+  "editor.eval")
+
+(defn eval-commands
+  "The evaluation commands `client` advertises.
+
+  Read off `:commands`, which is what the client sent at handshake and what
+  `lt.objs.clients/discover*` already filters on. Nothing is inferred beyond
+  the name."
+  [client]
+  (into (sorted-set)
+        (filter #(string/starts-with? (str (symbol %)) eval-prefix))
+        (:commands client)))
+
+(defn evaluates?
+  "Can `client` be the thing a buffer evaluates through?
+
+  Asked before binding one, and it is the only guard that matters there:
+  `lt.objs.eval/get-client!` reuses whatever is bound if it is *available*, and
+  never asks whether it can serve the command being sent. So a client bound
+  under `:default` that advertises no evaluation command at all is a buffer whose
+  next evaluation goes nowhere, with nothing to say why.
+
+  Deliberately not a check that it can serve *this* language. A client that
+  advertises `:editor.eval.python` is a legitimate choice for a buffer Light
+  Table thinks is something else — the file type may be wrong, or the user may
+  know better — and refusing that would be the editor overruling a deliberate
+  act. Jupyter lets you select a Python kernel for any notebook too."
+  [client]
+  (boolean (seq (eval-commands client))))

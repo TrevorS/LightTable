@@ -9,7 +9,10 @@
             [lt.objs.statusbar :as statusbar]
             [lt.objs.tabs :as tabs]
             [clojure.string :as string]
-            [lt.util.dom :refer [append] :as dom]
+            ;; `append` came off the refer with `write`: the console does not put
+            ;; nodes anywhere any more. `dom` stays for the scroll and for the
+            ;; menu's copy, which reads what was rendered.
+            [lt.util.dom :as dom]
             [lt.objs.platform :as platform]
             [lt.ui :as ui]
             [lt.util.bridge :as bridge])
@@ -38,41 +41,66 @@
 
 (declare console)
 
-(defn write [$console msg]
-  (when (> (count (dom/children $console)) (dec console-limit))
-    (dom/remove (aget (dom/children $console) 0)))
-  (when-not (bottombar/active? console)
-    (statusbar/dirty))
-  (append $console msg))
-
 (defn write-to-log [thing]
   (when core-log
     (.appendFileSync bridge/files core-log thing)))
 
-(defn- ^js ->item
-  "One console line, as a node.
+;;*********************************************************
+;; The lines, as a value
+;;*********************************************************
 
-  A node and not hiccup, because the console is genuinely append-only: [[write]]
-  puts this at the end, drops the first child when there are too many, and
-  [[try-update]] appends text into one that is already there as a process keeps
-  talking. Nothing redraws a line, so nothing needs to be able to."
-  [l & [class]]
-  (ui/element [:li {:class class} l]))
+;; The console was the last surface still building its own nodes, and it had the
+;; best reason: it is genuinely append-only. `write` appended an `<li>`, dropped
+;; the first child when there were too many, and `try-update` appended a text
+;; node into a `<pre>` that was already on screen so that a process talking in
+;; chunks accumulated in one row rather than producing a row per chunk.
+;;
+;; doc/hygiene.md's judgement was that making this a view means holding the last
+;; fifty lines *as* a value, and that the streaming append is the thing that would
+;; have to change. Both were right, and the second turned out to be the argument
+;; *for* doing it rather than the obstacle: appending to a line you are holding is
+;; `update :text str`, where appending to a line you have already drawn means
+;; finding it by id in the document. The imperative version existed because there
+;; was no value to update, not because streaming needs a DOM.
+
+(defonce ^:private next-key
+  ;; A line's identity, and it has to be stable. `:replicant/key` is what stops a
+  ;; re-render from re-creating every row when the oldest is dropped: with the
+  ;; index as the key, dropping the first line shifts all fifty and Replicant
+  ;; rebuilds the list every time anything is logged.
+  (atom 0))
+
+(defn- push-line!
+  "Add `line` to the console, dropping the oldest past [[console-limit]]."
+  [line]
+  (object/update! console [:lines]
+                  (fn [ls]
+                    (let [ls (conj (or ls []) (assoc line :key (swap! next-key inc)))
+                          n (count ls)]
+                      ;; `subvec` rather than `take`: the result stays a vector,
+                      ;; which is what `update` on the last line below needs.
+                      (if (> n console-limit)
+                        (subvec ls (- n console-limit))
+                        ls))))
+  (when-not (bottombar/active? console)
+    (statusbar/dirty))
+  ;; After the value, because the redraw is what creates the node to scroll. The
+  ;; watch `ui/node` installs renders synchronously, so by here the line is in
+  ;; the document.
+  (when-let [el (->ui console)]
+    (dom/scroll-top el 10000000000)))
 
 (defn log
   ([l] (log l nil))
   ([l class] (log l class nil))
   ([l class str-content]
    (when-not (= "" l)
-     (let [$console (->ui console)]
-       (when (or (string? l) str-content) (write-to-log (if (string? l)
-                                                          l
-                                                          str-content))
-         (write $console (->item [:pre (if-not (dom-like? l)
-                                         (pr-str l)
-                                         l)] class))
-         (dom/scroll-top $console 10000000000)
-         nil)))))
+     (when (or (string? l) str-content)
+       (write-to-log (if (string? l) l str-content))
+       (push-line! {:kind :log
+                    :class class
+                    :content (if-not (dom-like? l) (pr-str l) l)})
+       nil))))
 
 (defn error
   "Log errors, strings or any objects as console error(s). If an error,
@@ -93,11 +121,41 @@
 (.addEventListener js/window "error" #(error (or (.-error %) (.-message %))))
 (.addEventListener js/window "unhandledrejection" #(error (.-reason %)))
 
+(defn- line-ui
+  "One console line, as hiccup.
+
+  Keyed, and the key is the line's own rather than its position — see
+  [[next-key]].
+
+  Two kinds, which is the distinction the old `->item` made by what its caller
+  wrapped things in rather than by saying so: `log` put its content in a `<pre>`
+  and `verbatim` did not, because a caller of `verbatim` is handing over the whole
+  line. `:loc` is the third and is the only one with structure of its own."
+  [{:keys [key kind class content file line text]}]
+  [:li {:replicant/key key :class class}
+   (case kind
+     :loc [:table
+           [:tr
+            [:td.loc
+             [:em.file file
+              (when line [:em.line "[" line "]"])
+              ": "]]
+            [:td [:pre text]]]]
+     :log [:pre content]
+     ;; `verbatim`, whose caller owns the whole line.
+     content)])
+
 (defn- console-ui
-  "The empty list every line is appended to. Two objects have one: the console
-  in the bottombar and the console in a tab."
+  "The console, as a function of its lines.
+
+  `ui/node` rather than `ui/state-node`: the lines belong to this object, so the
+  object is the thing to watch. The `<ul>` is the root and stays put, because
+  `object/->content` hands it out and the bottombar, a tabset and the scroll
+  below all keep the reference — see [[lt.ui/node]]."
   [this]
-  (ui/element [:ul.console {:on {:contextmenu (fn [e] (object/raise this :menu! e))}}]))
+  (ui/node this
+           [:ul.console {:on {:contextmenu (fn [e] (object/raise this :menu! e))}}]
+           (fn [obj] (map line-ui (:lines @obj)))))
 
 (behavior ::on-close
           :triggers #{:close}
@@ -109,6 +167,9 @@
                 :tags #{:console}
                 :name "console"
                 :dirty false
+                ;; The last `console-limit` lines, newest last. What the console
+                ;; *is*, rather than what it has drawn.
+                :lines []
                 :init (fn [this]
                         (object/merge! this {:current-ui :bottom})
                         (console-ui this)
@@ -130,48 +191,66 @@
   ([thing class]
    (verbatim thing class nil))
   ([thing class str-content]
-   (let [$console (->ui console)]
-     (when str-content
-       (write-to-log str-content))
-     (when class
-       (statusbar/console-class class))
-     (write $console (->item thing class))
-     (dom/scroll-top $console 10000000000)
-     nil)))
+   (when str-content
+     (write-to-log str-content))
+   (when class
+     (statusbar/console-class class))
+   (push-line! {:kind :verbatim :class class :content thing})
+   nil))
 
-(defn try-update [{:keys [content id]}]
-  (when id
-    (when-let [pre (dom/$ (str "#console" id) (->ui console))]
-      (dom/append pre (dom/text-node content))
-      true)))
+(defn try-update
+  "Append `content` to the line already streaming under `id`, if there is one.
+
+  This is the one genuinely imperative-for-a-reason piece doc/hygiene.md named,
+  and holding the lines as a value is what stopped it being imperative. nREPL
+  stdout arrives in chunks under one id, and every chunk has to land in the row
+  the first one made rather than making a row of its own.
+
+  As a DOM operation that meant `document.querySelector('#console<id>')` and
+  appending a text node — which is why the line carried a generated id at all. As
+  a value it is `update :text str`, and the id is a field nobody has to put in the
+  markup.
+
+  **Any** line with that id, not just the last, which is what `querySelector`
+  did and is the behaviour to keep: two processes talking at once each accumulate
+  into their own row, and a chunk from the older one belongs in the row its
+  stream started rather than in a new row at the bottom. Matched from the end, so
+  that if an id were ever reused the most recent row wins."
+  [{:keys [content id]}]
+  (when (and id content)
+    (let [ls (:lines @console)
+          at (->> (map-indexed vector ls)
+                  (filter (fn [[_ l]] (= id (:stream l))))
+                  last
+                  first)]
+      (when at
+        (object/update! console [:lines] update at update :text str content)
+        (when-let [el (->ui console)]
+          (dom/scroll-top el 10000000000))
+        true))))
 
 (defn loc-log [{:keys [file line content class str-content id] :as msg}]
   (when content
-    (when (or (string? content) str-content) (write-to-log (str file "[" line "]: " (if (string? content)
-                                                                                      content
-                                                                                      str-content) "\n")))
+    (when (or (string? content) str-content)
+      (write-to-log (str file "[" line "]: "
+                         (if (string? content) content str-content) "\n")))
     (when-not (try-update msg)
-      (verbatim [:table
-                 [:tr
-                  [:td.loc
-                   [:em.file file
-                    (when line [:em.line "[" line "]"])
-                    ": "]]
-                  [:td [:pre (when id {:id (str "console" id)}) (if (string? content)
-                                                                  (string/replace content #"^\s+" "")
-                                                                  content)]]]]
-                class))))
+      (when class
+        (statusbar/console-class class))
+      (push-line! {:kind :loc
+                   :class class
+                   :file file
+                   :line line
+                   ;; `:stream` is what a later chunk matches on. Present only
+                   ;; when the caller gave an id, which is how it says the line
+                   ;; may be continued.
+                   :stream id
+                   :text (if (string? content)
+                           (string/replace content #"^\s+" "")
+                           content)}))))
 
 (defn clear []
-  (dom/empty (->ui console)))
-
-(object/object* ::sidebar.console
-                :tags #{:console}
-                :label "console"
-                :order 4
-                :init (fn [this]
-                        (console-ui this)
-                        ))
+  (object/merge! console {:lines []}))
 
 (def console (object/create ::console))
 
@@ -231,7 +310,11 @@
                       (object/raise bottombar/bottombar :hide! console)))
 
 
-(bottombar/add-item console)
+;; `(bottombar/add-item console)` was here. It wrote the console into a
+;; `:items` map on the bar that nothing read — the bar draws `(:active @this)`
+;; and always has — so registering was a no-op that made the bar look general.
+;; The console reaches it by `:show!`, `:hide!` and `:toggle` above, which is
+;; what actually happens.
 
 (cmd/command {:command :console-tab
               :desc "Console: Open the console in a tab"

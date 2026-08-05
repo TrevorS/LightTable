@@ -38,10 +38,13 @@
     ([this n not-found]
      (or (.item this n) not-found))))
 
-(defn text-node
-  "Create a text node containing string `text`."
-  [text]
-  (js/document.createTextNode text))
+;; `text-node` was here. Its only caller was the console's streaming append —
+;; `(dom/append pre (dom/text-node chunk))`, which put a chunk of a process's
+;; stdout into a `<pre>` already on screen. The console holds its lines as a value
+;; now, so appending a chunk is `update :text str` and there is no node to make.
+;;
+;; Deleted rather than kept for a future caller: creating a text node by hand is
+;; something only a renderer needs to do, and Replicant is the renderer.
 
 (defn $$
   "Returns a NodeList of all elements within `elem` that match `query`.

@@ -988,28 +988,33 @@
 (defn- action-title [action]
   (or (:title action) "(untitled action)"))
 
-(defn- action-button [popup action cb]
-  ;; Its own class, because the popup's cancel is an `li.button` too.
-  [:li.button.lsp-action {:on {:click (fn []
-                                        (cb action)
-                                        (when-let [p @popup] (object/raise p :close!)))}}
-   (action-title action)])
-
 (defn- offer-actions!
   "Ask which action, then run it.
 
   No object of its own. An earlier version created one to hold the callback,
-  the way lt.objs.connector's client selector does, and destroyed it when a
+  the way lt.objs.connector's client selector did, and destroyed it when a
   button was clicked — so dismissing the popup with Esc instead left the
   object behind, tagged and reachable, holding a closure over the editor.
-  Closing over the callback here means there is nothing to clean up."
+  Closing over the callback here means there is nothing to clean up.
+
+  The actions are `:options` rather than `li.button.lsp-action` hiccup built here.
+  That also removed the `atom` this used to hold the popup in so a hand-built
+  handler could close the thing containing it, and it is why the choices are
+  visible to `lt.objs.control` — which lists open prompts over MCP and had to
+  read them out of the rendered document.
+
+  The `.lsp-action` class each one carried is gone with them, and nothing has to
+  replace it. It existed to tell an action apart from the popup's own cancel,
+  which is a distinction `:options` makes structurally — `ul.options` against
+  `ul.buttons` — so the class was working around the absence of the thing that now
+  exists. No stylesheet ever referenced it; the smoke test did, and selects on the
+  structure instead."
   [actions cb]
-  (let [popup (atom nil)]
-    (reset! popup
-            (popup/popup! {:header "What would you like to do?"
-                           :body [:ul.lsp-actions
-                                  (map #(action-button popup % cb) actions)]
-                           :buttons [popup/cancel-button]}))))
+  (popup/popup! {:header "What would you like to do?"
+                 :options (for [action actions]
+                            {:label (action-title action)
+                             :action #(cb action)})
+                 :buttons [popup/cancel-button]}))
 
 (defn- run-action!
   "Do what a chosen action says: an edit, a command, or both.

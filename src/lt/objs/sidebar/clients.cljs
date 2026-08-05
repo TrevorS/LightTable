@@ -22,7 +22,9 @@
             [lt.objs.clients.tcp :as tcp]
             [lt.objs.command :as cmd]
             [lt.objs.editor.pool :as pool]
+            [lt.objs.eval :as eval]
             [lt.objs.menu :as menu]
+            [lt.objs.providers :as providers]
             [lt.objs.popup :as popup]
             [lt.objs.sidebar :as sidebar]
             [lt.state :as state]
@@ -85,6 +87,26 @@
                             (when-let [c (client-by-id id)]
                               (clients/close! c))))
 
+(actions/register-effect! :client/bind
+                          (fn [id]
+                            ;; What clicking a connection row means: this is
+                            ;; where an evaluation in the buffer you are in
+                            ;; goes. The row's whole purpose, and until now it
+                            ;; did nothing — the effect wrote a `::client` key
+                            ;; that nothing read, so the panel showed the truth
+                            ;; and the click lied about changing it.
+                            ;;
+                            ;; The deciding is `lt.objs.eval/bind!`, beside
+                            ;; `get-client!` and the `:select` branch that has
+                            ;; always done this when a language asked.
+                            (when-let [c (client-by-id id)]
+                              (when-let [ed (pool/last-active)]
+                                (eval/bind! ed c)
+                                ;; Same as unset: clicking in the panel took
+                                ;; focus, and the next thing anyone does is
+                                ;; evaluate.
+                                (pool/focus-last)))))
+
 (actions/register-effect! :client/unset
                           (fn [id]
                             ;; Take this client off the buffer you are in, so
@@ -109,6 +131,15 @@
                       (let [c (client-by-id id)
                             bound? (and c (contains? (set (some-> (pool/last-active) deref :client vals)) c))]
                         (concat items
+                                ;; Both directions, so the menu is a complete
+                                ;; account of what you can do to a connection.
+                                ;; Clicking the row binds too — this is the
+                                ;; discoverable version of that, and the only
+                                ;; way to find it if you have not guessed the
+                                ;; row is clickable.
+                                (when (and c (not bound?) (providers/evaluates? @c))
+                                  [{:label "Evaluate through this" :order 0
+                                    :click #(dispatch! [:client/bind id])}])
                                 (when bound?
                                   [{:label "Stop evaluating through this" :order 0
                                     :click #(dispatch! [:client/unset id])}])

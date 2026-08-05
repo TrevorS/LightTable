@@ -67,3 +67,46 @@
   (let [quiet {:provides #{} :commands [:editor.clj.doc]}]
     (is (not (providers/provides? quiet :doc)))
     (is (providers/infers? quiet :doc))))
+
+;;*********************************************************
+;; Can a client be evaluated through?
+;;*********************************************************
+
+;; The guard `lt.objs.eval/bind!` needs before it makes a client the one a buffer
+;; evaluates through. It is the only guard that matters there: `get-client!`
+;; reuses whatever is bound if it is merely *available*, and never asks whether
+;; it can serve the command being sent.
+
+(deftest a-client-that-advertises-an-eval-command-can-be-bound
+  (is (providers/evaluates? {:commands #{:editor.eval.cljs}}))
+  (is (providers/evaluates? {:commands #{:editor.eval.python}}))
+  (is (providers/evaluates? {:commands #{:editor.eval.cljs.exec}})))
+
+(deftest a-client-with-no-eval-command-cannot
+  (testing "a language server answers about code and does not run it"
+    (is (not (providers/evaluates? {:commands #{:editor.clj.doc :editor.clj.hints}}))))
+  (is (not (providers/evaluates? {:commands #{}})))
+  (is (not (providers/evaluates? {})))
+  (testing "and a name that merely contains the prefix is not one"
+    ;; A prefix rather than a substring, because `editor.eval` at the front is
+    ;; what an evaluation command is; anywhere else it is a coincidence.
+    (is (not (providers/evaluates? {:commands #{:my.editor.eval.thing}})))))
+
+(deftest the-eval-commands-are-reported-so-a-refusal-can-say-why
+  (is (= [:editor.eval.cljs :editor.eval.cljs.exec]
+         (vec (providers/eval-commands
+               {:commands #{:editor.eval.cljs.exec :editor.clj.doc :editor.eval.cljs}}))))
+  (testing "sorted, because it is shown to a person"
+    (is (= [:editor.eval.a :editor.eval.b]
+           (vec (providers/eval-commands {:commands #{:editor.eval.b :editor.eval.a}}))))))
+
+(deftest evaluating-is-not-one-of-the-declared-surfaces
+  ;; `:provides` is taken as complete for doc, completion, jump and code-action —
+  ;; a client that lists them is saying what it does *not* do. Evaluation is not
+  ;; in that vocabulary, so a client declaring `:provides #{:doc}` and
+  ;; advertising an eval command can still be evaluated through.
+  (let [c {:provides #{:doc} :commands #{:editor.eval.cljs}}]
+    (is (providers/provides? c :doc))
+    (is (not (providers/provides? c :completion)))
+    (is (providers/evaluates? c)
+        "declaring what it answers says nothing about whether it runs code")))

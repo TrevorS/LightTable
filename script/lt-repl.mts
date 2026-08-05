@@ -33,7 +33,7 @@
 // what this was written to diagnose.
 
 import * as path from 'node:path';
-import { spawn } from 'node:child_process';
+import { spawn, execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import { CORE, ROOT, electronBinary, packagedApp } from './lib/paths.mts';
@@ -355,12 +355,81 @@ async function start(release = false): Promise<void> {
     console.log('ready');
 }
 
+/** Every pid whose command line contains `needle`, newest first. */
+function pidsMatching(needle: string): number[] {
+    try {
+        return execFileSync('ps', ['-Ao', 'pid=,command='], { encoding: 'utf8' })
+            .split('\n')
+            .filter((l) => l.includes(needle))
+            .map((l) => Number(l.trim().split(/\s+/)[0]))
+            .filter((n) => Number.isFinite(n) && n !== process.pid)
+            .reverse();
+    } catch {
+        return [];
+    }
+}
+
+function alive(pid: number): boolean {
+    try { process.kill(pid, 0); return true; } catch { return false; }
+}
+
+/**
+ * Stop the application, and say so only when it is true.
+ *
+ * This printed `stopped` unconditionally. It signalled the recorded pid, caught
+ * both failures, deleted the state file and claimed success — so the one thing it
+ * could not do was tell you it had not worked. A packaged app boot left a running
+ * editor behind and reported that it had stopped it, which is how it was found.
+ *
+ * The reason the signal missed is worth keeping: `spawn(…, {detached: true})`
+ * records the pid it launched, and the packaged app **re-execs** — the recorded
+ * process is gone by the time anyone asks, so both `kill(-pid)` and `kill(pid)`
+ * throw ESRCH and the app is untouched. So the pid is a hint rather than the
+ * answer, and what is actually running has to be looked up.
+ *
+ * SIGTERM first, then SIGKILL for anything that ignores it, and the binary path
+ * is the needle — `builds/…/LightTable.app` or `deploy/core`, never a bare
+ * "Electron", because most desktop applications are one and killing them is not
+ * this script's business.
+ */
 function stop(): void {
     if (!fs.existsSync(STATE)) { console.log('not running'); return; }
-    const { pid } = JSON.parse(fs.readFileSync(STATE, 'utf8'));
-    // xvfb-run leaves a process group; kill the group so nothing is orphaned.
-    try { process.kill(-pid, 'SIGTERM'); } catch { try { process.kill(pid, 'SIGTERM'); } catch { /* already gone */ } }
+    const { pid, what } = JSON.parse(fs.readFileSync(STATE, 'utf8'));
     fs.rmSync(STATE, { force: true });
+
+    // xvfb-run leaves a process group; kill the group so nothing is orphaned.
+    try { process.kill(-pid, 'SIGTERM'); } catch {
+        try { process.kill(pid, 'SIGTERM'); } catch { /* already gone — see the docstring */ }
+    }
+
+    // And whatever is actually running, found by what it was launched from.
+    // What it was launched from, absolute. `what` is already the relative form of
+    // exactly that — `deploy/core`, or the packaged binary's path — so nothing has
+    // to be recomputed and the two cannot disagree.
+    //
+    // Trimmed to the `.app` for a packaged run, because the helper processes name
+    // the bundle but not the `MacOS/Electron` inside it, and a needle that missed
+    // them would report success while a GPU process was still up.
+    const launched = path.join(ROOT, what);
+    const needle = launched.includes('.app/')
+        ? launched.slice(0, launched.indexOf('.app/') + 4)
+        : launched;
+    for (const signal of ['SIGTERM', 'SIGKILL'] as const) {
+        const pids = pidsMatching(needle);
+        if (!pids.length) break;
+        for (const p of pids) {
+            try { process.kill(p, signal); } catch { /* raced with its own exit */ }
+        }
+        // Long enough for a window to close and its helpers to follow.
+        const until = Date.now() + 3000;
+        while (Date.now() < until && pidsMatching(needle).some(alive)) { /* spin */ }
+    }
+
+    const left = pidsMatching(needle);
+    if (left.length) {
+        console.error(`still running: ${left.join(', ')} — ${needle}`);
+        process.exit(1);
+    }
     console.log('stopped');
 }
 

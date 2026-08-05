@@ -8,6 +8,7 @@
             [lt.util.cljs]
             [lt.objs.sidebar.command :as cmd]
             [lt.objs.notifos :as notifos]
+            [lt.objs.providers :as providers]
             [lt.objs.popup :as popup]
             [lt.objs.console :as console]
             [lt.util.dom :as dom]
@@ -143,6 +144,69 @@
                                                              (object/update! origin [:client] assoc key client)))
                 (clients/placeholder))
                 )))
+
+(def default-key
+  "The key an evaluation is bound under when nothing says otherwise.
+
+  `(:client @ed)` is a map from *key* to client rather than one client per
+  buffer, and the key is the caller's — which sounds like it needs a policy and
+  turns out not to. Of the eleven `get-client!` call sites across the five code
+  plugins, **ten pass no key at all** and get this one; the eleventh is the
+  Clojure plugin's `:exec`, a private second channel for
+  `:editor.eval.cljs.exec`.
+
+  So this key is what \"where does an evaluation go\" means, and it is what
+  [[bind!]] writes."
+  :default)
+
+(defn bind!
+  "Make `client` the one `ed` evaluates through. Returns true when it did.
+
+  This is the operation the connect panel's rows were always for, and it existed
+  already in a place nobody could reach: `find-client`'s `:select` branch, which
+  is what runs when a language finds more than one candidate and asks. Binding
+  from the panel is the same act with the choice made earlier, so it is the same
+  two steps — hand the queued work over with `clients/swap-client!`, then write
+  the key.
+
+  `swap-client!` is why this is not an `assoc`. A client can have messages queued
+  against it that have not been sent; replacing the entry without replaying them
+  loses an evaluation somebody asked for.
+
+  **Bound under [[default-key]] only, and one key is the whole policy.** The
+  panel's question is where an evaluation goes; `:exec` is one plugin's private
+  channel and redirecting it from a list of connections would be answering a
+  question nobody asked. `:client/unset` is symmetric and already removes this
+  client from *every* key it occupies, so the two compose.
+
+  Refuses a client that advertises no evaluation command, because
+  [[get-client!]] reuses whatever is bound if it is merely *available* and never
+  checks that it can serve the command — so binding one would be a buffer whose
+  next evaluation silently goes nowhere. That is the one thing this has to guard,
+  and [[lt.objs.providers/evaluates?]] is the check."
+  [ed client]
+  (cond
+    (not (and ed client @client)) false
+
+    (not (providers/evaluates? @client))
+    (do (notifos/set-msg!
+         (str "'" (clients/->name client) "' cannot evaluate — it offers "
+              (if-let [cs (seq (:commands @client))]
+                (str (count cs) " commands, none of them evaluation")
+                "no commands")
+              ".")
+         {:class "error"})
+        false)
+
+    :else
+    (do
+      (when-let [cur (-> @ed :client default-key)]
+        (when-not (= cur client)
+          (clients/swap-client! cur client)))
+      (object/update! ed [:client] assoc default-key client)
+      (object/raise ed :set-client client)
+      (notifos/set-msg! (str "Evaluating through '" (clients/->name client) "'"))
+      true)))
 
 (defn get-client! [{:keys [origin command key create] :as opts}]
   (let [key (or key :default)
@@ -414,6 +478,37 @@
                                                                          :above (-> info :above)})))
                           content)))
 
+(defn put-underline!
+  "Hang `res-obj` under `line` of editor `this`, clearing whatever was there.
+
+  **Clearing the previous one is the whole point of this existing.** A widget in
+  `:widgets` owns a DOM node, so replacing the entry without raising `:clear!`
+  leaves that node on screen with nothing holding it — and there are two writers
+  of `[line :underline]`, this behavior and `lt.plugins.doc/inline-doc`. Only one
+  of them did it, so a Python plot followed by a doc on the same line left the
+  plot behind. One function both call is the fix; a second copy of the rule is
+  how it broke.
+
+  `keep-open?` carries the previous widget's expanded state onto the new one,
+  which is right when a re-evaluated result replaces its own earlier value and
+  wrong when a doc replaces a plot — those are not the same thing in the same
+  state, so the caller says.
+
+  `:start-line` in `loc` means the result covers a range, and every underline
+  inside that range belongs to a form that no longer exists on its own."
+  [this ed line res-obj loc keep-open?]
+  (when-let [prev (get (@this :widgets) [line :underline])]
+    (when (and keep-open? (:open @prev))
+      (object/merge! res-obj {:open true}))
+    (object/raise prev :clear!))
+  (when (:start-line loc)
+    (doseq [widget (map #(get (@this :widgets) [(ed/line-handle ed %) :underline])
+                        (range (:start-line loc) (:line loc)))
+            :when widget]
+      (object/raise widget :clear!)))
+  (object/update! this [:widgets] assoc [line :underline] res-obj)
+  res-obj)
+
 (behavior ::underline-results
           :triggers #{:editor.result.underline}
           :reaction (fn [this res loc opts]
@@ -424,15 +519,7 @@
                                                                        :result res
                                                                        :loc loc
                                                                        :line line})]
-                        (when-let [prev (get (@this :widgets) [line :underline])]
-                          (when (:open @prev)
-                            (object/merge! res-obj {:open true}))
-                          (object/raise prev :clear!))
-                        (when (:start-line loc)
-                          (doseq [widget (map #(get (@this :widgets) [(ed/line-handle ed %) :underline]) (range (:start-line loc) (:line loc)))
-                                  :when widget]
-                            (object/raise widget :clear!)))
-                        (object/update! this [:widgets] assoc [line :underline] res-obj))))
+                        (put-underline! this ed line res-obj loc true))))
 
 (behavior ::copy-underline-result
           :triggers #{:copy}

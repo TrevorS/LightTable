@@ -12,6 +12,11 @@
  [:app :lt.objs.workspace/stop-watch-on-close]
  [:app :lt.objs.clients.devtools/clean-inspectors-timer]
  [:app :lt.objs.deploy/check-deploy]
+ ;; Workspace search honours a project's own ignore files, which is what VS
+ ;; Code and Zed both default to. Set false to search everything
+ ;; lt.objs.files/ignore-pattern does not exclude, which is what Light Table
+ ;; did before it searched through ripgrep.
+ [:app :lt.objs.search/use-ignore-files true]
  [:app :lt.objs.editor.pool/stop-close-dirty]
  [:app :lt.objs.clients/close-clients-on-closed]
  [:app :lt.objs.app/restore-position-on-init]
@@ -554,12 +559,13 @@
  [:popup :lt.objs.popup/refocus-on-close]
  [:popup :lt.objs.popup/close!]
  [:popup :lt.objs.popup/on-click-destroy]
- [:popup :lt.objs.popup/change-active-button]
+ [:popup :lt.objs.popup/change-active-choice]
  [:popup :lt.objs.popup/exec-active]
 
  [:searcher :lt.objs.search/clear!]
  [:searcher :lt.objs.search/search!]
  [:searcher :lt.objs.search/done-searching]
+ [:searcher :lt.objs.search/search-engine-failed]
  [:searcher :lt.objs.search/next!]
  [:searcher :lt.objs.search/prev!]
  [:searcher :lt.objs.search/replace!]

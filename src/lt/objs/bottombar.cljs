@@ -38,8 +38,22 @@
     "open"
     "closed"))
 
-(defn add-item [item]
-  (object/update! bottombar [:items] assoc (:order @item) item))
+;; `add-item` was here, and `:items` — a `(sorted-map-by >)` on the object that
+;; it was the only writer of and **nothing ever read**. The bar draws
+;; `(:active @this)` and has always drawn only that, so the map was a registry of
+;; things that could be shown, consulted by nobody, kept in step by one caller.
+;;
+;; Exactly one thing ever registered: the console. doc/hygiene.md's judgement was
+;; that deleting the generality is cheaper than solving it, and this half of it
+;; cost nothing to delete because it was not doing anything.
+;;
+;; What is *not* deleted is the `host` seam below. The bar still splices another
+;; object's `object/->content` into its own DOM, which is the shape that does not
+;; convert to a view — but the reason is the console, which renders itself
+;; imperatively because its streaming append is genuinely imperative. That is the
+;; next entry in hygiene rather than this one, and making the bar draw the console
+;; directly before the console is a value would move the problem rather than
+;; close it.
 
 ;;*********************************************************
 ;; Object
@@ -47,7 +61,6 @@
 
 (object/object* ::bottombar
                 :tags #{:bottombar}
-                :items (sorted-map-by >)
                 :height 0
                 :max-height default-height
                 :init (fn [this]

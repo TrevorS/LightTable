@@ -50,11 +50,16 @@
             [lt.objs.command :as cmd]
             [lt.objs.editor.pool :as pool]
             [lt.objs.files :as files]
+            [lt.objs.popup :as popup]
             [lt.objs.tabs :as tabs]
             [lt.objs.workspace :as workspace]
             [lt.state :as state]
-            [lt.state.objects :as from-objects]
-            [lt.util.dom :as dom]))
+            [lt.state.objects :as from-objects]))
+
+;; `lt.util.dom` came off this namespace's requires with the last DOM read in
+;; it. The control surface answers questions about the editor from the objects
+;; and the state now, and touches the document nowhere — which is the property
+;; worth having: what it reports and what a test can assert are the same thing.
 
 ;;*********************************************************
 ;; What it is waiting for
@@ -63,17 +68,24 @@
 (defn- prompt-choices
   "The clickable choices in a popup, as text.
 
-  Read out of the DOM, and still the right answer even though `(:buttons @p)`
-  now exists: a popup's choices are not all buttons. Picking a client or an
-  LSP code action is a list in the *body*, which is markup a caller passed in,
-  and a reader that trusted `:buttons` would offer \"cancel\" and nothing else
-  for exactly the prompts where the choice matters."
+  Read from the object. This used to be a `querySelectorAll` for `li.button`,
+  and the reason was real rather than lazy: a popup's choices are not all
+  buttons, and the two callers that needed a list of them — which client should
+  evaluate this, which code action to run — built `li.button` hiccup by hand in
+  `:body`, so the choices existed only in the rendered document. A reader that
+  trusted `:buttons` alone would have offered \"cancel\" and nothing else for
+  exactly the prompts where the choice matters.
+
+  `lt.objs.popup` has `:options` now, which is what those callers pass instead,
+  so both kinds of choice are on the object. The order is
+  [[lt.objs.popup/choices]]'s, because buttons are laid out floated-right and
+  therefore backwards — which is the popup's business rather than something a
+  reader should have to know."
   [p]
-  (let [content (object/->content p)]
-    (->> (array-seq (dom/$$ :li.button content))
-         (map #(string/trim (or (.-textContent ^js %) "")))
-         (remove string/blank?)
-         vec)))
+  (->> (popup/choices p)
+       (map #(string/trim (str (:label %))))
+       (remove string/blank?)
+       vec))
 
 (defn- prompt-header
   "What the popup is asking."
@@ -103,20 +115,16 @@
   caller was shown and asking it to count buttons would be worse."
   [prompt-id choice]
   (if-let [p (first (filter #(= prompt-id (:id %)) (prompts)))]
-    (let [content (object/->content (:object p))
-          buttons (array-seq (dom/$$ :li.button content))
-          wanted (when choice (string/lower-case (str choice)))
-          hit (first (filter (fn [^js b]
-                               (and wanted
-                                    (= wanted (string/lower-case
-                                               (string/trim (or (.-textContent b) ""))))))
-                             buttons))]
-      (cond
-        (nil? choice) (do (object/raise (:object p) :close!)
-                          {:answered prompt-id :choice nil})
-        hit (do (.click ^js hit) {:answered prompt-id :choice choice})
-        :else {:error (str "No choice called " (pr-str choice))
-               :choices (:choices p)}))
+    (cond
+      (nil? choice) (do (object/raise (:object p) :close!)
+                        {:answered prompt-id :choice nil})
+      ;; Runs the choice rather than clicking the element that would have run it
+      ;; — see `lt.objs.popup/choose-by-label!`.
+      (popup/choose-by-label! (:object p) choice)
+      {:answered prompt-id :choice choice}
+
+      :else {:error (str "No choice called " (pr-str choice))
+             :choices (:choices p)})
     {:error (str "No prompt " prompt-id)
      :prompts (mapv #(dissoc % :object) (prompts))}))
 
@@ -511,6 +519,12 @@
                       ;; `:selected` belong to the state and are supposed to
                       ;; differ.
                       :command-bar (select-keys v [:commands])
+                      ;; The same split, for the same reason: `:entries` is
+                      ;; projected from the behavior registry, while which half
+                      ;; of the screen you are looking at, what you typed into
+                      ;; the filter, and the binding being captured are the
+                      ;; state's own.
+                      :settings (select-keys v [:entries])
                       v))]
     {:drifted (vec (for [k (sort interesting)
                          :let [a (normalise k (get fresh k))

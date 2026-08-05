@@ -151,11 +151,11 @@ test(`copying an underline result copies what it says, on ${engine}`, async ({ w
     // whose `:result` is a plain string there were no element children to read,
     // and mapping over a string's `.children` threw.
     //
-    // A file each, because the two paths do not clean up after one another:
-    // `lt.plugins.doc/inline-doc` puts its widget in the map without clearing
-    // whatever was already at that line, so a doc over an existing underline
-    // result leaves the old node on screen. That is a real if narrow leak and
-    // not what this is about.
+    // A file each, so the two cases cannot see one another's widgets. That used
+    // to be load-bearing for a different reason — `inline-doc` overwrote the
+    // entry at `[line :underline]` without clearing it, so a doc over a result
+    // orphaned the result's node — and it is now just isolation. The fix and the
+    // test for it are below.
     for (const [what, name, raise, expected] of [
         ['a string', 'copystr',
          `(object/raise ed :editor.result.underline "a docstring" {:line 1 :ch 0} {})`,
@@ -184,6 +184,53 @@ test(`copying an underline result copies what it says, on ${engine}`, async ({ w
 
         await close(window, file);
     }
+});
+
+test(`a doc over a result replaces it rather than orphaning it, on ${engine}`, async ({ window }) => {
+    // Two *different* producers on one line, which is the only way to reach this
+    // and the reason it survived: `lt.objs.eval/::underline-results` cleared
+    // whatever was at `[line :underline]` before writing, and
+    // `lt.plugins.doc/inline-doc` did not. A widget owns a DOM node, so the
+    // overwritten one stayed on screen with nothing holding it — a Python plot
+    // followed by a doc on the same line was the case that found it.
+    //
+    // Both now go through `lt.objs.eval/put-underline!`, which is the one place
+    // that knows the rule.
+    const file = await open(window, engine, `orphan${engine.slice(1)}.txt`,
+        'alpha\nbeta\ngamma\n');
+
+    // A result first.
+    await evalClj(window, `
+        (do (let [ed (first (pool/by-path "${file}"))]
+              (object/raise ed :editor.result.underline "the result" {:line 1 :ch 0} {}))
+            :shown)`);
+    await expect.poll(async () => (await inside(window, file, '.underline-result'))?.count)
+        .toBe(1);
+
+    // Then a doc on the same line.
+    await evalClj(window, `
+        (do (let [ed (first (pool/by-path "${file}"))]
+              (object/add-tags ed [:docable])
+              (object/raise ed :editor.doc.show!
+                            {:name "beta" :ns "probe" :doc "what beta does"
+                             :loc {:line 1 :ch 0}}))
+            :shown)`);
+
+    // One widget on that line, and it is the doc. Two would be the leak: the
+    // count is the assertion, because the doc appearing was never the problem.
+    await expect.poll(async () => (await inside(window, file, '.underline-result'))?.count)
+        .toBe(1);
+    expect((await inside(window, file, '.inline-doc'))?.count).toBe(1);
+    expect((await inside(window, file, '.underline-result'))?.text)
+        .toContain('what beta does');
+    expect((await inside(window, file, '.underline-result'))?.text)
+        .not.toContain('the result');
+
+    // And the editor's own map agrees, which is what the DOM is drawn from.
+    expect(await evalClj(window, `
+        (count (:widgets @(first (pool/by-path "${file}"))))`)).toBe('1');
+
+    await close(window, file);
 });
 
 test(`a result that is a DOM node is hosted, not dropped, on ${engine}`, async ({ window }) => {

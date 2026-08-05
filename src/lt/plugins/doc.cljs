@@ -7,6 +7,10 @@
             [lt.objs.notifos :as notifos]
             [lt.objs.editor :as editor]
             [lt.objs.editor.pool :as pool]
+            ;; For `put-underline!`, which is the one rule about `:widgets` that
+            ;; both writers of `[line :underline]` have to follow. The object type
+            ;; is still named by keyword rather than required — see `inline-doc`.
+            [lt.objs.eval :as eval]
             [lt.objs.sidebar :as sidebar]
             [lt.state :as state]
             [lt.util.dom :as dom]
@@ -29,7 +33,18 @@
           :reaction (fn [this]
                       (object/update! (:ed @this) [:widgets] dissoc [(:line @this) :underline])))
 
-(defn inline-doc [this res opts loc]
+(defn inline-doc
+  "Show `res` as a doc under the line `loc` names.
+
+  Through [[lt.objs.eval/put-underline!]] rather than writing `:widgets`
+  directly, which is what this used to do and is why a doc opened over an
+  existing inline result orphaned it: a widget owns a DOM node, and replacing the
+  entry without raising `:clear!` leaves the node on screen with nothing holding
+  it. A Python plot followed by a doc on the same line was the case.
+
+  `keep-open?` is false. A re-evaluated result replacing its own earlier value
+  should stay expanded; a doc replacing a plot is not that."
+  [this res opts loc]
   (let [ed (:ed @this)
         type :underline
         line (editor/line-handle ed (:line loc))
@@ -40,8 +55,7 @@
                                                                :loc loc
                                                                :line line})]
     (object/add-tags res-obj [:inline.doc])
-    (object/update! this [:widgets] assoc [line :underline] res-obj)
-    res-obj))
+    (eval/put-underline! this ed line res-obj loc false)))
 
 (behavior ::doc-menu+
           :triggers #{:menu+}
