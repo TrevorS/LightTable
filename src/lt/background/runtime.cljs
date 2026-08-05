@@ -19,12 +19,22 @@
   [path]
   (reset! lt-path path))
 
+(defn lt-file
+  "An absolute path to something in the Light Table install.
+
+  For the things the worker needs that are not modules — the bundled ripgrep
+  binary is the first. Worker code cannot work this out for itself: the worker's
+  own location is `core/lighttable/background`, and climbing out of it with
+  `__dirname` would be a guess about the layout that nothing checks."
+  [relative-path]
+  (str @lt-path "/" (string/replace relative-path #"^/" "")))
+
 (defn require-lt
   "Require a module from the Light Table install, by a path relative to its
   root. Worker code cannot use a bare require for these: the worker's own
   location is not where they live."
   [relative-path]
-  (js/require (str @lt-path "/" (string/replace relative-path #"^/" ""))))
+  (js/require (lt-file relative-path)))
 
 (defn send!
   "Send `value` back to the object that asked for the work, as a `key` message.

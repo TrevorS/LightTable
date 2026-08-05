@@ -95,9 +95,12 @@
    ;; src-worker into src-gen/lt/background, and a runtime require would be
    ;; resolved against the output file's directory rather than the source path.
    ;; Node's own builtins stay external.
+   ;; `child_process` joined fs and path when search started running the bundled
+   ;; ripgrep. Without it here, :js-provider :shadow tries to *bundle* a node
+   ;; builtin, and what that produces is a worker that fails to load.
    :js-options {:js-provider :shadow
                 :js-package-dirs ["deploy/core/node_modules" "node_modules"]
-                :keep-as-require #{"fs" "path"}}
+                :keep-as-require #{"fs" "path" "child_process" "string_decoder"}}
 
    :compiler-options {:optimizations :simple
                       :pretty-print  true}}
@@ -202,6 +205,18 @@
    :main      lt.ui.stories.manifest/main
    :js-options {:js-provider :shadow
                 :js-package-dirs ["deploy/core/node_modules" "node_modules"]}}
+
+  ;; How long a project-wide search takes. Its own entry point rather than a
+  ;; test, because it takes seconds by design and runs the real searcher — the
+  ;; worker's own bundle runs `main` on load, so there is no way to reach into
+  ;; it. See src/lt/bench/search.cljs for why this exists at all.
+  :bench-search
+  {:target    :node-script
+   :output-to "target/bench-search.js"
+   :main      lt.bench.search/main
+   :js-options {:js-provider :shadow
+                :js-package-dirs ["deploy/core/node_modules" "node_modules"]
+                :keep-as-require #{"fs" "path" "child_process" "string_decoder"}}}
 
   ;; Runs under node, so only namespaces that load without a DOM or an Electron
   ;; runtime can be exercised here. Anything needing the real app is covered by

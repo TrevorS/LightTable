@@ -24,10 +24,11 @@ help: ## Show this list
 
 ## ── Building ──────────────────────────────────────────────────────────────
 
-deps: ## Install every dependency, including the Electron binary
+deps: ## Install every dependency, including the Electron binary and ripgrep
 	npm install
 	cd deploy/core && npm install
 	cd deploy/electron && npm install && npx --no-install install-electron
+	node script/fetch-ripgrep.mts
 
 build: ## Full build: dependencies, plugins, and a packaged app in builds/
 	script/build.sh
@@ -63,6 +64,10 @@ storybook-build: ## A static Storybook in storybook-static/
 
 storybook-check: ## Build it, then prove every story actually renders
 	npm run --silent storybook:check
+
+bench-search: ## How long a project-wide search takes — make bench-search ARGS="--all"
+	npx shadow-cljs compile bench-search
+	node target/bench-search.js $(ARGS)
 
 ## ── Checking ──────────────────────────────────────────────────────────────
 

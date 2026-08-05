@@ -141,11 +141,39 @@ if [ "$OS" == "mac" ]; then
   find "$RELEASE_DIR/LightTable.app/Contents/Frameworks" -depth \
        \( -name '*.app' -o -name '*.framework' -o -name '*.dylib' \) -print0 2>/dev/null |
     xargs -0 -I{} codesign --force --sign - "{}" 2>/dev/null || true
+
+  # The bundled executables, which live under Resources rather than Frameworks
+  # and so are matched by none of the above. ripgrep is the first one Light Table
+  # has ever shipped, and it has to be signed for the same reason the app does:
+  # on Apple Silicon an unsigned executable is refused at exec time, so an
+  # unsigned rg means a search that fails with a message about a killed process.
+  #
+  # Signed before the bundle that contains it, like everything else here — a
+  # binary signed afterwards invalidates the enclosing signature.
+  #
+  # Not `|| true`: unlike the frameworks pass, which tolerates a layout that
+  # varies with the Electron version, this is Light Table's own file at a path
+  # this build put it at. If it cannot be signed, the reason is worth stopping
+  # for.
+  RG_PATH="$RELEASE_DIR/LightTable.app/Contents/Resources/app/core/bin/rg"
+  if [ -f "$RG_PATH" ]; then
+    codesign --force --sign - "$RG_PATH"
+  else
+    echo "WARNING: no bundled rg at $RG_PATH; search will fall back to the tree walk." >&2
+  fi
+
   codesign --force --sign - "$RELEASE_DIR/LightTable.app"
   # Say plainly whether the bundle is actually valid, rather than leaving it to
   # be discovered by a launch that dies with no message.
   codesign --verify --deep --strict "$RELEASE_DIR/LightTable.app" ||
     echo "WARNING: the signature did not verify; the app may not launch." >&2
+  # And that the binary really can run, which is the thing the signature is for.
+  # `--version` rather than a search: it needs no filesystem and answers in
+  # milliseconds, and a binary that will not start says so here rather than the
+  # first time somebody searches.
+  if [ -f "$RG_PATH" ] && ! "$RG_PATH" --version >/dev/null 2>&1; then
+    echo "WARNING: the bundled rg will not execute; search will fall back." >&2
+  fi
 
 elif [ "$OS" == "linux" ]; then
 

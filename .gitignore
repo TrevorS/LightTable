@@ -78,3 +78,10 @@
 /.storybook/generated/
 /.storybook/stories/
 /storybook-static/
+
+# The pinned ripgrep binary, fetched by script/fetch-ripgrep.mts. Unlike
+# clj-kondo above this one *ships* — it is copied into the packaged application
+# — and the policy is the same either way: source in the repository, no binaries
+# in it. `make deps` fetches it; a checkout without it still searches, through
+# the tree walk lt.background.search falls back to.
+/deploy/core/bin/

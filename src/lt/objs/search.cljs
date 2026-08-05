@@ -4,6 +4,7 @@
             [lt.objs.tabs :as tabs]
             [lt.objs.files :as files]
             [lt.objs.command :as cmd]
+            [lt.objs.console :as console]
             [lt.objs.context :as ctx]
             [lt.objs.notifos :as notifos]
             [lt.objs.platform :as platform]
@@ -25,6 +26,23 @@
 (def search! (thread/job :search))
 
 (def result-threshold 500)
+
+(defonce ^:private ignore-files?
+  ;; Whether a project's own ignore files narrow a workspace search.
+  ;;
+  ;; An atom rather than a key on the searcher object, for the ordering reason
+  ;; `lt.objs.plugins/enforcement` gives about stored settings: the behavior is
+  ;; on `:app`, and the searcher object is created later — so a behavior writing
+  ;; to the searcher would be writing to something that does not exist yet.
+  (atom true))
+
+(behavior ::use-ignore-files
+          :desc "Searcher: Let .gitignore narrow a workspace search"
+          :type :user
+          :params [{:label "Use ignore files?" :type :boolean}]
+          :triggers #{:object.instant}
+          :reaction (fn [this use?]
+                      (reset! ignore-files? (boolean use?))))
 
 (defmulti location identity)
 
@@ -89,6 +107,7 @@
                           (notifos/working "Searching workspace...")
                           (search! this (assoc info
                                           :exclude (.-source files/ignore-pattern)
+                                          :ignore-files? @ignore-files?
                                           :paths (string->loc (:loc info))))))))
 
 (behavior ::replace!
@@ -102,13 +121,26 @@
                           (search! this (assoc info
                                           :replacement (:replace info)
                                           :exclude (.-source files/ignore-pattern)
+                                          :ignore-files? @ignore-files?
                                           :paths (string->loc (:loc info))))))))
+
+(behavior ::search-engine-failed
+          :desc "Searcher: report a failure of the fast search engine"
+          :triggers #{:search-engine-failed}
+          :reaction (fn [this message]
+                      ;; The search still answered — `lt.background.search` fell
+                      ;; back to the tree walk — so this is a console line rather
+                      ;; than a popup. What it buys is a cause: the fallback is
+                      ;; otherwise indistinguishable from working, only slower.
+                      (console/error (str "Workspace search fell back to the tree walk: "
+                                          message))))
 
 (behavior ::done-searching
           :triggers #{:done-searching}
           :reaction (fn [this info]
                       (object/merge! this {::time (/ (:time info) 1000)
-                                           ::filesSearched (:total info)})
+                                           ::filesSearched (:total info)
+                                           ::engine (:engine info)})
                       (if (:replace? info)
                         (let [rewritten (::rewritten @this)
                               res (when (seq rewritten)
@@ -125,7 +157,16 @@
                           ;; emptying the `ul` did, and the line above has
                           ;; already read the count it reports.
                           (object/merge! this {:results (array)}))
-                        (notifos/done-working (str "Found " (:result-count @this) " results searching " (:total info) " files in " (/ (:time info) 1000) "s." )))))
+                        (notifos/done-working
+                         (str "Found " (:result-count @this) " results searching "
+                              (:total info) " files in " (/ (:time info) 1000) "s."
+                              ;; Named only when it is the slow one. A status
+                              ;; line that reports what is fine is a status line
+                              ;; nobody reads — but a search running several
+                              ;; times slower than it should because the bundled
+                              ;; ripgrep is missing is worth one sentence.
+                              (when (= :walk (:engine info))
+                                " (tree walk — no bundled ripgrep)"))))))
 
 (behavior ::next!
           :triggers #{:next!}

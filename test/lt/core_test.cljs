@@ -24,7 +24,8 @@
   '#{lt.core                  ;; the renderer bundle
      lt.background.worker      ;; the worker thread
      lt.ui.storybook           ;; the component kit, built for a plain browser
-     lt.ui.stories.manifest})  ;; what stories exist, printed as JSON under node
+     lt.ui.stories.manifest    ;; what stories exist, printed as JSON under node
+     lt.bench.search})         ;; how long a project-wide search takes
 
 (defn- cljs-files
   "Every ClojureScript source file under `dir`."

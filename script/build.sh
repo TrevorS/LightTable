@@ -29,6 +29,18 @@ pushd deploy/core
   npm install
 popd
 
+# The bundled ripgrep, which project-wide search runs. Pinned to a version and
+# checked against the sha256 upstream publishes beside the asset — the same
+# arrangement as clj-kondo, and the same reason: source in the repository, no
+# binaries in it, binaries fetched at build time and verified.
+#
+# It is *shipped* rather than build tooling, so it lands in deploy/core and gets
+# copied into the bundle with everything else there. Not fatal if it fails: a
+# network that is down should not stop a build, and search falls back to the tree
+# walk it used before — see lt.background.search.
+node script/fetch-ripgrep.mts ||
+  echo "WARNING: ripgrep was not fetched; search will fall back to the tree walk." >&2
+
 # Build the core cljs
 
 # Build tooling lives at the repo root

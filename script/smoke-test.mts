@@ -237,8 +237,11 @@ const LSP_ACTIONS = `(function () {
 const LSP_ACTION_PICK = `(function () {
     var popup = document.querySelector('.popup');
     if (!popup) return 'no popup';
-    // .lsp-action, not li.button: the popup's own cancel is one of those.
-    var buttons = popup.querySelectorAll('li.lsp-action');
+    // ul.options, not li.button: the popup's own cancel is one of those. The
+    // actions used to carry a .lsp-action class for this, which existed only to
+    // make a distinction the markup could not — a popup has :options now, so
+    // ul.options against ul.buttons is the structure saying it.
+    var buttons = popup.querySelectorAll('ul.options > li.button');
     if (!buttons.length) { lt.objs.command.exec_BANG_(cljs.core.keyword.call(null,'popup.escape')); return 'no actions'; }
     buttons[0].click();
     return buttons.length + ' offered';
@@ -833,7 +836,36 @@ app.on('ready', function () {
                         var b = window.lightTable;
                         return !!(b && b.shell && b.clipboard && b.zoom && b.host);
                     })(),
-                    bridgeInUse: lt.util.bridge.shell === (window.lightTable && window.lightTable.shell),
+                    // lt.util.bridge.shell used to *be* lightTable.shell, and
+                    // this compared them by reference. It is a guarded facade
+                    // over it now — see lt.util.bridge.guard — so identity is
+                    // deliberately false, and what matters instead is that the
+                    // facade is complete: a group that enumerated partly would
+                    // leave some capabilities unchecked, which is the one real
+                    // hole in that design.
+                    //
+                    // Every function on every guarded group, compared with what
+                    // the preload exposes. Names rather than references,
+                    // because being a wrapper is the point.
+                    //
+                    // No backticks anywhere in here: this whole block is a
+                    // template literal, and one would end it.
+                    bridgeInUse: (function () {
+                        var raw = window.lightTable;
+                        if (!raw) return 'no bridge';
+                        var groups = ['shell', 'clipboard', 'files', 'processes',
+                                      'net', 'servers', 'sockets', 'host'];
+                        for (var i = 0; i < groups.length; i++) {
+                            var g = groups[i];
+                            var mine = lt.util.bridge[g.replace('-', '_')];
+                            if (!mine) return 'missing group ' + g;
+                            if (mine === raw[g]) return 'unguarded group ' + g;
+                            var want = Object.keys(raw[g]).sort().join(',');
+                            var got = Object.keys(mine).sort().join(',');
+                            if (want !== got) return g + ': ' + want + ' vs ' + got;
+                        }
+                        return true;
+                    })(),
                     zoomFactor: lt.objs.app.zoom_level(),
                     // A .wasm header is the case that turned this up: read as
                     // UTF-8 the magic bytes come back as replacement
@@ -934,7 +966,21 @@ app.on('ready', function () {
                             count: get(cljs.core.keyword.call(null, 'result-count')),
                             files: get(cljs.core.keyword.call(null, 'lt.objs.search/filesSearched')),
                             seconds: get(cljs.core.keyword.call(null, 'lt.objs.search/time')),
+                            // Which implementation answered. The results are the
+                            // same either way, which is the point of the
+                            // fallback and also why nothing else here can tell
+                            // them apart — so a search silently running several
+                            // times slower because the bundled binary is missing
+                            // would look exactly like a passing test.
+                            engine: String(get(cljs.core.keyword.call(null, 'lt.objs.search/engine'))),
                             reported: results ? results.length : 0,
+                            // Every file, in the order the searcher reported
+                            // them, relative to the search directory.
+                            order: results
+                                ? Array.from(results).map(function (x) {
+                                      return String(x.file).split('search/')[1] || String(x.file);
+                                  }).join(' ')
+                                : '',
                             firstFile: first ? String(first.file) : '',
                             firstLine: first && first.results && first.results.length ? first.results[0].line : null,
                             firstText: first && first.results && first.results.length ? String(first.results[0].text) : '',
@@ -1209,10 +1255,25 @@ async function main(): Promise<void> {
         ['it reported one message per matching file', r.search.reported === 3],
         ['it counted the files it searched', r.search.files === 4],
         ['it timed the search', typeof r.search.seconds === 'number' && r.search.seconds >= 0],
+        // Sorted by path, so `nested/three.txt` is first — it used to be
+        // `one.txt`, because the tree walk reached a directory's own files before
+        // descending. ripgrep searches in parallel and reports in no stable
+        // order at all, so *something* had to decide; lexicographic is what
+        // `rg --sort path` and VS Code both do, and it is the one a person can
+        // predict. Asserted concretely rather than loosely: "some file" would
+        // pass for an order that reshuffles between runs, which is the bug.
         ['a result carries a file, a 1-based line and its text',
-            /one\.txt$/.test(r.search.firstFile) && r.search.firstLine === 2 &&
-            r.search.firstText === 'SMOKENEEDLE here'],
+            /nested\/three\.txt$/.test(r.search.firstFile) && r.search.firstLine === 1 &&
+            r.search.firstText === 'deep SMOKENEEDLE'],
+        ['and the files come back sorted by path, the same way every time',
+            r.search.order === 'nested/three.txt one.txt two.txt'],
         ['the matches were rendered into the results list', r.search.rendered === 4],
+        // The bundled ripgrep really did the searching. Everything above passes
+        // identically on the tree-walk fallback — that is what makes the
+        // fallback safe and what makes this check necessary.
+        ['the search went through the bundled ripgrep' +
+         (r.search.engine === ':rg' ? '' : ' — got ' + r.search.engine),
+         r.search.engine === ':rg'],
         // plaintext is the one deliberate no-mode: it exists so a file can be
         // opened with no highlighting at all. Zig and Elixir share it and are
         // no longer uncoloured for it — neither has a CodeMirror mode and both
@@ -1312,7 +1373,13 @@ async function main(): Promise<void> {
          r.capabilities.Clojure.declared.indexOf('processes') !== -1 &&
          r.capabilities.Clojure.used.indexOf('processes') !== -1],
         ['the preload bridge is exposed', r.bridge === true],
-        ['the window reaches the desktop through the bridge', r.bridgeInUse === true],
+        // The name carries the mismatch when there is one, because the loop
+        // below prints the name and nothing else: a group that enumerated
+        // partly is a set of unchecked capabilities, and *which* ones is the
+        // whole of what you need to know.
+        ['every guarded bridge group is a complete facade over the preload' +
+         (r.bridgeInUse === true ? '' : ' — ' + String(r.bridgeInUse)),
+         r.bridgeInUse === true],
         ['zoom is served by the bridge', typeof r.zoomFactor === 'number' && r.zoomFactor > 0],
         ['the clipboard round-trips over the bridge', r.clipboard === 'lt-smoke-clipboard'],
         ['the application menu was built over the bridge', r.appMenu === true],
@@ -1440,7 +1507,8 @@ async function main(): Promise<void> {
     console.log('language modes: ' + r.codeMirrorModes + ', commands: ' + r.commandTable);
     console.log('worker connected: ' + r.workerConnected + ', files found by background scan: ' + r.workerFilesFound);
     console.log('workspace search: ' + r.search.count + ' results in ' + r.search.reported +
-                ' files, ' + r.search.files + ' searched, ' + r.search.seconds + 's');
+                ' files, ' + r.search.files + ' searched, ' + r.search.seconds + 's' +
+                ', engine ' + r.search.engine);
     console.log('file types: ' + r.modes.total + ' mimes, ' + r.modes.ok + ' with a language, ' +
                 r.modes.broken.length + ' broken' +
                 (r.modes.broken.length ? ': ' + r.modes.broken.join('; ') : ''));
