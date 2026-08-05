@@ -36,6 +36,9 @@ build: ## Full build: dependencies, plugins, and a packaged app in builds/
 dist: ## build, plus a release archive
 	script/build.sh --release
 
+install: ## Install the packaged build — make install DEST=~/Applications
+	node script/install.mts
+
 build-cljs: ## The window bundle and the worker, after a source change
 	npm run build:cljs
 
