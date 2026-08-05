@@ -1,8 +1,67 @@
 # The bridge as a permission system
 
-**Scouting note, nothing built.** This is point 3 of the security section in
-[the modernization changelog](../CHANGELOG-MODERNIZATION.md), which is the last
-substantial named-and-unbuilt item in that plan:
+**Built.** This was the scouting note for point 3 of the security section in
+[the modernization changelog](../CHANGELOG-MODERNIZATION.md) — the last
+substantial named-and-unbuilt item in that plan — and all four modules exist
+now. What is below the line is the scout, kept because the counting in it is
+what made the work tractable and because two of its numbers turned out to be
+wrong in a way worth being able to read.
+
+## What it is, in four namespaces
+
+| | |
+|---|---|
+| `lt.objs.plugins.attribution` | who is asking, from the stack. Was inside `require-shim` |
+| `lt.objs.plugins.scopes` | where a capability reaches. Dependency-free, so the containment rule is testable against the cases that break it |
+| `lt.util.bridge.guard` | the wrapper over eight of the fourteen groups, and the table of which arguments are paths |
+| `lt.objs.plugins/install-bridge-policy!` | the editor's half: which plugins exist, what each declared, and where `:self` and `:workspace` actually are |
+
+The policy is *installed* rather than reached for, so nothing in
+`lt.util.bridge` knows what a plugin is, and until `install-node-compatibility!`
+runs the guard is a passthrough — which is what the window needs for the several
+hundred bridge calls it makes before a single plugin exists.
+
+## Three corrections to the scout below
+
+1. **The filesystem group is fifteen functions, not twelve.** The scout counted
+   from `lt.util.bridge`'s docstring for `files`, which named three of them and
+   had gone stale. The docstring is fixed, and `guard_test` now parses
+   `preload.ts` and fails when a function taking a path is missing from the
+   table. It caught `files/watch` — whose signature wraps onto a second line —
+   on its first run.
+2. **Twenty-one functions are path-checked, not fifteen.** Fifteen `files/*`,
+   three `shell/*`, `net/download`'s destination, and `processes/fork`'s script.
+   `spawn` and `exec` are deliberately not scoped: their command is resolved
+   against `PATH`, and pretending to scope that would be a guarantee this cannot
+   keep.
+3. **Seven `path/*` functions are string arithmetic, not four.** `join`,
+   `relative` and `resolve` take paths too and touch no disk.
+
+## What the scout did not price
+
+**The cost of attribution on a hot path.** The scout measured the stack read at
+1.3-2.7µs and noted that `require` happens once per plugin load. A bridge call
+does not — `files/existsSync` is about 0.4µs and is called per file open, per
+save, per plugin load. Paying for a stack read on every one of those in order to
+discover there was nothing to check would make the editor slower for everyone
+not using the feature.
+
+So the guard short-circuits on two derefs: no policy, or no loaded plugin that
+has narrowed anything, and the second is cached against the identity of the
+plugin map. The cost lands on installations that actually scope something.
+
+**One decision the scout left open, decided.** A capability a plugin never
+declared follows the existing `:warn`/`:report`/`:refuse` mode. A path or host
+outside a root it *did* declare is refused whatever the mode says. The asymmetry
+is the point: the first is the same claim inference already checks and inference
+can be wrong, while a root exists only where an author wrote one, and a root
+that is not enforced is a comment. Module 4's question — whether the shipped
+default moves off `:warn` — is therefore narrower than it was, and is still
+open.
+
+---
+
+The scout, as written:
 
 > **The bridge is the permission system**, so its surface should keep being
 > designed as one. `readFile` scoped to the workspace is a different thing from
@@ -138,6 +197,10 @@ installs — and A is what makes C tractable later, because the policy vocabular
 and the denial path would already exist and only the enforcement point moves.
 
 ## Scope
+
+*All four were built. The estimates are left as written — the first two were
+close, module 3 was undercounted for the reason above, and module 4 turned out
+to be a decision rather than a change.*
 
 **Module 1 — attribution at the bridge.**
 - Files: `src/lt/util/bridge.cljs` (+80/-10), `src/lt/objs/plugins/require_shim.cljs` (+20/-20, the frame-walking moves somewhere both can use it)

@@ -166,6 +166,49 @@ against the running editor by `script/smoke-test.sh`.
  :capabilities #{:processes :files}}
 ```
 
+### And where each one reaches
+
+A capability name is not a scope — `:files` means "reads and writes the
+filesystem", which is every file you can read. A map form declares a **root** as
+well, and both forms are read:
+
+```clojure
+;; Anywhere, which is what a set has always meant.
+:capabilities #{:files :network}
+
+;; Its own directory and the open workspace, and github.com for downloads.
+:capabilities {:files   [:self :workspace]
+               :network ["github.com"]
+               :processes :all}
+```
+
+| root | |
+|---|---|
+| `:all` | anywhere. The honest name for what every plugin had before this existed |
+| `:self` | the plugin's own directory |
+| `:workspace` | every folder and file the workspace holds |
+| `"~/src/thing"` | a path; `~` is your home |
+| `"github.com"` | for `:network`, a hostname — subdomains included, on a dot boundary |
+
+A capability the map does not mention reaches anywhere, because whether a plugin
+may use it at all is the set of keys, and answering that twice would mean two
+places could disagree.
+
+**A declared root is enforced whatever the enforcement mode says**, unlike a
+capability you never declared — see *Current state* below for why those differ.
+Roots exist only where an author wrote them, so keeping them is keeping a promise
+rather than second-guessing one, and a root that is not enforced is a comment.
+
+What a denial looks like is a refusal the plugin can see and a console line
+naming the plugin, the capability, the path and the scope — because a plugin
+author debugging one is the common case, and the worst version of that is a stack
+trace from inside `fs`.
+
+Two things are worth knowing before you write a root. A scope is compared against
+the **resolved** path, so a symlink out of your scope does not get you out of it.
+And both ends of a copy are checked: `cpSync` from inside the scope to outside it
+is refused, not half allowed.
+
 ### Why these capabilities, and not `require`
 
 A survey of 20 published plugins — the most-released ones across languages,
@@ -296,18 +339,36 @@ are installing before installing it, and nothing breaks in the meantime.
 
 ### Current state
 
-Inference and reporting work. **Nothing is denied yet** — enforcement before
-inference existed would have meant every published plugin breaking on the day it
-shipped. What is missing is the enforcement gate itself, which is the point at
-which `:undeclared` stops being a report and starts being a refusal.
+Inference and reporting work, and **level 2 is enforced at call time now** —
+`lt.util.bridge.guard` wraps eight of the bridge's fourteen groups, works out
+which plugin is calling from the stack, and checks both the capability and, for
+the twenty-one functions that take one, the path or host. See
+[doc/permissions.md](../doc/permissions.md).
 
-That reason is weaker than it was. This fork is one person's editor: the
-plugins that matter are the ones in this repository, every one of them carries
-a manifest, and the smoke test checks each declares what it uses. So the thing
-holding the gate at `:warn` is no longer "somebody else's plugin breaks" — it
-is that nobody has decided the default should change. Level 1 stays described
-below because an installed plugin from the old ecosystem still loads, not
-because keeping it working is a constraint on anything.
+Two kinds of denial, and they behave differently on purpose:
+
+| | |
+|---|---|
+| a capability the plugin **never declared** | follows the enforcement mode — `:warn` by default |
+| a path or host outside a root it **did** declare | refused, whatever the mode says |
+
+The asymmetry is the whole of the remaining question. The first is the same claim
+inference checks by reading JavaScript with regular expressions, so it can be
+wrong, and a false positive that breaks a working plugin is worse than a warning
+nobody reads. The second is a fact about the call being made.
+
+So what is left is a decision rather than a build: **does the shipped default
+move off `:warn`?** The old reason to hold it there is weaker than it was — this
+fork is one person's editor, the plugins that matter are in this repository,
+every one carries a manifest, and the smoke test checks each declares what it
+uses. Level 1 stays described below because a plugin installed from before
+manifests existed still loads, not because keeping it working constrains
+anything.
+
+What none of this is: containment. A plugin runs in the window and can reach
+`js/lightTable` before the guard wraps it. Level 2 catches drift, honest
+mistakes and a manifest that stopped being true. Level 3 is the process
+boundary.
 
 `TypeScript` was the first plugin to carry a manifest; every plugin in this
 repository carries one now, and the smoke test checks that what each declares

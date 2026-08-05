@@ -38,10 +38,17 @@ Nothing in the build is platform-specific; macOS, Linux and Windows-under-Cygwin
 all go through the same scripts.
 
 ```sh
-make deps                  # dependencies, including the Electron binary
+make deps                  # dependencies, the Electron binary and ripgrep
 make build                 # builds everything, packages
 make run                   # run what you just built, from the tree
 ```
+
+Two binaries are fetched rather than committed, both pinned to a version and
+checked against a published `sha256`: Electron, and the **ripgrep** that
+project-wide search runs. Neither is in the repository — source in the
+repository, binaries fetched at build time. If ripgrep is missing, search still
+works through the tree walk it used before and says so in its summary line;
+`make bench-search` is what says how much that costs.
 
 `make help` lists the rest. The Makefile is a wrapper: the npm scripts and
 `script/*.sh` stay the source of truth, and CI runs those.

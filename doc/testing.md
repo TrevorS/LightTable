@@ -93,6 +93,57 @@ offline, and a devtools client that polled a port that was not there.
   produces exactly that, and the startup-console assertion is what says so.
   Three times, which is why it is now checked rather than caught: see
   [`lt.util.load.compiled`](../src/lt/util/load/compiled.cljs).
+- **A view that shadowed itself.** `(defn settings [{:keys [settings]}] …)` is
+  the obvious way to write it, and the binding shadows the function — so
+  `settings-screen`'s `(settings state)` was a *map lookup*, because calling a
+  map with one argument is a lookup rather than an error in ClojureScript. It
+  returned nil and half the screen drew nothing, with nothing logged. A view
+  test written before anyone opened the screen is what found it, which is the
+  case for writing them first even when the view is "obviously" right.
+
+### A fallback hides its own use
+
+Worth its own note, because it defeated every layer above.
+
+Project-wide search runs the bundled ripgrep and falls back to the tree walk when
+the binary is missing. The two produce **identical results** — that is what makes
+the fallback safe — so when the worker looked for the binary in the wrong place,
+search silently ran several times slower and *every existing check passed*: the
+right matches, in the right files, with the right count.
+
+Two things now make that visible, and the split is worth copying for any fallback:
+
+- The summary line names the engine **only when it is the slow one**. A status
+  line that reports what is fine is one nobody reads.
+- A smoke check asserts which engine answered. It failed on its first run, which
+  is how the path bug was found rather than shipped.
+
+The general rule: **if two implementations are interchangeable by design, no test
+of their output can tell you which one ran.** Something has to report it.
+
+`make bench-search` is the other half — the numbers that say whether the fast one
+is worth having, and on the first run they said the engine was not where the win
+was coming from.
+
+### A function and a projection are two different questions
+
+The settings screen is the clearest example of a split worth copying, because it
+is the same feature tested twice for genuinely different reasons.
+
+`test/lt/ui/view_test.cljs` hands the two views a **literal map** and asks what
+they draw. That covers every branch cheaply — filters, empty states, which
+control a declared type produces — and it cannot tell you whether the map
+resembles reality.
+
+`test-e2e/settings.spec.ts` never writes a settings entry. It reads the real
+behavior registry, counts the behaviors marked `:type :user`, and asserts the
+projection produced exactly that many — then asserts the screen drew one row per
+entry. So it fails if `lt.state.objects` and the object world stop agreeing,
+which is the failure the view tests are structurally unable to see.
+
+The rule: **test a view against a map, and test the projection against the
+editor.** A test that does both at once is usually asserting a number somebody
+typed.
 
 ## Changing a stylesheet without changing the rendering
 

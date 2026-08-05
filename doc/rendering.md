@@ -174,6 +174,12 @@ exception, Python's plot. Two shapes between them: one that opens when you
 click it, where the class on the *root* says so and goes through `node`'s
 `attrs`; and one drawn once, which is `element`.
 
+`console/->item` is gone from that list since it was written. It was the one
+`element` on it that never needed to be one — the console builds no nodes at all
+now, because it holds its lines as a value and draws them. See *The console is a
+value* in the changelog for why the append-only argument turned out to point the
+other way.
+
 `eval/->underline-result` was the knot. Its `:result` is whatever a caller
 passes, and both callers passed a DOM node built by `defui` — so the widget
 could not become hiccup until Python's plot and `doc-ui` did, and copying it

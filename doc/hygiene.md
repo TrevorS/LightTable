@@ -20,22 +20,6 @@ not an omission.
 
 ## Open — correctness
 
-### `:client/bind` is a stub
-
-`lt.actions.effects` registers `:client/bind`; its effect writes a `::client`
-key on the editor that nothing reads. So clicking a connection row in the
-connect panel does nothing at all, while the row's whole purpose is to say
-where an evaluation goes.
-
-Making it real means deciding what "bind" means: `(:client @ed)` is a map from
-*command kind* to client, not one client per buffer. Three defensible answers —
-bind every kind the target can serve, bind only the kinds already present, or
-drop the affordance and leave the panel read-only with disconnect and unset in
-the menu. That is a call about evaluation semantics rather than about chrome.
-
-`:bound?` is already read truthfully from the editor, so the panel *shows* the
-right thing; it is only the click that lies.
-
 ### A view that throws says `[object Object]`
 
 Replicant catches a render exception, logs `you may have misbehaving aliases`
@@ -55,26 +39,6 @@ remote debugging port on, so a devtools client forwards the window's own
 console into Light Table's. `page.addInitScript` with a `console.error` wrapper
 is what found it.
 
-### A doc over an existing underline result orphans the old node
-
-`lt.plugins.doc/inline-doc` does `object/update! this [:widgets] assoc [line
-:underline]` without raising `:clear!` on whatever was already at that line —
-where `lt.objs.eval/::underline-results`, the other writer of that key, does.
-So a Python plot followed by a doc on the same line leaves the plot on screen
-with nothing holding it.
-
-Found writing the copy test in `test-e2e/inline-results.spec.ts`, which is why
-that test opens a file per case. Narrow: it needs two different producers on
-one line.
-
-### Splits are half-projected
-
-Each tabset draws its own strip and the actions carry the tabset id, so the
-strip itself handles splits. Two things downstream still assume the first
-tabset: `lt.ui.view/editor-pane` reads `(first tabsets)`, and the
-window-as-a-view tab draws one strip. Neither is wrong today — a window with no
-splits has exactly one — but both are silent about it.
-
 ---
 
 ## Open — claims the code does not keep
@@ -91,53 +55,6 @@ So the measurement exists now rather than the fix: `lt.objs.control/screen`
 reports spans per *rendered* line per editor, which is stable across scrolling.
 A file with highlighting runs several a line. `script/lt-repl.sh screen` when
 it next happens is what turns this into something with a cause.
-
-### The hinter's rendering cost is unmeasured
-
-`lt.ui.filter` replaced the `<li>` pool with ordinary diffing, which is right
-for the command bar and the navigator — lists that change when you type, a few
-hundred rows at most. The auto-complete hinter is the one that was actually
-being optimised for: its candidate list is unbounded and it refreshes on every
-character. Nothing has measured the new one under a large buffer with a
-language server attached, and `cm6-hint.spec.ts` asserts state rather than
-render time.
-
-### The popup's choices are still read out of its DOM
-
-Half closed by `560d49bc`. The popup keeps its options now, so
-`lt.objs.control` reads the header from the object — the comment saying
-`(:header @p)` is empty for every popup there is has gone with it.
-
-The *choices* are still a DOM read, and now for a reason rather than by
-default: three callers put their options in the body rather than in `:buttons`
-— which client should evaluate this, which code action to run — because there
-can be many and they are the question rather than a confirmation. A reader that
-trusted `:buttons` would offer "cancel" and nothing else for exactly the
-prompts where the choice matters.
-
-What that leaves as an interface is narrower but real: `li.button` elements in
-order, with matching `textContent`, that respond to a real `.click()`. Asserted
-in `test-e2e/renderer.spec.ts`.
-
-### The bottombar is general for one consumer
-
-`lt.objs.bottombar` keeps a sorted map of `:items` and splices the active one's
-`object/->content` into its own DOM — the "composing another object's content"
-shape that does not convert. Exactly one thing has ever registered: the console.
-Deleting the generality is probably cheaper than solving it.
-
-### The console's streaming path is real, the rest is incidental
-
-`console/try-update` finds an existing `<pre id="console<id>">` and appends a
-text node to it, so nREPL stdout arriving in chunks under one id accumulates in
-one row instead of producing a row per chunk. That is the one genuinely
-imperative-for-a-reason piece.
-
-`baae8ffe` took the rest as far as it goes without answering this: every line is
-built by `lt.ui/element` and the list is still appended to, dropped from and
-scrolled imperatively, because that is what append-only means. Making the
-console a view of a value means holding the last fifty lines *as* a value, and
-the streaming append is the thing that would have to change.
 
 ### Windows packaging has no coverage
 
@@ -165,14 +82,81 @@ are gone — see Closed.
 draws bands from `:runs`; `lt.ui.view` draws a review list and an excerpt
 header with three origins; `lt.ui.chrome` and `lt.ui.row` draw `:origin :run`;
 `kit.css` has `.band--agent`, `.chip--agent`, `.pill--agent`, `.row--agent` and
-`.excerpt--agent`. Nothing writes a run. `:behavior/rebind` writes a `:keymap`
-key that `initial` does not have either.
+`.excerpt--agent`. Nothing writes a run.
 
 This is forward design rather than rot — `lt.ui.catalogue` draws all of it from
 literals, which is what a component kit is for, and `doc/direction.md` is about
 where the editor is going. Recorded because a reader who greps for what creates
 a run will not find it, and should not have to conclude the projection is
 broken.
+
+**The `:keymap` half of this is closed.** `:behavior/rebind` wrote to a key
+`initial` did not have, and now `lt.state.objects/keymap` projects it and two
+surfaces read it — see *the settings screen* in the Closed section.
+
+### ripgrep's `--json` output is unbounded, and one line can be megabytes
+
+`--json` includes the whole matched line. A binary has almost no newlines, so a
+match inside one arrives as a single enormous line — measured at **21MB** for the
+191MB Electron Framework under `builds/`, and 107MB of output for one search of
+this repository with `use-ignore-files` off. The same search with ignore files on
+produces 374KB and a longest line of 723 characters.
+
+Three things are known about it, and none is a fix:
+
+- **`--max-columns` does not help.** It has no effect in `--json` mode, confirmed
+  by measuring the longest line with and without it.
+- **Matches from binary files are dropped**, which removes the *results* problem
+  but not the transport cost — ripgrep has already written the bytes by the time
+  it says the file was binary.
+- **`maxBuffer` is no longer the limit.** stdout is read incrementally, so there
+  is no ceiling to exceed — and peak memory is the largest single line rather
+  than the whole output. A throw while parsing still falls back to the tree walk
+  and says why.
+
+`--max-filesize` would fix the rest, and is deliberately not set: **VS Code
+passes it only when it is configured**, so there is no default there either, and
+a cap would silently stop searching large *text* files, which the walk never did.
+That closes this as a decision rather than an omission.
+
+### Workspace search results are in a different order than they were
+
+Two changes, both from searching through ripgrep, and both are visible rather
+than internal.
+
+**Sorted by path.** ripgrep searches in parallel and reports files in no stable
+order at all, so something had to decide. Lexicographic is what `rg --sort path`
+and VS Code both do and the one a person can predict — but it is not what the
+tree walk did, which reached a directory's own files before descending into its
+subdirectories. So `nested/three.txt` now comes before `one.txt` where it used to
+come after. Sorted in `lt.background.rg` rather than by `--sort path`, which
+ripgrep's own documentation says abandons parallelism.
+
+**All at once rather than file by file.** The walk sent a message per matching
+file as it found them, so results appeared while it was still going. ripgrep's
+output is collected before any of it is emitted — which is what makes it
+sortable, and is the trade. Worth having when a search took 161ms; not worth
+much at 20ms.
+
+Neither is wrong and neither is a fix. They are recorded because "my results are
+in a different order" is a real thing to notice and there would otherwise be
+nowhere to look.
+
+### A component handed to a row as `:leading` cannot be found by a test
+
+`lt.support.hiccup/nodes` walks a vector's children, and an attribute map is not
+one of them — so `find-all` cannot see a component passed as `:leading`,
+`:trailing` or `:what`. Two real components live there: the keyboard hint in
+`view/command-bar` and the one in `view/keys-screen`.
+
+The consequence is narrow but worth knowing before writing an assertion that
+passes for the wrong reason: a test asking "does this screen draw a `kbd`" gets
+`false` whether or not it does. Asserting on `text-of` works, because that walks
+everything that is not a map.
+
+Not obviously worth fixing. Descending into attributes would make `find-all`
+report components that are arguments rather than children, and the two are
+genuinely different questions — but nothing says so anywhere except here.
 
 ---
 
@@ -185,9 +169,9 @@ Ranked by what a failure would cost.
 | The browser tab and its webview | `test-e2e/browser-tab.spec.ts` covers the controls, the absent `preload`, and the webview surviving a redraw; smoke covers it end to end with a real page. What is still uncovered is the devtools connection, which needs the remote debugging port the e2e fixture turns off |
 | Plugin capability enforcement | smoke only for the general case; `windows.spec.ts` covers two specific historical bugs |
 | The application menu | smoke only, one assertion |
-| The settings and keymap UI | nothing, at any layer |
+| ~~The settings and keymap UI~~ | **closed.** 20 view tests over `settings`, `keys-screen` and `settings-screen`, and 13 action tests over the eight actions behind them. It was the worst gap on this list and the cheapest to close, because a view is a function: a settings screen is hard to drive and trivial to *ask* |
 | The docs sidebar, the plugin manager and the object inspector | `doc-sidebar.spec.ts`, `plugin-manager.spec.ts` and `inspector.spec.ts` cover what each draws and what changes it. Each was written with the conversion off `defui`; none existed before |
-| `contextIsolation` / no Node in the renderer | smoke only — a security-relevant invariant that would be cheap to pin as an e2e one-liner |
+| ~~`contextIsolation` / no Node in the renderer~~ | **closed.** `test-e2e/isolation.spec.ts` pins all four: no `__dirname` or `module`, a `require` that refuses `vm`, a `process` with no `binding`, and a bridge whose prototype proves it came through `contextBridge` rather than a shared global. Deliberately duplicating smoke — this is the one invariant where two independent statements are a feature, because the failure mode is somebody turning isolation off to debug and not turning it back on |
 | The background search worker round-trip | smoke proves the worker answers; the e2e search tests go through the UI and might not exercise it |
 | Dragging a grip to resize a panel | `renderer.spec.ts` asserts each grip exists, is in the right parent and is `draggable`, and drives `:width!` directly — Playwright does not synthesise HTML5 drag, so the browser's half is unproven |
 
@@ -251,6 +235,299 @@ would create the second source of truth it exists to avoid.
 ---
 
 ## Closed
+
+**The popup's choices are on the object, and the control surface reads no DOM at
+all now.** This was half closed once already — the popup kept its header — and the
+remaining half had a real reason rather than a lazy one: a popup's choices are not
+all buttons. Two callers needed a *list* of them, which client should evaluate
+this and which code action to run, and `:options` did not exist. So they built
+`li.button` hiccup in `:body` with a click closure inside it, the choices existed
+only in the rendered document, and `lt.objs.control` read them back with
+`querySelectorAll` because a reader that trusted `:buttons` would have offered
+"cancel" and nothing else for exactly the prompts where the choice matters.
+
+`lt.objs.popup` has `:options` now. Same shape as `:buttons` — `{:label :action}`
+through `choose!` — and positioned as what it is: an option **is the question**
+where a button confirms or cancels it.
+
+Four things followed, and three of them are the interesting part:
+
+- **The `atom` holding the popup is gone from both callers.** Each had
+  `(let [popup (atom nil)] (reset! popup (popup! …)))`, which existed only so a
+  hand-built click handler could close the thing that contained it. The popup
+  closes itself for an option, as it always has for a button.
+- **`.lsp-action` is gone and nothing replaced it.** Its own comment said what it
+  was for — *the popup's cancel is an `li.button` too* — so it was a class
+  invented to make a distinction the markup could not. `ul.options` against
+  `ul.buttons` is that distinction. No stylesheet ever referenced it; the smoke
+  test did, and selects on the structure instead.
+- **`answer!` runs the choice rather than clicking it.** It used to find the
+  matching `li.button` and call `.click()`, which reaches the same place through
+  the handler the view installed. `popup/choose-by-label!` is what is meant, and
+  it does not stop working when the view changes what it hangs a handler on.
+- **`lt.util.dom` came off `lt.objs.control`'s requires**, which is the property
+  worth having: what the control surface reports and what a test can assert are
+  now the same thing.
+
+**And the keyboard gap that was left with it is closed too.** `:button` indexed
+`:buttons` alone, so a popup whose whole purpose was to ask which of nine things
+you wanted let you arrow between *cancel* and nothing — and Enter on a chooser
+cancelled it. `:active` indexes every choice in the order it is on screen now, so
+the arrows walk the options and then the buttons and Enter runs what is
+highlighted.
+
+That changes what Enter does on a chooser, deliberately: it takes the highlighted
+option, which is what every other chooser does and what the highlight was already
+promising. A popup with no options is unaffected — the indices are just its
+buttons.
+
+The rename from `:button` to `:active` is the part worth remembering, because it
+cost a bug: **renaming a behavior silently unattaches it.** `::change-active-button`
+became `::change-active-choice` and `default.behaviors` still named the old one, so
+the arrow keys stopped working entirely while every unit test passed. `make audit`
+reports unattached behaviors and would have said so; the e2e test is what actually
+caught it.
+
+
+**The console is a view of a value, and the streaming append is why it works
+rather than why it could not.** It was the last surface still building its own
+nodes and it had the best reason: it is genuinely append-only. `write` appended an
+`<li>` and dropped the first child past the limit; `try-update` found
+`#console<id>` in the document and appended a text node, so a process talking in
+chunks accumulated in one row rather than producing a row per chunk.
+
+This entry said making it a view means holding the last fifty lines *as* a value
+and that the streaming append is the thing that would have to change. Both were
+right — and the second turned out to be the argument *for* the conversion.
+Appending to a line you are holding is `update :text str`; appending to a line you
+have already drawn means finding it by a generated id in the document. **The
+imperative version existed because there was no value to update, not because
+streaming needs a DOM.** The `id` a line carried in its markup is now a field
+nobody has to render.
+
+Three things fell out:
+
+- **`:replicant/key` is load-bearing.** With the index as the key, dropping the
+  oldest line shifts all fifty and Replicant rebuilds the list on every log. Each
+  line carries its own monotonic key instead.
+- **`::sidebar.console` was dead** — a second console object, defined and never
+  created. Gone.
+- **`lt.util.dom/text-node` was dead as a consequence**, its only caller being the
+  old append. Deleted; making a text node by hand is something only a renderer
+  needs to do.
+
+One behaviour deliberately preserved rather than tidied: `try-update` matches an
+id **anywhere** in the list, not just the last line. That is what `querySelector`
+did, and it is right — two processes talking at once each accumulate into their own
+row, and a chunk from the older stream belongs where its stream started. An earlier
+version of the conversion matched only the last line, which reads as a
+simplification and is a regression.
+
+`test-e2e/console.spec.ts` is ten tests over a surface that had none, and every
+assertion is about what the console *shows* — so they would pass against the
+imperative version too, which is the point. A conversion's tests should not be
+able to tell which implementation they are running.
+
+
+**The bottombar's generality was half dead and is deleted.** It kept `:items` as
+a `(sorted-map-by >)`, `add-item` was the only writer, and **nothing ever read
+it** — the bar draws `(:active @this)` and always has. So it was a registry of
+things that could be shown, consulted by nobody, kept in step by one caller: the
+console, the only thing that ever registered.
+
+The remaining half is deliberately left, and the distinction is the useful part.
+The bar still splices another object's `object/->content` into its own DOM through
+`lt.ui.host/host`, which is the shape that does not convert to a view — but the
+reason for that is the console, which renders itself imperatively because its
+streaming append genuinely is. Making the bar draw the console directly before the
+console is a value would move the problem rather than close it, so this closes the
+part that was dead and leaves the part that is load-bearing to the entry below.
+
+
+**The hinter's rendering cost is measured now, and the concern does not survive
+it.** `lt.ui.filter` replaced a fixed pool of `<li>` nodes with ordinary diffing,
+which was obviously right for the command bar and the navigator and was an open
+question for the auto-complete hinter — unbounded candidates, refreshed on every
+character.
+
+Measured in the running window by `test-e2e/hinter-cost.spec.ts`:
+
+| candidates | scoring | row building | rows built |
+|---|---|---|---|
+| 100 | 0.4ms | 0.0ms | 50 |
+| 1,000 | 0.7ms | 0.1ms | 50 |
+| 10,000 | 2.4ms | 0.1ms | 50 |
+| 50,000 | 11.2ms | 0.0ms | 50 |
+
+**Row building is flat**, because `indexed-results` slices to 50 *before* the
+expensive scoring pass — so the renderer's input is fifty items whether there
+were a hundred candidates or fifty thousand. The unbounded part is scoring, and it
+is not quadratic either: a hundredfold increase in candidates costs 38x the time,
+because the cheap `fastScore` filter removes most of the list before anything
+sorts it.
+
+What is asserted is the **property** rather than the duration: rows built never
+exceeds the cap, and does not change with the candidate count. A wall-clock
+threshold in CI fails on a loaded machine and passes on a fast one whatever the
+code does — the same mistake a raw span count was for syntax highlighting above,
+and `lt.objs.control/screen` exists because of it.
+
+
+**`:client/bind` was a stub.** Its effect wrote a `::client` key on the editor
+that nothing read, so clicking a connection row did nothing while the row's whole
+purpose is to say where an evaluation goes. `:bound?` was already read truthfully,
+which made it the hardest kind of broken to notice: the panel reported correctly
+and only the click lied.
+
+What it needed was a decision about evaluation semantics, and the decision turned
+out to be smaller than the question. `(:client @ed)` maps *key* to client rather
+than one client per buffer — but of the eleven `get-client!` call sites across the
+five code plugins, **ten pass no key at all** and get `:default`. The eleventh is
+the Clojure plugin's `:exec`, a private second channel for
+`:editor.eval.cljs.exec`. So `:default` is what "where does an evaluation go"
+means, and binding writes that and nothing else. Redirecting one plugin's private
+channel from a list of connections would be answering a question nobody asked.
+
+Three things made it cheap rather than new:
+
+- **The operation already existed** in a place nobody could reach —
+  `find-client`'s `:select` branch, which runs when a language finds more than one
+  candidate and asks. Binding from the panel is the same act with the choice made
+  earlier, so it is the same `clients/swap-client!` then `assoc`. `swap-client!`
+  is why it is not a plain `assoc`: a client can have queued messages that have
+  not been sent, and replacing the entry without replaying them loses an
+  evaluation somebody asked for.
+- **`:client/unset` is already the inverse** and removes the client from *every*
+  key it occupies, so the two compose without a second policy.
+- **The guard was the only thing genuinely missing.** `get-client!` reuses
+  whatever is bound if it is merely *available* and never checks it can serve the
+  command — so a client advertising no evaluation command would be a buffer whose
+  next evaluation goes nowhere silently. `lt.objs.providers/evaluates?` is that
+  check, in the namespace that already answers "what can this client do" from
+  published `:commands`.
+
+Deliberately *not* checked: whether the client suits the buffer's language. A
+client advertising `:editor.eval.python` is a legitimate choice for a file Light
+Table thinks is something else — the type may be wrong, or the user may know
+better — and refusing it would be the editor overruling a deliberate act. Jupyter
+lets you select a Python kernel for any notebook too.
+
+`test-e2e/connect.spec.ts` covers it in eight tests, including that evaluation
+reads what the click wrote — `get-client!` returns the bound client with a
+`:create` that throws, so a discovery instead of a binding fails the test. Six of
+the eight were checked against the old stub to confirm they fail there.
+
+
+**A doc over an inline result orphaned it.** `lt.objs.eval/::underline-results`
+cleared whatever was at `[line :underline]` before writing there;
+`lt.plugins.doc/inline-doc` overwrote the entry without raising `:clear!`. A
+widget owns a DOM node, so the replaced one stayed on screen with nothing holding
+it — a Python plot followed by a doc on the same line was the case.
+
+Two writers of one key and only one of them knowing the rule was the actual
+defect, so the fix is `lt.objs.eval/put-underline!` and both call it. `keep-open?`
+is the one thing they disagree about, and it is now an argument rather than an
+omission: a re-evaluated result replacing its own earlier value should stay
+expanded, and a doc replacing a plot should not.
+
+`test-e2e/inline-results.spec.ts` proves it, and was checked against the old code
+to confirm it fails there — a test for a leak is worth nothing if it passes
+either way.
+
+**Splits were half-projected.** `lt.ui.view/window` drew one tab strip and one
+editor pane, both the first tabset's, so a split window showed half of itself.
+Silently, because a window with no splits has exactly one tabset and looked
+right. The real chrome never had this — `lt.objs.tabs` gives each tabset its own
+strip and the actions carry the tabset id — so it was this view, drawn beside the
+real thing in the component kit and in `Window as a view`, that disagreed with
+it.
+
+`editor-pane` has two arities now, the same shape as `titlebar`'s and for the
+same reason, and `window` draws a column per tabset. Five view tests cover it,
+including that a window with no splits is unchanged.
+
+### A user's ripgrep config could change what the editor searches
+
+Closed, and recorded because of how it was found rather than what it was.
+
+ripgrep reads `RIPGREP_CONFIG_PATH` before its own arguments, so any flag in a
+developer's config file governed workspace search. The one on the machine this
+was found on turned off `--no-follow` — a guarantee `lt.background.rg/argv`
+states in so many words, *what stops a cyclic link running forever* — and hid
+results with `--glob=!node_modules/`.
+
+`--no-config` fixes it, and VS Code has always passed it. What makes this worth an
+entry is that **it was found by the numbers moving**: adopting the flag changed
+the benchmark's file count from 3,432 to 13,967, which is how anybody learned the
+earlier measurements had been taken through one person's dotfile. A setting that
+silently changes results and cannot be seen from inside the editor is the exact
+shape of problem this document is for.
+
+
+**The settings screen existed and was never populated.** `lt.ui.view/settings`
+was eight lines over a `:keymap` state key, and the docstring's claim was right —
+the keymap really is a view over the dispatch table, and there was nothing to
+build. What it was missing was that nothing filled `:keymap` in: it was written
+to by `:behavior/rebind` and by nothing else, against a key `lt.state/initial`
+did not have. Two lines in `lt.state.objects` made it real, and the eight-line
+view is `keys-screen` now, unchanged in what it claims.
+
+The settings half is new and is a projection for the same reason: `:type :user`
+and `:params` have been on every behavior since 2013, so what a control should be
+is a lookup on a declared type rather than a form anybody writes.
+
+**A view destructured `:settings` and shadowed itself.** The obvious way to
+write these is `(defn settings [{:keys [settings]}] …)`, and then
+`settings-screen`'s call to `(settings state)` is a *map lookup* — in
+ClojureScript calling a map with one argument is a lookup, not an error — so it
+returned nil and half the screen drew nothing, silently. Found by a test written
+before anyone looked at the screen. Both views take the whole state and slice it
+by name now, with a comment saying why.
+
+**An alias returning nil is a render Replicant throws inside.**
+`lt.ui.field/source` was written `(when from …)`, and Replicant takes the return
+value as the node — so a nil became `createElement(":lt.ui.field/source")`, an
+`InvalidCharacterError` raised inside Replicant's own render, caught by
+Replicant, logged as *you may have misbehaving aliases*, and the whole render
+skipped. `setting-row` passes `:from` for every setting and most are at their
+default, so the first unchanged one would have blanked the screen.
+
+Found by `make storybook-check`, from a story state written to show that the
+common case draws nothing. Now also a unit test — `no-component-can-draw-nothing`
+calls every registered alias with no attributes — so the class is caught without
+a browser.
+
+**A function in the state atom makes `drift` cry wolf for ever.** The state is
+data by contract — `lt.state`'s docstring says editor instances and DOM nodes are
+not in it because they are not data — and a function is the same category. It
+also breaks the one tool that can tell you whether the projection is stale:
+`snapshot` is called twice and compared, and two calls that build two closures
+are never `=`, so every key carrying one is reported as drifted always.
+
+The settings projection did it twice, once with a function and once with the
+autocomplete hinter's JS objects behind it. Both are resolved to plain data now.
+Worth knowing before projecting anything new: **if `(= (snapshot) (snapshot))` is
+false, `drift` is useless from then on**, and it will not be obvious which key
+did it.
+
+**`object/by-tag` returns objects that have been closed.** A tab that reuses its
+object rather than making a new one has to ask two more questions than
+`by-tag` answers: is the object still alive — `object/destroy!` raises
+`:destroy` *before* removing the instance, the same ordering
+`lt.objs.control/drift` was built to find — and is it still in a tabset, which a
+closed tab clears. Focusing either kind of corpse puts nothing on screen and
+throws nothing.
+
+The symptom is what makes this worth writing down: the settings screen's e2e
+specs passed and failed in **strict alternation**. One test opened a real
+screen; the next focused what the first left behind and timed out waiting for an
+element that was never going to exist; that failure left no tab, so the one after
+it opened a real screen again. Nothing about the pattern looks like a stale
+reference until you notice it is every other test.
+
+`lt.ui.settings/open!` filters on both, and `tabs/add-or-focus!` is the built-in
+that does the right thing with the answer. The catalogue and the window-as-a-view
+never hit it because they create a new object every time.
 
 **A language server was rooted at the nearest manifest, not at the project.**
 `project-root` walked up to the first directory carrying a marker, which is

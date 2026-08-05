@@ -3,9 +3,13 @@
 `make storybook` opens the component kit on <http://localhost:6106>, rendered
 by the same ClojureScript the editor renders, outside the editor.
 
-All five modules are done. **91 stories over 26 components**, written in
+All five modules are done. **105 stories over 32 components**, written in
 ClojureScript, drawn by the same registry the in-editor catalogue draws from.
 `make storybook-check` proves every one of them renders.
+
+The last six components are [`lt.ui.field`](../src/lt/ui/field.cljs)'s, added by
+the settings screen, and they are how this page earned itself twice in one
+afternoon — see *What the check has caught* below.
 
 ## One description, two surfaces
 
@@ -180,6 +184,36 @@ shows up as zero states rather than not at all — the same completeness argumen
 It is not in `make check`, deliberately: that script exists so a lint error
 does not cost a ClojureScript build to discover, and this needs a cljs compile,
 a Vite build and a browser. `make storybook-check` is its own thing.
+
+## What the check has caught since
+
+Both of these arrived with the settings screen's six components, in one run, and
+neither was findable any other way.
+
+**Fourteen stories that all drew nothing, because a fourth require list exists.**
+The story namespaces are required in three places —
+[`lt.ui.stories.manifest`](../src/lt/ui/stories/manifest.cljs) for the generator,
+[`lt.ui.catalogue`](../src/lt/ui/catalogue.cljs) for the in-editor cards, and
+[`lt.ui.storybook`](../src/lt/ui/storybook.cljs) for this bundle. Adding
+`lt.ui.stories.field` to the first two and not the third gives you a Storybook
+that *lists* all fourteen states, from a manifest that knows about them, and
+draws nothing for any of them, because the browser bundle has never heard of the
+namespace that registered them. Three lists that must agree is the smell; the
+check is what makes the disagreement loud.
+
+**An alias returning nil, which is a render Replicant throws inside.** Replicant
+takes an alias's return value *as the node*, so `field/source` written
+`(when from …)` became `createElement(":lt.ui.field/source")` and an
+`InvalidCharacterError` — caught by Replicant, logged as *you may have
+misbehaving aliases*, and the whole render skipped. `setting-row` passes `:from`
+for every setting and most settings are at their default, so the first unchanged
+one would have blanked the settings screen in the real editor.
+
+The story state that found it exists to show that the common case draws nothing,
+which is exactly the state nobody would think to test by hand. It is now also a
+unit test — `no-component-can-draw-nothing` in `lt.ui.kit-test` calls every
+registered alias with no attributes and fails on a nil — so the class is caught
+without a browser and this check found the class.
 
 ## What the light skin found
 

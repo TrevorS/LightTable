@@ -65,7 +65,7 @@ re-litigated from scratch.
 | [Language support](language-support.md) | Where a language server would fit, why it belongs in the editor rather than in each plugin, and the two preload gaps it turned up. |
 | [Syntax highlighting](syntax-highlighting.md) | Tree-sitter highlighting: what it does, and the scouting note that first argued against it. *Current.* |
 | [The editor engine](editor-engine.md) | Whether CodeMirror 6 is what we would choose if nothing were chosen, and what the migration actually costs. |
-| [The bridge as a permission system](permissions.md) | The last unbuilt item in the security plan: who is asking, what a grant says, and why the surface to scope is nineteen functions rather than sixty-seven. *Scouted.* |
+| [The bridge as a permission system](permissions.md) | Who is asking, what a grant says, and where a capability reaches. *Scouted, then built — and two of the scout's numbers were wrong, which it says.* |
 | [The component kit in a browser](storybook.md) | Storybook over the same registry the in-editor catalogue draws from, with stories written in ClojureScript. *Current.* |
 
 ## Archived

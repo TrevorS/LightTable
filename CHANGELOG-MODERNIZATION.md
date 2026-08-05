@@ -1131,10 +1131,10 @@ Four layers, because they answer different questions:
 
 | layer | count | runs |
 |---|---|---|
-| ClojureScript units | 207 tests, 589 assertions | node, no DOM |
-| main-process units | 18 | plain node |
-| end-to-end | 179, across 31 spec files | Playwright against real Electron |
-| smoke | 94 checks | boots the packaged application |
+| ClojureScript units | 309 tests, 822 assertions | node, no DOM |
+| main-process units | 23 | plain node |
+| end-to-end | 224, across 37 spec files | Playwright against real Electron |
+| smoke | 96 checks | boots the packaged application |
 
 The end-to-end suite shares one boot across a worker rather than starting
 Electron per test, which is the difference between a suite you run and one you
@@ -1162,6 +1162,798 @@ and it is not — requiring a Light Table namespace also *loads* it, and loading
 it is how its behaviors and objects come to exist. It caught two namespaces
 during a cleanup where the alias was unused and the require was the only edge
 keeping them in the bundle.
+
+## The kit in a browser, and the tints that made a skin possible
+
+`make storybook` draws the component kit outside the editor, on
+<http://localhost:6106>, rendered by the same ClojureScript the editor renders.
+Five modules, and the useful part is what it did *not* become: a second
+description of every component.
+
+`lt.ui.catalogue` already drew the kit from the live alias registry inside Light
+Table, and an e2e test already failed if a registered alias was missing from it.
+A Storybook registry beside that would have been two answers to *what states
+does this component have?*, and two is the number that goes stale. So
+`lt.ui.story` is the one both read — `story/of` carries the sentence, the prop
+table, the usage line and every state, the catalogue builds a card from it, and
+the generator builds files from it.
+
+**A state is props, not markup**, and that format exists to fix a real bug
+rather than to be tidy. An alias silently ignores an attribute it does not
+destructure, so a state written as hiccup can pass `:tone` to a component that
+takes `:status`, render the default, and look like it worked. That had happened,
+and the render check could not catch it.
+
+Nothing in `lt.ui.story` renders, which is what lets `script/gen-stories.mts`
+ask what stories exist without starting a browser.
+
+**Then the skin toolbar, which is not a light theme and is not trying to be.**
+It is a question you can only ask by changing the ground: *does this component
+name a role, or a colour?* Asked, it found ten literal colours outside `:root`
+in `kit.css`, eight of them role colours written out by hand —
+`.chip--selected` spelled `rgba(137, 220, 235, 0.15)`, which is the exact value
+of `--lt-element-selected` three lines away. The tints in `:root` were literals
+too.
+
+They derive now, `color-mix(in srgb, var(--lt-agent) 10%, transparent)`, at the
+percentages that were already there. That is what makes a skin work at all: swap
+`--lt-text` and every tint built on it follows, where a hand-written one stays
+the colour it was written at. Measured — `--lt-element-hover` goes from a light
+tint on dark to a dark tint on light, and `--lt-element-selected` correctly does
+not move, because sky is an accent rather than a ground role.
+
+Two literals are left and both are deliberate: a drop shadow, black everywhere,
+and `.band__frame`, white because what is inside it is somebody else's HTML.
+
+## Undo stopped at the file, and dirty started meaning what it says
+
+Three bugs, one mechanism, and a test file that reproduced all of them before
+any of it was touched.
+
+- **Opening a file was undoable.** `pool/create` cleared the history on the
+  `:content` branch and not on the `:doc` branch, and every file goes through
+  `:doc` — so the file's own text was the first entry in the history and one
+  `⌘Z` in a freshly opened buffer emptied it. `setValue` no longer enters the
+  history at all, which is the fix rather than clearing afterwards: every caller
+  is loading or transforming a document, and none of those is a keystroke
+  anyone expects `⌘Z` to walk back through.
+- **`clearHistory` did not clear the history.** It moved the clean marker and
+  left the history where it was, which is neither what the name says nor what
+  CodeMirror 5 did.
+- **The dirty dot could not come back.** `isClean` compared a change counter
+  that only ever climbed, so a file undone to exactly what is on disk stayed
+  dirty for ever. The undo history's *depth* looked like the answer and the new
+  tests caught it being wrong within the minute — CodeMirror 6 coalesces, so two
+  quick keystrokes move the depth once. What answers the question is the
+  question: compare the document against the one marked clean. That is also more
+  correct than either counter for a reason neither could be, which is that
+  editing a line and then editing it back is clean.
+
+**A save closes the undo group**, found by the tests rather than reasoned about:
+with the file load out of the history, typing, saving and typing again became one
+undo event, so one `⌘Z` after a save threw away work from before it.
+
+Six tests, written first and failing first. Two of the six found bugs in the fix.
+
+## Six consecutive Linux flakes that were one ambiguous selector
+
+`workspace.spec.ts`'s rename test failed its first attempt in six runs out of
+six on Linux and passed the retry in two seconds, every time, on every run.
+macOS never failed once. The retry is what had kept it out of sight, and the
+section above notes that six out of six is not flakiness.
+
+The message was the whole answer once it was read rather than counted:
+`element was detached from the DOM, retrying`. `lt.ui.view/workspace` draws
+**either** the tree **or** the list of workspaces you can switch to, and both
+draw `row/list-row` — so `.wstree .row` matched rows belonging to whichever view
+was not going to be on screen. Playwright resolved one and the view swapped
+underneath it. That is not a timing problem with a retry for an answer; it is a
+selector that is ambiguous by construction, and the symptom being a detachment
+rather than a wrong match is exactly why it read as flakiness.
+
+All four locators are scoped to `.wstree__tree` now, and a new test asserts the
+invariant they rest on: the two views are never both drawn.
+
+**That did not fix it, and the honest record is that the next run reported the
+same test flaky.** The call log had gained the detail the first one lacked — the
+row resolves and is *then* detached while Playwright waits for it to be stable.
+Two more changes, neither a guess at that mechanism: a test three above had
+opened an editor on a file it created and then deleted the directory out from
+under it, leaving every later test with an editor on a path that does not exist;
+and the rename test now opens its folder by dispatching `[:tree/toggle …]`
+rather than by clicking, because the click was setup and clicking a tree row is
+covered by the test written for it.
+
+So the flake is removed rather than explained, `doc/testing.md` says so plainly
+along with everything ruled out, and it is recorded as a worse outcome rather
+than as a fix.
+
+## The bridge is a permission system now, not only shaped like one
+
+Point 3 of the security plan below, built. `doc/permissions.md` was the scouting
+note and is now the design document; what changed between them is mostly that
+two measurements made it smaller than it sounded.
+
+**The expensive half was already built.** `lt.objs.plugins.require-shim` worked
+out which plugin is calling from the stack — Light Table evaluates plugin code
+with a `sourceURL`, so a frame names its file — at 1.3-2.7µs per stack. That is
+`lt.objs.plugins.attribution` now, because the shim decides what `require`
+serves and the bridge decides what a call may touch, and both were asking one
+question neither owned.
+
+**What was missing was one layer down.** `js/lightTable` is a global, so a
+plugin held to `:files` by the load-time audit was held to nothing at call
+time. Eight of the bridge's fourteen groups are wrapped now, and the wrapper
+asks two questions rather than one: may this caller use this capability, and —
+for the functions that take one — may it reach *this path*. The second is the
+one worth having, because gating who may call `readFile` is worth much less if
+the answer is still the whole disk.
+
+**A capability now has a scope.** The manifest vocabulary was eight capability
+names, and a name is not a scope: `:files` means "reads and writes the
+filesystem". A root is the smallest thing that makes it a sentence a person can
+check.
+
+```clojure
+:capabilities #{:files :network}                        ; what every plugin had
+:capabilities {:files [:self :workspace] :network :all} ; what one can say now
+```
+
+Both forms are read and a set still means `:all`, which is what keeps twenty
+published plugins working unchanged.
+
+Four things are worth recording because they are where the bugs would have been:
+
+- **A path is not a file's identity.** `realpathSync` is on the bridge, so a
+  scope enforced on the string a caller passed is a scope a symlink walks out
+  of. Resolution goes as far as the path exists and appends the rest, because
+  writing a new file names a path that has no realpath yet.
+- **The separator matters, twice.** `/src/app` must not contain
+  `/src/application` — the bug `require-shim/in-dir?` had and
+  `pool/containing-path` had after it — and `github.com` must not contain
+  `notgithub.com`, which is the same rule in the shape network names take. They
+  are written beside each other in `lt.objs.plugins.scopes` for that reason.
+- **A copy out of a scope is not half allowed**, so `cpSync` and `renameSync`
+  hand both arguments to the check.
+- **The fast path is the performance design.** Attribution costs a stack read
+  and `files/existsSync` costs about 0.4µs, so a window where no loaded plugin
+  has narrowed anything must not pay for one. Two derefs decide it, cached
+  against the identity of the plugin map.
+
+**Two counting corrections, both against this repository's own documents.**
+`doc/permissions.md` scoped the filesystem group at twelve functions; it is
+fifteen. The scout had counted from `lt.util.bridge`'s docstring for `files`,
+which named three of them and had gone stale — so the docstring is fixed too,
+and a test now parses `preload.ts` and fails when a function taking a path is
+missing from the table. It found `files/watch`, whose signature wraps onto a
+second line, on its first run.
+
+**One invariant a test was pinning had to change, and the replacement is
+better.** The smoke test asserted `lt.util.bridge.shell === lightTable.shell` —
+"the window really goes through the preload rather than reaching Electron
+directly" — and a facade breaks that by reference on purpose. What it checks now
+is that **every guarded group is a complete facade**: the same function names, on
+all eight, compared against what the preload exposes. That is the one real hole
+in this design rather than a proxy for it, because a group enumerated partly is a
+set of capabilities nobody checks, and the check names which group and which
+names when it fails.
+
+`guard/guard` throws at load on a group that enumerates to nothing, for the same
+reason: `contextBridge.exposeInMainWorld` hands the window a proxied object, and
+a facade built by enumeration is only as complete as the enumeration. An editor
+with no filesystem is obvious; a *partly* wrapped one is not.
+
+**What this deliberately is not** is stated in the namespace rather than left to
+be inferred: a plugin runs in the window and can reach `js/lightTable` before
+the wrapper is installed. This is level 2 — a plugin held to its own word — and
+it catches drift, honest mistakes and a manifest that stopped being true, which
+is what actually goes wrong in a single-user editor with a handful of plugins.
+It does not stop a plugin that is trying. A permission system whose limits are
+not written down gets trusted for things it does not do.
+
+One decision inside it is worth arguing about and so is recorded as an argument.
+A capability a plugin **never declared** is governed by the existing
+`:warn`/`:report`/`:refuse` mode, because it is the same claim inference already
+checks and refusing by default would break a plugin whose manifest is honestly
+incomplete. A path or host **outside a root it did declare** is refused whatever
+the mode says, because roots exist only where an author wrote them, and a root
+that is not enforced is a comment. Nothing in this repository declares roots
+yet, so that is not a break — it is the shape the first one will meet.
+
+## Settings, which had no screen at all
+
+The last item on doc/direction.md's unglamorous list, and the one that names its
+own test: *a settings experience that does not require knowing what a behavior is
+before changing the font.*
+
+Almost none of it had to be built, and that is the finding rather than a
+flourish. A Light Table behavior has declared its own parameters since 2013:
+
+```clojure
+(behavior ::set-font
+          :desc "Editor: Set font"
+          :type :user
+          :params [{:label "Font family" :type :string}
+                   {:label "Size (pt)" :type :number}])
+```
+
+`:type :user` is the marker for "this is configuration rather than machinery" —
+49 behaviors say it — and a parameter carries a label, a type and sometimes an
+example. So a control per parameter is a lookup on `:type` rather than a form
+somebody wrote, and the screen is a projection and a view instead of a
+subsystem. `lt.ui.field` is the six controls that lookup needs, which took the
+kit from twenty-five components to thirty-one and the stories from 91 to 105.
+
+**What was actually missing was the projection.** `lt.ui.view/settings` existed
+— eight lines, over a `:keymap` state key — and its docstring's claim was right:
+the keymap really is a view over the dispatch table, and there was nothing to
+build. What it did not survive was that **nothing populated `:keymap`**.
+`:behavior/rebind` had written to it since the design, against a key
+`lt.state/initial` did not have, and doc/hygiene.md had recorded the projection
+as forward design. Two lines in `lt.state.objects` are what made the screen
+real, and the eight-line view is `keys-screen` now, unchanged in what it claims.
+
+The other half is that a setting is *not* a key. A behavior with parameters and
+a key with an action are two registries, so there are two surfaces and a bar
+over them rather than one list of two kinds of thing. The filter is shared,
+which is the useful half of putting them in one screen: typing `font` finds the
+setting and typing `save` finds the key.
+
+Three things fell out that are worth keeping:
+
+- **Provenance was already recorded and never shown.**
+  `lt.objs.settings/where-from` knows which file attached each behavior, so every
+  changed setting can say where its value came from — which is the question a
+  settings screen usually cannot answer: *why is this not the default, and where
+  do I go to change it back?*
+- **An untyped parameter has to keep working.** 21 of the 49 settable behaviors
+  declare a label and no type, and their values include `[1 80]` and `{:a 1}`.
+  Those go through `cljs.reader`, which is exactly what editing the file by hand
+  does. A control that coerced them to numbers would quietly destroy a ruler
+  setting; one that left them as strings would turn a vector into `"[1 80]"`.
+- **Detaching a behavior writes a negation, not a deletion.** The line being
+  turned off is usually not in *your* file — a behavior attached by
+  `default.behaviors` cannot be switched off by deleting something from yours, so
+  `[:editor :-lt.objs.editor/…]` is the only thing that can express it. That is
+  what the `-` prefix in the file format has always been for.
+
+`"Configuration is data" is a root worth keeping, but it is not in tension with
+a settings screen that writes the data for you.` What this writes is one line of
+`user.behaviors`, in the format the file already has, so the worst case is one
+recoverable line you can open and read.
+
+**Five bugs, and each layer found a different one.** That is the useful part of
+this section, because none of them was findable by the layer above it — and the
+two that would have shipped were found by the two tools built during the *last*
+round of this work rather than by any test.
+
+- **A test, before the screen was opened once.** The obvious way to write these
+  views is `(defn settings [{:keys [settings]}] …)`, and the binding shadows the
+  function — so `settings-screen`'s call to `(settings state)` was a *map
+  lookup* returning nil, because in ClojureScript calling a map with one argument
+  is a lookup rather than an error. Half the screen drew nothing, silently.
+- **The linter.** An unresolved symbol on the one branch no test had walked past.
+  Now covered.
+- **`make storybook-check`, in a browser.** `field/source` was written
+  `(when from …)`, and Replicant takes an alias's return value *as the node* — so
+  nil became `createElement(":lt.ui.field/source")`, an `InvalidCharacterError`
+  raised inside Replicant's own render, caught by Replicant, logged as *you may
+  have misbehaving aliases*, and the whole render skipped. `setting-row` passes
+  `:from` for every setting and most are at their default, so the first unchanged
+  one would have blanked the screen. It is a unit test now —
+  `no-component-can-draw-nothing` calls every registered alias with no
+  attributes — so the class is caught without a browser and the browser found the
+  class.
+- **`script/lt-repl.sh drift`, twice, for the same underlying mistake.** The
+  projection put a **function** in the state atom — `:items` on a `:list`
+  parameter is `get-themes`, resolved at render in the first version — and the
+  state is data by contract. Two calls to `snapshot` build two different function
+  objects, so `drift` reported the window as disagreeing with itself for ever,
+  which is the tool built to answer "is anything stale" answering "everything,
+  always". Resolving `:items` in the projection fixed it and then it failed
+  again: `get-themes` answers with the **autocomplete hinter's** JS objects,
+  `#js {:text "\"dark\"" :completion "\"dark\""}`, which are no more `=` across
+  two calls than the function was. They are plain strings now, unquoted, because
+  a completion is an EDN literal and a `<select>`'s option has to match what
+  `:values` holds. `drift` also needed teaching that `:settings` is partly the
+  state's own, the same way `:command-bar` already was.
+- **The e2e suite, by failing in strict alternation.** Reusing the open tab
+  rather than making a second one means asking two things `object/by-tag` does
+  not answer: whether the object is still alive, since `object/destroy!` raises
+  `:destroy` before removing the instance, and whether it is still in a tabset.
+  One test opened a real screen, the next focused the corpse the first left
+  behind and timed out, and that failure left no tab so the third opened a real
+  one. Every other test, which looks like flakiness and is not — the same lesson
+  as the Linux rename flake above, arriving from the other direction.
+
+The coverage gap doc/hygiene.md ranked worst — *the settings and keymap UI:
+nothing, at any layer* — is closed by ordinary view and action tests, which is
+the payoff of the views being functions: a settings screen is hard to drive and
+trivial to *ask*.
+
+## Project search runs ripgrep, and the measurement changed the story
+
+The last speed item on doc/direction.md's unglamorous list. VS Code bundles the
+ripgrep binary and shells out to it; Zed links ripgrep's Rust crates directly.
+Only the first is available to an Electron application without writing a native
+addon, so that is the route — and the honest reason to take it is that both
+editors people actually use decided the same thing.
+
+**The binary is fetched, not committed.** `script/fetch-ripgrep.mts` follows
+`fetch-clj-kondo.mts` exactly, which is the policy `plugins/README.md` already
+states: source in the repository, no binaries in the repository, binaries
+fetched at build time pinned and checksummed. Upstream is `BurntSushi/ripgrep`
+rather than `@vscode/ripgrep` for two reasons — the npm package downloads in a
+postinstall and `deploy/core/.npmrc` sets `ignore-scripts`, so it would not run;
+and upstream publishes a `.sha256` beside every asset where the prebuilt fork
+does not, so the pinned digests were read rather than computed from whatever
+arrived. musl for Linux, because a gnu build links against whatever glibc the
+build machine had and this one runs on somebody else's.
+
+### What the benchmark said, which is not what was expected
+
+`make bench-search` exists because nothing had ever measured this, and
+`direction.md` had been naming search speed as an open item on no evidence. On
+this repository, searching for `defn`:
+
+`make bench-search --all`, where both implementations read the whole tree:
+
+| | files read | | per file | |
+|---|---|---|---|---|
+| walk and read | 13,066 | 1,227ms | 94µs | 760 files, 2,490 matches |
+| ripgrep | 13,967 | 266ms | **19µs** | 760 files, 2,490 matches |
+| ripgrep, as shipped | 455 | **12ms** | 26µs | 152 files, 1,473 matches |
+
+**The first two rows find exactly the same thing** — 760 files and 2,490 matches,
+both. That is the correctness result, and a better one than a test could give:
+the JSON parsing, the line grouping, the binary handling and the case rules agree
+with an implementation that has 27 tests, on real input, with nothing told what to
+expect.
+
+**The third row is fast for a different reason than the second.** It reads 455
+files instead of 13,967, because it honours `.gitignore`. Per file it is *worse*
+than the row above — 26µs against 19µs — because a spawn costs about 2ms however
+little there is to do, and at 455 files that constant is most of the 12ms. So the
+shipped speedup is mostly **not reading files**, and `use-ignore-files` is a
+load-bearing decision rather than a detail.
+
+### This table was wrong twice, and how it was wrong is the useful part
+
+**First, by comparing rows that had read different numbers of files.** The
+original ran ripgrep against the walk's own file set as closely as flags allow,
+which is not closely: `--no-ignore` reads `node_modules` where the walk's
+`ignore-pattern` skips it. The wall clock therefore said `1.5x SLOWER` about an
+engine that was several times faster, and the conclusion drawn from it — "the
+engine is only about 2x" — was an artifact. The benchmark prints µs/file now, and
+`--all` makes both read the whole tree so the totals are comparable at all.
+
+**Second, and worse, by measuring through a personal ripgrep config.** A
+`RIPGREP_CONFIG_PATH` was in effect containing `--glob=!node_modules/` among
+others, so ripgrep's own count of files searched came back as 3,432 instead of
+13,967 and its per-file cost looked four times higher than it is. Every number in
+the first two versions of this section was shaped by one developer's dotfile.
+
+That is not a footnote about benchmarking. It is the reason `--no-config` exists,
+below, and finding it this way is the most convincing argument for that flag
+anybody could have produced.
+
+### Where the time actually goes, since "why aren't we faster" has an answer
+
+Broken down rather than inferred, because inferring it got it wrong once: rg's
+standalone wall time was compared against a run whose output went to
+`/dev/null`, which is not the same thing as one node reads through a pipe.
+
+For the `--no-ignore` row: **rg's engine is 74ms of the 226ms, and the rest is
+moving and parsing 107MB of JSON.** Split three ways — 74ms spawn and pipe, 48ms
+splitting into lines, 97ms `JSON.parse`.
+
+107MB, for 3,924 lines. The longest single line is **21MB**, and this is the
+finding: `--json` includes the whole matched line, a binary has almost no
+newlines, and `builds/` holds a 191MB Electron Framework in which `defn` occurs
+before any NUL byte does. `--max-columns` does not help — it has no effect in
+`--json` mode, confirmed by measuring the longest line with and without it.
+
+The shipped path has none of this: 374KB, longest line 723 characters. So the
+pathological case is reachable only with `use-ignore-files` off, and what it cost
+was worth having anyway, because chasing it turned up a real bug.
+
+### The bug that was hiding in it
+
+**Matches from binary files were being reported.** The walk sniffed the first 8KB
+for a NUL and skipped the file. ripgrep goes the other way: it searches until the
+first NUL, emits what it found, and only then says the file was binary, in the
+`end` message — which the first version discarded along with `begin`. So a search
+with ignore files off reported matches from inside compiled binaries, and that is
+also where the 21MB lines came from.
+
+`end` is now the one bracketing message that is parsed, and matches from a file
+it flags are dropped afterwards, because the flag arrives after the matches do.
+
+### And two costs that were mine
+
+- **`available?` spawned `rg --version` on every search** — 2.1ms measured,
+  against a shipped search of 20ms, so 10% spent asking a question whose answer
+  never changes within a session. Remembered when it says yes and re-asked when
+  it says no, which keeps `make deps` while the editor is open working without a
+  restart.
+- **`maxBuffer` is a reachable failure**, not a theoretical one: 107MB against
+  what was a 256MB limit. Raised to 512MB, and the spawn is now wrapped so that
+  exceeding it falls back to the walk and says why on the console, rather than
+  failing the job. A search that quietly takes longer beats one that reports
+  nothing.
+
+### The one behaviour change, made explicit
+
+Honouring `.gitignore` means a match in an ignored file **stops appearing**. The
+walk searched anything `ignore-pattern` did not name, and that pattern knows
+about `node_modules` and `target` and nothing about a project's own ignores.
+
+Defaulting to on is what VS Code and Zed both do and both offer a toggle for, so
+`:lt.objs.search/use-ignore-files` is Light Table's — a `:type :user` behavior,
+which means it appears in the settings screen from the section above without
+anything being written to put it there.
+
+`ignore-pattern` still applies, and is applied to ripgrep's **results** rather
+than translated into globs. It is a regex written to match one directory entry's
+name, and feeding a regex to a glob matcher is precisely the bug the walk was
+written to replace; `rg/excluded-path?` therefore tests it per path segment, the
+way the walk tests each entry as it descends.
+
+### What stays
+
+**ripgrep does not write**, so replacing is still the walk's — the same
+`->pattern`, the same per-line replacement, the same 27 tests — and ripgrep's
+contribution is narrowing it from the whole tree to the files that matched.
+
+**The walk is also the fallback**, and not as a formality: the binary is
+deliberately not committed, so a fresh checkout that has not run `make deps`
+does not have one, and there is no pinned build for every platform. Search that
+is slower beats search that is missing.
+
+### Three bugs, and the second one is the reason for a new smoke check
+
+- **`partition-by` answers with groups, not with key/group pairs.** Destructuring
+  one as `[file group]` binds the first two *matches* instead, which produced a
+  result shape that looked right and was wrong. What caught it was the benchmark
+  reporting 151 files with 126 matches between them — arithmetic that cannot
+  happen. A test asserting "two hits on one line collapse to one result" would
+  have passed either way.
+- **The worker looked in the wrong place, and everything passed.**
+  `lt.util.load/dir` is `app-dir + "/.."`, so Light Table's home is the directory
+  *containing* `core` — the same reason `lt.objs.settings` reaches for
+  `core/User/…`. Resolving `bin/rg` instead of `core/bin/rg` found nothing,
+  search fell back to the walk, and **every existing check still passed**,
+  because the two implementations agree about results. That is what a good
+  fallback costs: it hides its own use.
+
+  So the summary message now names the engine when it is the slow one, and a
+  smoke check asserts which one answered. It failed on its first run, which is
+  how the path bug was found rather than shipped. `test-electron/ripgrep.test.ts`
+  pins the three-way path agreement — the fetcher writes it, `build-app.sh`
+  signs it, the worker looks for it — because none of the three can see the
+  others.
+
+### Following VS Code properly, which turned up the worst bug of the lot
+
+The first version was VS Code's *route* — bundle the binary, shell out — with
+flags chosen by reasoning. Reading
+`src/vs/workbench/services/search/node/ripgrepTextSearchEngine.ts` instead
+produced five changes and answered an open question.
+
+**`--no-config`, and this is the one that matters.** ripgrep reads
+`RIPGREP_CONFIG_PATH` before its arguments, so a user's config file was silently
+governing the editor's search. The one on this machine contained:
+
+```
+--smart-case          overrode the case rule the editor had already decided
+--follow              overrode --no-follow
+--glob=!node_modules/ silently removed results, and skewed the benchmark above
+```
+
+`--follow` is the serious one. `lt.background.rg/argv` passes `--no-follow` and
+says why — *symlinks are not followed, which is what the walk did and what stops
+a cyclic link running forever* — and a line in a dotfile was turning that
+guarantee off. Nothing in Light Table could have explained why search behaved
+differently on one machine, and the numbers in this section were wrong for the
+same reason. VS Code passes `--no-config` unconditionally; now so does this.
+
+**`--crlf`**, so `$` matches before `\r\n`. Without it a regex anchored to
+end-of-line finds nothing in a CRLF file.
+
+**`--engine auto` for regex searches**, so a pattern using a lookaround or a
+backreference falls back to PCRE2 rather than being refused by Rust's engine.
+A search somebody typed erroring out is worse than a slower search.
+
+**`--ignore-case` stated rather than `--smart-case` inferred.**
+`file-search/case-sensitive?` has already decided, so asking ripgrep to decide
+again was two answers to one question — and it is exactly the answer the config
+file above was overriding.
+
+**Streaming stdout**, which removes the `maxBuffer` failure mode rather than
+raising its limit, and drops peak memory from the whole output to the largest
+single line. A `StringDecoder` is what makes it safe: a chunk boundary can fall
+inside a multi-byte character.
+
+Two of its choices are deliberately not taken, both because Light Table's
+excludes are not VS Code's:
+
+- **`--hidden`, which VS Code always passes.** `ignore-pattern` begins with
+  `(^\..*)`, so every dot-named segment is dropped afterwards anyway — passing it
+  would mean reading `.git` and discarding the results.
+- **Emitting results as they parse.** Collecting first is what makes them
+  sortable, and ripgrep's parallel output order is not stable between identical
+  searches. Progressive results are worth having at 1,227ms and worth nothing at
+  12ms; a list that reshuffles when nothing changed is worth avoiding at either.
+
+**`--max-filesize` answers the open question by omission.** VS Code passes it
+only when it is configured, so there is no default — which settles the
+doc/hygiene.md entry asking whether to cap it here. A cap would silently stop
+searching large text files, which the walk never did.
+
+### And two bugs in the streaming rewrite, both mine
+
+- **Quadratic string building.** `(str pending chunk)` per chunk copies the whole
+  accumulation each time, and a 21MB line arrives in about 330 chunks. Measured
+  at **838ms against 226ms** for reading it in one buffer — so the change meant
+  to make it cheaper made it four times more expensive until the pending tail
+  became an array of pieces joined once.
+- **`clojure.string/split` drops trailing empty strings.** So a chunk ending
+  exactly at a newline had its last *complete* line treated as a fragment and
+  glued to the next chunk's first line. The result was unparseable JSON, which
+  `parse-line` discards without a word: the summary was lost and the count of
+  files searched came back **0** while every match still looked correct. `.split`
+  keeps the empty and the fragment logic works.
+
+Both were found by the benchmark rather than by a test, and neither would have
+failed one: the first is a performance regression and the second only corrupts
+lines at chunk boundaries, which no fixture reproduces.
+
+### macOS
+
+An executable under `Resources/` was signed by nothing: `build-app.sh` walked
+`Contents/Frameworks` for `.app`, `.framework` and `.dylib`, and ripgrep is the
+first executable Light Table has ever shipped. On Apple Silicon an unsigned
+executable inside a signed bundle is refused at exec time, so it is signed before
+the bundle that contains it, and the build then runs `--version` to say plainly
+whether it will start rather than leaving that for the first search.
+
+## Three of the open correctness items, closed
+
+Both from doc/hygiene.md's *Open — correctness* list, and both silent in the same
+way: a case nobody reaches by accident, so nothing ever disagreed with the code.
+
+**A doc over an inline result orphaned it.** `lt.objs.eval/::underline-results`
+cleared whatever was at `[line :underline]` before writing there;
+`lt.plugins.doc/inline-doc` overwrote the entry without raising `:clear!`. A
+widget owns a DOM node, so the replaced one stayed on screen with nothing holding
+it — a Python plot followed by a doc on the same line.
+
+The defect was not the missing line, it was **two writers of one key and only one
+of them knowing the rule**. So `lt.objs.eval/put-underline!` is that rule and
+both call it, and the one thing they legitimately disagree about is now an
+argument rather than an omission: `keep-open?` carries the previous widget's
+expanded state, which is right when a re-evaluated result replaces its own earlier
+value and wrong when a doc replaces a plot.
+
+Reaching it needs two *different* producers on one line, which is why it survived
+— and why the copy test in `inline-results.spec.ts` had a comment describing the
+leak and opening a file per case to avoid it. There is a test for it now, and it
+was run against the old code to confirm it fails there. A test for a leak that
+passes either way is worse than none.
+
+**Splits were half-projected.** `lt.ui.view/window` drew one tab strip and one
+editor pane, both the first tabset's, so a split window showed half of itself.
+Silently, because a window with no splits has exactly one tabset and looked
+correct — and every test in `view_test.cljs` used one.
+
+The real chrome never had this: `lt.objs.tabs` gives each tabset its own strip
+and the actions already carry the tabset id. It was this view — drawn beside the
+real thing in the component kit and in the `Window as a view` tab, which is the
+whole point of it existing — that disagreed with the editor it is a copy of.
+`editor-pane` has two arities now, the same shape as `titlebar`'s and for the same
+reason, and `window` draws a column per tabset.
+
+**And `:client/bind`, which needed a decision rather than a fix.** Its effect
+wrote a `::client` key nothing read, so clicking a connection row did nothing
+while the row's whole purpose is to say where an evaluation goes. `:bound?` was
+already read truthfully, which made it the hardest kind of broken to notice: the
+panel reported correctly and only the click lied.
+
+The question was what "bind" means, because `(:client @ed)` maps *key* to client
+rather than one client per buffer. **Counting settled it.** Of the eleven
+`get-client!` call sites across the five code plugins, ten pass no key at all and
+get `:default`; the eleventh is the Clojure plugin's `:exec`, a private second
+channel for `:editor.eval.cljs.exec`. So `:default` is what the panel's question
+means, and binding writes that and nothing else — redirecting one plugin's
+private channel from a list of connections would be answering something nobody
+asked.
+
+The domain agrees, which is worth saying because it was the tiebreaker: Jupyter's
+*Select Kernel*, CIDER's session link and VS Code's *Select Interpreter* all make
+one choice govern evaluation for the buffer, and none of them asks per operation.
+
+Three things made it small:
+
+- **The operation already existed** where nobody could reach it —
+  `find-client`'s `:select` branch, which runs when a language finds more than
+  one candidate and asks. Binding from the panel is the same act with the choice
+  made earlier, so it is the same `clients/swap-client!` then `assoc`. That
+  `swap-client!` is why it is not a plain `assoc`: a client can hold queued
+  messages, and replacing the entry without replaying them loses an evaluation
+  somebody asked for.
+- **`:client/unset` was already the inverse**, removing the client from every key
+  it occupies, so the pair composes without a second policy.
+- **The guard was the only genuinely missing piece.** `get-client!` reuses
+  whatever is bound if it is merely *available* and never checks it can serve the
+  command, so a client advertising no evaluation command would be a buffer whose
+  next evaluation goes nowhere silently. `lt.objs.providers/evaluates?` is that
+  check, added to the namespace that already answers "what can this client do"
+  from published `:commands` — and it is a *prefix* test where the four existing
+  surfaces are suffix tests, because `editor.eval.cljs` and `editor.eval.python`
+  agree at the front where `editor.clj.doc` and `editor.python.doc` agree at the
+  back.
+
+Deliberately not checked: whether the client suits the buffer's language. One
+advertising `:editor.eval.python` is a legitimate choice for a file Light Table
+thinks is something else — the type may be wrong, or the user may know better —
+and refusing it would be the editor overruling a deliberate act.
+
+The right-click menu now offers both directions, since a row that binds on click
+is not discoverable by anyone who has not guessed it.
+
+## Three more from the hygiene list, and one of them was already true
+
+**`contextIsolation` is pinned in the e2e suite.** It was smoke-only, and
+doc/hygiene.md called it *a security-relevant invariant that would be cheap to pin
+as an e2e one-liner* — both halves of which are right: it is the thing the whole
+isolation migration was for, and `make smoke` needs a packaged build, so on an
+ordinary change it was checked once at the end rather than on every run.
+
+Four checks, deliberately identical to the smoke test's in what they establish. No
+`__dirname` and no `module`; a `require` that refuses `vm`, because Node's
+resolves anything on disk and the shim serves a list; a `process` with no
+`binding`; and a bridge whose prototype belongs to the window's world, which is
+the only one of the four that distinguishes real isolation from a preload that
+tidied up after itself. Duplicating smoke is the right call for exactly one
+invariant, and this is it — the failure mode is somebody turning isolation off to
+debug something and not turning it back on.
+
+**The hinter's rendering cost is measured, and the concern does not survive it.**
+`lt.ui.filter` replaced a fixed pool of `<li>` nodes with ordinary diffing, which
+was obviously right for the command bar and an open question for the auto-complete
+hinter: unbounded candidates, refreshed on every character, and nothing had ever
+measured the replacement.
+
+| candidates | scoring | row building | rows built |
+|---|---|---|---|
+| 100 | 0.4ms | 0.0ms | 50 |
+| 1,000 | 0.7ms | 0.1ms | 50 |
+| 10,000 | 2.4ms | 0.1ms | 50 |
+| 50,000 | 11.2ms | 0.0ms | 50 |
+
+**Row building is flat.** `indexed-results` slices to 50 *before* the expensive
+scoring pass, so the renderer's input is fifty items whether there were a hundred
+candidates or fifty thousand — the diffing renderer was the right call here too.
+The unbounded half is scoring, and it is not quadratic either: a hundredfold
+increase in candidates costs 38x the time, because the cheap `fastScore` filter
+removes most of the list before anything sorts it.
+
+What the test *asserts* is the property rather than the duration — rows built
+never exceeds the cap and does not move with the candidate count. A wall-clock
+threshold in CI fails on a loaded machine and passes on a fast one whatever the
+code does, which is the same mistake a raw span count was for syntax highlighting.
+
+**The bottombar's generality was half dead.** It kept `:items` as a
+`(sorted-map-by >)`, `add-item` was its only writer, and nothing ever read it —
+the bar draws `(:active @this)` and always has. A registry of things that could be
+shown, consulted by nobody, kept in step by the one thing that ever registered.
+
+The other half is deliberately left, and the distinction is the point: the bar
+still splices another object's content into its own DOM through
+`lt.ui.host/host`, which is the shape that does not convert to a view — but the
+reason is the console, whose streaming append genuinely is imperative. Making the
+bar draw the console before the console is a value would move the problem rather
+than close it.
+
+## The console is a value, which finishes the renderer conversion
+
+The last surface still building its own nodes, and it had the best reason: it is
+genuinely append-only. `write` appended an `<li>` and dropped the first child past
+the limit; `try-update` found `#console<id>` in the document and appended a text
+node, so a process talking in chunks accumulated in one row rather than producing
+a row per chunk.
+
+doc/hygiene.md said making it a view means holding the last fifty lines *as* a
+value, and that the streaming append is the thing that would have to change. Both
+right — and the second is the argument *for* the conversion rather than the
+obstacle it looked like. **Appending to a line you are holding is
+`update :text str`; appending to a line you have already drawn means finding it by
+a generated id in the document.** The imperative version existed because there was
+no value to update, not because streaming needs a DOM, and the `id` a line carried
+in its markup is now a field nobody renders.
+
+Three things fell out of it:
+
+- **`:replicant/key` is load-bearing here.** With the index as the key, dropping
+  the oldest line shifts all fifty and Replicant rebuilds the whole list every
+  time anything is logged. Each line carries its own monotonic key.
+- **`::sidebar.console` was dead** — a second console object, defined and never
+  created anywhere.
+- **`lt.util.dom/text-node` became dead as a consequence**, its only caller being
+  the old append. Deleted, because making a text node by hand is something only a
+  renderer needs to do and Replicant is the renderer.
+
+One behaviour is deliberately preserved rather than tidied, and the first attempt
+got it wrong. `try-update` matches an id **anywhere** in the list rather than only
+the last line, which is what `querySelector` did and is correct: two processes
+talking at once each accumulate into their own row, and a chunk from the older
+stream belongs where that stream started. Matching only the last line reads as a
+simplification and is a regression — recorded because it was written, measured
+against the old semantics, and reverted.
+
+`test-e2e/console.spec.ts` is ten tests over a surface that had none. Every
+assertion is about what the console *shows*, so all ten would pass against the
+imperative version too — which is the point of them. A conversion's tests should
+not be able to tell which implementation they are running.
+
+One thing the tests needed to know, and it is the same trap the smoke test records
+about the searcher: the console starts hidden, so its `<ul>` is a **real element
+that is not attached**. A document query or a Playwright locator finds nothing.
+`object/->content` is how `ltErrors` has always read it, and now how this does.
+
+## A popup's choices are data, and the control surface stopped reading the DOM
+
+Half of this closed once already — the popup kept its header — and the remaining
+half had a real reason rather than a lazy one. **A popup's choices are not all
+buttons.** Two callers needed a *list* of them, which client should evaluate this
+and which code action to run, and there was nothing to declare that with. So they
+built `li.button` hiccup in `:body` with a click closure inside it; the choices
+existed only in the rendered document; and `lt.objs.control` read them back with a
+`querySelectorAll`, because a reader that trusted `:buttons` would have offered
+"cancel" and nothing else for exactly the prompts where the choice matters.
+
+`:options` is the missing thing. Same shape as `:buttons` — `{:label :action}`
+through `choose!` — and positioned as what it is: an option **is the question**,
+where a button confirms or cancels it. It draws between the body and the buttons,
+because an option is what the body just explained.
+
+Four things followed, and three are more interesting than the feature:
+
+- **The `atom` holding the popup is gone from both callers.** Each had
+  `(let [popup (atom nil)] (reset! popup (popup! …)))`, and that existed for one
+  reason: a hand-built click handler needed to close the thing containing it. A
+  popup closes itself for an option, as it always has for a button. Two nearly
+  identical comments explaining a previous bug in that pattern went with it.
+- **`.lsp-action` is gone and nothing replaced it.** Its own comment said what it
+  was for — *the popup's cancel is an `li.button` too* — so it was a class
+  invented to make a distinction the markup could not express. `ul.options`
+  against `ul.buttons` is that distinction. No stylesheet had ever referenced it;
+  the smoke test had, and selects on the structure now.
+- **`answer!` runs the choice rather than clicking it.** It found the matching
+  `li.button` and called `.click()`, reaching the action through the handler the
+  view installed. `popup/choose-by-label!` is the thing actually meant, and it
+  does not stop working when the view changes what it hangs a handler on.
+- **`lt.util.dom` came off `lt.objs.control`'s requires.** That is the property
+  worth having rather than a tidy-up: the control surface answers from the objects
+  and the state and touches the document nowhere, so what it reports over MCP and
+  what a test can assert are the same thing.
+
+**And the arrow keys reach them**, which was the gap left over and is closed in the
+same shape. `:button` indexed `:buttons` alone, so a popup asking which of nine
+things you wanted let you arrow between *cancel* and nothing, and Enter on a
+chooser cancelled it. `:active` indexes every choice in on-screen order now.
+
+That changes what Enter does on a chooser, deliberately: it takes the highlighted
+option rather than cancelling, which is what every other chooser does and what the
+highlight was already promising. A popup with no options is unaffected.
+
+The rename from `:button` to `:active` is worth remembering for what it cost:
+**renaming a behavior silently unattaches it.** `::change-active-button` became
+`::change-active-choice`, `default.behaviors` still named the old one, and the
+arrow keys stopped working entirely while every unit test passed — a behavior is
+attached by keyword from a data file, so nothing in the compiler or the linter can
+see it. `make audit` reports unattached behaviors and would have said so. The e2e
+test is what caught it, one run after being written.
 
 ---
 
@@ -1218,18 +2010,17 @@ that was always going to be harder, and it is not `eval`:
    `contextIsolation`.** That fell out of surveying the ecosystem rather than
    reasoning about it, below. The `require` shim is what carries a level-one
    plugin across the flip, and the manifest is what scopes it.
-3. **The bridge is the permission system**, so its surface should keep being
-   designed as one. `readFile` scoped to the workspace is a different thing from
-   `fs.readFile`, and the difference is worth having before a hundred plugins
-   are written against the wrong one. This is the argument against the
-   compatibility-`require` route as anything but a bridge to somewhere else.
+3. ~~**The bridge is the permission system**~~ — built, and it is the section
+   *The bridge is a permission system now, not only shaped like one* above.
+   `readFile` scoped to the workspace is a different thing from `fs.readFile`,
+   and the difference was worth having before a hundred plugins were written
+   against the wrong one.
 
-   **Scouted — see [doc/permissions.md](doc/permissions.md).** The finding is
-   that the expensive half is already built: `require-shim` works out which
-   plugin is calling from the stack, in 1.3–2.7µs, and applies it to `require`
-   and nothing else. And the surface to scope is nineteen functions rather than
-   sixty-seven — twelve of them `files/*` — because forty-four take no path,
-   host or port at all.
+   Two of the numbers in the scout were wrong and are corrected in
+   [doc/permissions.md](doc/permissions.md): the filesystem group is fifteen
+   functions rather than twelve, and twenty-one are path-checked rather than
+   nineteen. The scout had counted from a stale docstring, which a test now
+   makes impossible.
 4. **Self-evaluation can be scoped too.** The connector model already
    distinguishes evaluating *in Light Table* from evaluating *in a client*. That
    distinction is the natural place for a trust boundary: an editor-scoped eval
@@ -1237,9 +2028,16 @@ that was always going to be harder, and it is not `eval`:
    everything" is not.
 
 That order — Light Table's own Node use behind capabilities, then the plugin
-story, then flip isolation — is what happened, and points 1 and 2 are done. A
-CSP is the last question, and the honest answer may be `unsafe-eval` with a much
-smaller blast radius behind it, which is now what it has.
+story, then flip isolation — is what happened, and points 1, 2 and 3 are done.
+
+**A CSP is the last question**, and it is now the only one left in this section.
+The honest answer may be `unsafe-eval` with a much smaller blast radius behind
+it, which is what it has: a window that can evaluate an expression but cannot
+read outside its workspace is a much smaller target than one that can do both.
+Point 4 — scoping self-evaluation through the connector model — is untouched and
+is the natural next piece, because the distinction between evaluating *in Light
+Table* and evaluating *in a client* already exists and is already where a trust
+boundary would go.
 
 ## Monorepo for the bundled plugins
 
@@ -1274,10 +2072,20 @@ the compatibility route rather than the fix — an in-tree plugin would call the
 bridge directly and need no shim at all, and would fail its build rather than a
 user's session when the host renames something.
 
-The directory exists — `plugins/`, with the first TypeScript plugin in it and
-the build wired into `script/build.sh` and CI. What remains is moving the seven
-published ones in, which is the payload-and-coupling problem above rather than a
-question of mechanism.
+**Nothing remains. This paragraph used to end "what remains is moving the seven
+published ones in", and it was wrong for longer than it should have been** — the
+section is marked done at the top and then contradicted itself at the bottom,
+which is exactly the failure doc/hygiene.md exists to catch and did not. Twenty-two
+plugins are in `plugins/`. Six of them are compiled from source as shadow-cljs
+modules — `:paredit`, `:clojure`, `:javascript`, `:css`, `:html`, `:python` —
+against the host, so a rename in the editor is a build error. The payload
+problem resolved itself in the moving: Clojure is 352K in the tree and
+Javascript 732K, against the 15MB and 2.8MB estimated above, because what was
+being carried was mostly build output that is now a build output.
+
+The lesson is about documents rather than about plugins. A superseded section
+needs its *whole* body marked, not a banner at the top — the CodeMirror one
+below got that right and this one did not.
 
 ## Hand-written JavaScript to TypeScript
 
