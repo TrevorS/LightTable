@@ -22,7 +22,9 @@
   An action is `state only` or `state + effect`. The first is a pure function
   of state and arguments and is trivially testable; the second returns effects
   as data too, so what an action *would* do can be read without doing it."
-  (:require [lt.state :as state]
+  (:require [cljs.reader :as reader]
+            [clojure.string :as string]
+            [lt.state :as state]
             [replicant.dom :as r]))
 
 (defonce ^:private registry (atom {}))
@@ -115,6 +117,30 @@
         (@report (str "No handler for effect " (pr-str effect)))))
     nil))
 
+(defonce ^:private keystr
+  ;; How a `keydown` becomes the string a keymap is keyed by. Installed rather
+  ;; than required, for the same reason `report` above is: naming
+  ;; `lt.objs.keyboard` here would drag `lt.objs.platform` and the bridge in
+  ;; with it, and this namespace has to load under node so that the actions can
+  ;; be tested by calling them.
+  ;;
+  ;; The default is deliberately not a stub. It is the same rule with the
+  ;; platform's answer missing — `meta-` rather than `cmd-` — so a test can
+  ;; assert what a keystroke produces without a window, and the window installs
+  ;; the version that knows which machine it is on.
+  (atom (fn [e]
+          (str (when (.-ctrlKey e) "ctrl-")
+               (when (.-metaKey e) "meta-")
+               (when (.-altKey e) "alt-")
+               (when (.-shiftKey e) "shift-")
+               (some-> (.-key e) string/lower-case)))))
+
+(defn keystr-with!
+  "Build keystrings with `f` instead. [[lt.ui.settings]] installs
+  `lt.objs.keyboard/->keystr`, which is what the keymap is really keyed by."
+  [f]
+  (reset! keystr f))
+
 (def ^:private from-event
   "The placeholders an action may carry in place of an argument.
 
@@ -122,9 +148,14 @@
   them have to: renaming a file needs what you typed. So the argument is named
   rather than fetched, and the one place that has both the action and the event
   fills it in. `[:tree/rename-submit path :event/value]` is still data, still
-  loggable, still replayable — the placeholder is what was replayed."
+  loggable, still replayable — the placeholder is what was replayed.
+
+  `:event/keystr` is the same idea for a keystroke, and it is what lets a key be
+  rebound by pressing it while the view stays a pure function: the view says
+  \"the key that was pressed goes here\" and never touches the event."
   {:event/value (fn [e] (.. e -target -value))
-   :event/checked (fn [e] (.. e -target -checked))})
+   :event/checked (fn [e] (.. e -target -checked))
+   :event/keystr (fn [e] (@keystr e))})
 
 (defn- fill
   "`action` with its placeholders replaced by what the event holds."
@@ -214,6 +245,138 @@
 (register! :behavior/rebind
            (fn [state key actions]
              (assoc-in state [:keymap key] actions)))
+
+;;*********************************************************
+;; The settings screen
+;;*********************************************************
+
+;; Two surfaces over two registries, and neither needed anything built. The
+;; behaviors carry their own parameters and types; the keymap is a map from a
+;; key to an action. What follows is presenting them and writing the answer
+;; back — see [[lt.ui.view/settings]] and [[lt.ui.view/keys-screen]].
+
+;; state only — which half of the screen, and what has been typed into it.
+(register! :settings/show
+           (fn [state showing]
+             (assoc-in state [:settings :showing] showing)))
+
+(register! :settings/query
+           (fn [state query]
+             (assoc-in state [:settings :query] (str query))))
+
+(defn- entry-at
+  "The projected settings entry for `[tag behavior]`, and where it is."
+  [state tag behavior]
+  (first (for [[i e] (map-indexed vector (get-in state [:settings :entries]))
+               :when (and (= tag (:tag e)) (= behavior (:behavior e)))]
+           [i e])))
+
+(defn parse-value
+  "A control's answer, as the value the behavior should receive.
+
+  This is in the action rather than in the effect on purpose, and it is the only
+  place in the settings path where a decision is made: a checkbox answers with a
+  boolean, a number box with a string that has to become a number, and a
+  parameter with no declared `:type` answers with whatever `cljs.reader` makes
+  of it — which is what editing `user.behaviors` by hand already does.
+
+  That last case is why this cannot be `js/parseFloat` everywhere. 21 of the 49
+  settable behaviors declare a `:label` and no type, and their values include
+  `[1 80]`, `{:a 1}` and `\"a string\"`. A control that coerced those to numbers
+  would quietly destroy a ruler setting; one that left them as strings would
+  quietly turn a vector into `\"[1 80]\"`.
+
+  An unreadable value comes back as the string, because a half-typed EDN literal
+  is a normal thing for a text box to contain for a moment and losing what was
+  typed is worse than storing something the reader cannot parse yet."
+  [param raw]
+  (case (:type param)
+    :boolean (boolean raw)
+    :number (let [n (js/parseFloat raw)] (if (js/isNaN n) nil n))
+    :string (str raw)
+    :list (str raw)
+    (let [s (str raw)]
+      (if (string/blank? s)
+        nil
+        (try (reader/read-string s) (catch :default _ s))))))
+
+;; state + effect — one parameter of one behavior. The state is written first so
+;; the control does not snap back while the file is being written, and the
+;; projection catches up when `:behaviors.reload` has run.
+(register! :settings/set
+           (fn [state tag behavior i raw]
+             (if-let [[at entry] (entry-at state tag behavior)]
+               (let [param (get (:params entry) i)
+                     value (parse-value param raw)
+                     values (assoc (into [] (concat (:values entry)
+                                                    (repeat (max 0 (- (inc i)
+                                                                      (count (:values entry))))
+                                                            nil)))
+                                   i value)]
+                 {:state (assoc-in state [:settings :entries at :values] values)
+                  :effects [[:settings/write tag behavior values]]})
+               {:state state :effects [[:error/no-such-setting tag behavior]]})))
+
+;; state + effect — a behavior that is attached or is not. Distinct from
+;; `:settings/set` because it changes whether the entry exists at all, which is
+;; a different edit to `user.behaviors`: a line added, or a `-` line that
+;; negates one the defaults attached.
+(register! :settings/attach
+           (fn [state tag behavior on?]
+             {:state state
+              :effects [[:settings/attach tag behavior (boolean on?)]]}))
+
+;;*********************************************************
+;; Rebinding a key
+;;*********************************************************
+
+;; state + effect — while a binding is being captured the keyboard belongs to
+;; this screen. Without disabling it, pressing the shortcut you want to assign
+;; runs the command it is currently bound to, which for most interesting keys
+;; means the capture is interrupted by the thing you were trying to rebind.
+(register! :keymap/capture-start
+           (fn [state key]
+             {:state (assoc-in state [:settings :capturing] (or key ::new))
+              :effects [[:keys/capturing true]]}))
+
+(register! :keymap/capture-cancel
+           (fn [state]
+             {:state (assoc-in state [:settings :capturing] nil)
+              :effects [[:keys/capturing false]]}))
+
+;; state + effect — the keystroke arrived. `actions` is what the old binding
+;; ran, so rebinding moves a command rather than inventing one, and a capture
+;; that produced no key is a cancel rather than a binding of "".
+(register! :keymap/capture
+           (fn [state key actions]
+             (let [was (get-in state [:settings :capturing])]
+               (cond
+                 (nil? was) {:state state :effects []}
+
+                 (string/blank? (str key))
+                 {:state (assoc-in state [:settings :capturing] nil)
+                  :effects [[:keys/capturing false]]}
+
+                 :else
+                 {:state (-> state
+                             (assoc-in [:settings :capturing] nil)
+                             (update :keymap #(-> (if (= ::new was) % (dissoc % was))
+                                                  (assoc key actions))))
+                  :effects [[:keys/capturing false]
+                            [:keymap/write (when-not (= ::new was) was) key actions]]}))))
+
+;; state + effect — a binding removed. The state drops it so the row goes
+;; immediately, and the file gets a negation.
+(register! :keymap/unbind
+           (fn [state key]
+             {:state (update state :keymap dissoc key)
+              :effects [[:keymap/write key nil nil]]}))
+
+;; What you can do to a binding beyond rebinding it. In the menu rather than on
+;; the row, which is the kit's rule: what follows a label is a count, a time or
+;; a hint, and never a control — and unbinding is not something to put one
+;; mis-click away from the thing you are reading.
+(register-passthrough! :keymap/menu)
 
 ;;*********************************************************
 ;; The file tree

@@ -4,7 +4,9 @@
   The design document draws twenty-five components and this draws the same
   twenty-five from the aliases the editor actually uses — so the document and
   the implementation cannot disagree about one of them without the disagreement
-  being visible. That was the design's own proposed next step, and it is the
+  being visible. Thirty-one now: the six in section 02½ are
+  [[lt.ui.field]]'s, added by the settings screen, and they are here because
+  `lt.ui.kit-test` failed until they were written down. That was the design's own proposed next step, and it is the
   only way a component catalogue is worth having: a picture of a component that
   is not the component is a picture that goes stale.
 
@@ -30,6 +32,7 @@
             [lt.ui :as ui]
             [lt.ui.band :as band]
             [lt.ui.chrome :as chrome]
+            [lt.ui.field :as field]
             [lt.ui.kit :as kit]
             [lt.ui.row :as row]
             ;; Required for their `story/of` calls, which are what fill the
@@ -38,6 +41,7 @@
             ;; having described it.
             [lt.ui.stories.band]
             [lt.ui.stories.chrome]
+            [lt.ui.stories.field]
             [lt.ui.stories.host]
             [lt.ui.stories.pane]
             [lt.ui.stories.row]
@@ -262,6 +266,31 @@
    (told-card ::chrome/connection-row)))
 
 ;;*********************************************************
+;; 02½ · fields
+;;*********************************************************
+
+(defn- fields []
+  (section
+   "02½ · fields" "Settings controls"
+   (list "The six " [:span.kit__name "lt.ui.field"] " aliases, and the only ones in
+          the kit whose states were not a design decision. A behavior has declared
+          its own parameters and their types since 2013, so what you see below is
+          that list of types — which is why the settings screen is a projection and
+          a view rather than a form somebody wrote.")
+
+   (told-card ::field/field)
+
+   (told-card ::field/text-input)
+
+   (told-card ::field/number-input)
+
+   (told-card ::field/toggle)
+
+   (told-card ::field/choice)
+
+   (told-card ::field/source)))
+
+;;*********************************************************
 ;; 03 · bands
 ;;*********************************************************
 
@@ -346,17 +375,41 @@
                  :at 0
                  :commands [{:label "Evaluate this form" :action [:eval/form]}
                             {:label "Evaluate this editor" :action [:eval/editor]}]}
-   :keymap {"⌘⏎" [[:eval/form]]}})
+   :keymap {"⌘⏎" [[:eval/form]]
+            "cmd-s" [[:cmd/exec :save]]
+            "cmd-shift-p" [[:cmd/exec :command-bar]]}
+   ;; Shaped exactly as `lt.state.objects/settings-entries` projects it, which
+   ;; is what makes this card the settings screen rather than a picture of one.
+   ;; The two entries are the two kinds of row: parameters, and none.
+   :settings {:showing :settings
+              :query ""
+              :capturing nil
+              :entries [{:tag :editor
+                         :behavior :lt.objs.editor/tab-settings
+                         :desc "Editor: Set tab settings"
+                         :params [{:label "Use tabs?" :type :boolean}
+                                  {:label "Tab size in spaces" :type :number}]
+                         :values [false 2]
+                         :exclusive? false
+                         :from "/home/u/.lighttable/User/user.behaviors"}
+                        {:tag :app
+                         :behavior :lt.objs.style/set-theme
+                         :desc "Style: Set theme"
+                         :params [{:label "theme" :type :list
+                                   :items ["dark" "light" "solarized"]}]
+                         :values ["dark"]
+                         :exclusive? true
+                         :from nil}]}})
 
 (defn- views []
   (section
    "04 · views" "Views"
-   (list "Five of the nine views in " [:span.kit__name "lt.ui.view"]
+   (list "Seven of the views in " [:span.kit__name "lt.ui.view"]
          ", each a pure function of the whole state — not aliases, which is why
           the keyword says " [:span.kit__name "view/"]
          ". They are drawn here by calling them with a map, which is the same
           thing the test file does. The two aliases below them serve every
-          panel, and none of the five is a toolbar.")
+          panel, and none of the seven is a toolbar.")
 
    (card {:ns "view/" :nm "titlebar" :width :wide
           :desc "Frameless. Tabs live in it, and a run is one of them."
@@ -409,6 +462,22 @@
          [:div {:style {:position "relative" :height "150px"}}
           (view/command-bar demo-state)])
 
+   (card {:ns "view/" :nm "settings" :width :wide
+          :desc "Every setting, generated from the behaviors that say they are yours."
+          :props [[":settings" "{:showing :query :entries :capturing}" "entries are projected"]
+                  [":keymap" "keys → actions" "the other half, under the keys tab"]]
+          :usage "the Settings tab — lt.ui.settings"}
+         (view/settings demo-state)
+         (note "a control per parameter, from the type the behavior declared — nothing maps them by hand"))
+
+   (card {:ns "view/" :nm "keys-screen" :width :wide
+          :desc "The keymap, which is a view over the dispatch table."
+          :props [[":keymap" "keys → actions" "the contexts you are actually in"]
+                  [":settings" "{:capturing}" "the binding whose keystroke is being read"]]
+          :usage "the Settings tab, second half"}
+         (view/keys-screen demo-state)
+         (note "clicking the binding is what rebinds it — unbinding is in the menu, not on the row"))
+
    (told-card ::chrome/empty-state)))
 
 ;;*********************************************************
@@ -444,7 +513,15 @@
    :lt.ui.band/evidence "What the value was, and what it becomes."
    :lt.ui.band/proposed-edit "Struck original, tinted replacement."
    :lt.ui.band/conflict "You edited a line a run had read."
-   :lt.ui.band/diagnostic "An LSP diagnostic, in the buffer."})
+   :lt.ui.band/diagnostic "An LSP diagnostic, in the buffer."
+   ;; The settings controls. One per parameter type a behavior can declare,
+   ;; which is why there are exactly this many.
+   :lt.ui.field/field "A label, a control, and the parameter's example."
+   :lt.ui.field/text-input "A :string parameter, and every untyped one."
+   :lt.ui.field/number-input "A :number parameter."
+   :lt.ui.field/toggle "A :boolean parameter, and a behavior with none."
+   :lt.ui.field/choice "A :list parameter, over what :items answers."
+   :lt.ui.field/source "Which file a value came from."})
 
 (def ^:private hosted
   "The aliases that are registered and are not among the twenty-five.
@@ -465,7 +542,7 @@
    :lt.ui.host/host "DOM another object owns, placed rather than described."})
 
 (def ^:private view-descriptions
-  "The nine, in the order [[lt.ui.view]] defines them."
+  "The eleven, in the order [[lt.ui.view]] defines them."
   [["titlebar" "Drawn in 04. The strip of every tabset in this window."]
    ["review-queue" "The edits a run proposes for this buffer."]
    ["connections" "Drawn in 04. The connect panel in the right bar of this window."]
@@ -474,7 +551,9 @@
    ["statusbar" "Drawn in 04. Its own render root — the cursor is a different clock."]
    ["command-bar" "Drawn in 04. A fuzzy search over the dispatch table."]
    ["multibuffer" "Excerpts by run. 12 either side of the cursor are real."]
-   ["settings" "A view over the keymap, which is a view over the actions."]])
+   ["settings" "Drawn in 04. Every setting, from the behaviors that say they are yours."]
+   ["keys-screen" "Drawn in 04. A view over the keymap, which is a view over the actions."]
+   ["settings-screen" "Those two, and which one you are looking at."]])
 
 (defn- table-row
   "One alias, with its namespace receding the way a path's directories do.
@@ -572,7 +651,7 @@
 
 (defn- catalogue-ui [this]
   (list
-   [:div.kit__title "Twenty-five components, and only one of them is the idea"]
+   [:div.kit__title "Thirty-one components, and only one of them is the idea"]
    [:div.kit__blurb
     "Pulled apart, the whole editor is one row primitive, one band primitive and a
      small amount of chrome — which is the argument for building it this way:
@@ -593,6 +672,7 @@
                             (when-not (:usage? @this) "kit--no-usage")]}
     (atoms)
     (rows-and-chrome)
+    (fields)
     (bands)
     (views)
     (registry)

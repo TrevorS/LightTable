@@ -465,6 +465,129 @@
                         (convert-file file))))
 
 ;;*********************************************************
+;; Writing what a settings screen changed
+;;*********************************************************
+
+;; The other half of "configuration is data". Reading it has been here since
+;; 2013; this is writing one entry of it back without asking anyone to know the
+;; file format, which is what doc/direction.md means by a settings screen that
+;; writes the data for you.
+;;
+;; Everything below edits `user.behaviors` or `user.keymap` — never a default
+;; and never a plugin's. That is the same rule the files already follow: the
+;; defaults are the application's and yours is a diff over them, so a setting
+;; you change is a line you own and a setting you reset is a line that goes
+;; away. It is also what makes this safe to do from a UI: the worst case is one
+;; recoverable line in one file you can open and read.
+
+(defn read-flat
+  "The flat entries in `file`, or `[]`.
+
+  Anything that is not a vector comes back empty rather than throwing. A user
+  file in the old map format is converted on startup by
+  `::flatten-map-settings`, so a map here means someone wrote one since — and
+  refusing to edit it is better than rewriting it into a format they did not
+  ask for."
+  [file]
+  (let [content (when (files/exists? file)
+                  (-> (files/open-sync file) :content (safe-read file)))]
+    (if (vector? content) content [])))
+
+(defn write-flat!
+  "Replace `file` with `flat`, formatted the way the file already formats.
+
+  [[pprint-flat-behaviors]] is what the format conversion uses, so a file this
+  writes and a file that was converted look the same — which matters because
+  the next person to edit it will do so by hand."
+  [file flat]
+  (files/save file (pprint-flat-behaviors (vec (sort-by first flat)))))
+
+(defn- without-entry
+  "`flat` without any entry for `[tag behavior]`, negated or not."
+  [flat tag behavior]
+  (let [negated (keyword (str "-" (keyword->str behavior)))]
+    (vec (remove (fn [[t b]]
+                   (and (= tag t) (or (= behavior b) (= negated b))))
+                 flat))))
+
+(defn set-user-behavior!
+  "Set `behavior` on `tag` to `values` in user.behaviors, and reload.
+
+  Trailing nils are dropped, because `[:editor :lt.objs.editor/tab-settings
+  false 2 nil]` and `[… false 2]` mean the same thing to the reaction and only
+  one of them is a file a person would write. Interior nils are kept: they are
+  how a behavior's second parameter is set without setting its third."
+  [tag behavior values]
+  (let [values (vec (reverse (drop-while nil? (reverse values))))]
+    (-> (read-flat user-behaviors-path)
+        (without-entry tag behavior)
+        (conj (into [tag behavior] values))
+        (->> (write-flat! user-behaviors-path))))
+  (cmd/exec! :behaviors.reload))
+
+(defn attach-user-behavior!
+  "Attach or detach `behavior` on `tag` in user.behaviors, and reload.
+
+  Detaching writes a negation rather than deleting a line, and that is the whole
+  subtlety here: the line being removed is usually not in *this* file. A
+  behavior attached by `default.behaviors` cannot be turned off by deleting
+  something from yours, so `[:editor :-lt.objs.editor/…]` is the only thing that
+  can express it — which is exactly what the `-` prefix in the file format is
+  for."
+  [tag behavior on?]
+  (-> (read-flat user-behaviors-path)
+      (without-entry tag behavior)
+      (conj (if on?
+              [tag behavior]
+              [tag (keyword (str "-" (keyword->str behavior)))]))
+      (->> (write-flat! user-behaviors-path)))
+  (cmd/exec! :behaviors.reload))
+
+(defn- context-of
+  "The keymap context `key` is bound in, or `:app`.
+
+  A rebind keeps the context the binding was already in — moving
+  `:editor.keys.normal`'s `cmd-d` to another key must leave it an editor
+  binding, or it starts firing in the file tree. A key that is bound nowhere is
+  new, and a new binding is global unless someone says otherwise, which is what
+  `:app` means."
+  [key]
+  (or (ffirst (kb/all-mappings key)) :app))
+
+(defn set-user-key!
+  "Bind `new-key` to `actions` in user.keymap, unbinding `old-key`, and reload.
+
+  Either may be nil. `old-key` alone is an unbinding; `new-key` alone is a new
+  binding; both is a move, which is what rebinding is.
+
+  `actions` arrive as [[lt.actions]] vectors — `[[:cmd/exec :save]]` — because
+  that is what the keymap projects into and what the screen has. The file holds
+  Light Table commands, so the `:cmd/exec` wrapper comes back off here. The two
+  registries meeting is the good part of this design and this line is the
+  translation it costs."
+  [old-key new-key actions]
+  (let [commands (vec (for [a actions]
+                        (if (and (coll? a) (= :cmd/exec (first a)))
+                          (vec (rest a))
+                          a)))
+        ctx (context-of (or old-key new-key))
+        flat (cond-> (read-flat user-keymap-path)
+               ;; Drop whatever this file said about either key first, so a
+               ;; rebind done twice does not leave two entries.
+               old-key (->> (remove (fn [[_ k]] (= (keyword->str k) old-key))) vec)
+               new-key (->> (remove (fn [[_ k]] (= (keyword->str k) new-key))) vec))
+        flat (cond-> flat
+               ;; A key the defaults bound has to be negated rather than
+               ;; omitted, the same as a behavior.
+               (and old-key (seq (kb/all-mappings old-key)))
+               (conj [ctx (str "-" old-key)])
+
+               new-key
+               (conj (into [ctx new-key] commands)))]
+    (write-flat! user-keymap-path flat))
+  (cmd/exec! :keymaps.reload))
+
+;;*********************************************************
 ;; Commands
 ;;*********************************************************
 

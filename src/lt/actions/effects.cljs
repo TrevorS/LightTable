@@ -18,6 +18,8 @@
             [lt.objs.context :as ctx]
             [lt.objs.editor :as editor]
             [lt.objs.editor.pool :as pool]
+            [lt.objs.keyboard :as kb]
+            [lt.objs.settings :as settings]
             [lt.objs.tabs :as tabs]
             [lt.state :as state]))
 
@@ -94,13 +96,13 @@
                           (fn [k & args]
                             (apply cmd/exec! k args)))
 
-(actions/register-effect! :client/bind
-                          (fn [id]
-                            ;; Recorded on the editor rather than globally: a
-                            ;; client is bound to a buffer, which is why two
-                            ;; tabs can evaluate into different places.
-                            (when-let [ed (pool/last-active)]
-                              (object/merge! ed {::client id}))))
+;; `:client/bind`'s effect was here and was a stub: it wrote a `::client` key on
+;; the editor that nothing ever read, so clicking a connection row did nothing at
+;; all while the row's whole purpose is to say where an evaluation goes.
+;;
+;; The real one is in `lt.objs.sidebar.clients`, beside `:client/unset` and
+;; `:client/disconnect` — the effects that reach a client belong with the panel
+;; that offers them, and this namespace is for the ones the design named.
 
 (actions/register-effect! :buffer/write
                           (fn [[path line] text]
@@ -146,6 +148,35 @@
                             (let [address [path line into-value]
                                   seed (get-in @state/app [:results [path line] :value])]
                               (state/observe! address (get-in seed into-value seed)))))
+
+;; The settings screen's writes. One line each, because the decisions — what a
+;; control's answer means, which parameter changed, whether a rebind is a move
+;; or a new binding — are all in [[lt.actions]], and the file format is
+;; [[lt.objs.settings]]'s. This namespace only joins them up.
+(actions/register-effect! :settings/write
+                          (fn [tag behavior values]
+                            (settings/set-user-behavior! tag behavior values)))
+
+(actions/register-effect! :settings/attach
+                          (fn [tag behavior on?]
+                            (settings/attach-user-behavior! tag behavior on?)))
+
+(actions/register-effect! :keymap/write
+                          (fn [old-key new-key actions]
+                            (settings/set-user-key! old-key new-key actions)))
+
+;; While a key is being captured the keyboard belongs to the settings screen.
+;; `lt.objs.keyboard/disable` is what stops a command firing, and it existed for
+;; this shape of problem already — the find bar uses it.
+(actions/register-effect! :keys/capturing
+                          (fn [capturing?]
+                            (if capturing? (kb/disable) (kb/enable))))
+
+(actions/register-effect! :error/no-such-setting
+                          (fn [tag behavior]
+                            (object/safe-report-error
+                             (str "No setting " (pr-str behavior) " on " (pr-str tag)
+                                  ". The projection is `lt.state.objects/settings-entries`."))))
 
 (actions/register-effect! :error/unknown-action
                           (fn [action]

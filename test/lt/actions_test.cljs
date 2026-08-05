@@ -90,8 +90,16 @@
         of (fn [& nses] (into #{} (filter (comp (set nses) namespace) registered)))]
     (is (= #{:review/goto :eval/form :watch/promote :edit/apply
              :run/grant :ns/refresh :behavior/rebind}
-           (into #{} (remove (comp #{"status" "console" "tree" "workspace" "client"} namespace)
+           (into #{} (remove (comp #{"status" "console" "tree" "workspace" "client"
+                                     "settings" "keymap"}
+                                   namespace)
                              registered))))
+    (testing "the settings screen's, from when :keymap stopped being written to by nothing"
+      (is (= #{:settings/show :settings/query :settings/set :settings/attach}
+             (of "settings")))
+      (is (= #{:keymap/capture-start :keymap/capture-cancel :keymap/capture
+               :keymap/unbind :keymap/menu}
+             (of "keymap"))))
     (testing "the statusbar's, from when the bar stopped being three objects"
       (is (= #{:status/message :status/loading :console/unread}
              (of "status" "console"))))
@@ -211,3 +219,115 @@
                       [[:review/goto 2] [:run/grant "r" :write/a] [:run/grant "r" :write/b]])]
     (is (= 2 (get-in state [:review :at])))
     (is (= #{:write/a :write/b} (get-in state [:runs "r" :grants])))))
+
+;;*********************************************************
+;; The settings screen
+;;*********************************************************
+
+(def ^:private with-settings
+  {:keymap {"cmd-s" [[:cmd/exec :save]]}
+   :settings
+   {:showing :settings
+    :query ""
+    :capturing nil
+    :entries [{:tag :editor
+               :behavior :lt.objs.editor/tab-settings
+               :desc "Editor: Set tab settings"
+               :params [{:label "Use tabs?" :type :boolean}
+                        {:label "Tab size in spaces" :type :number}]
+               :values [false 2]}
+              {:tag :app
+               :behavior :lt.objs.style/set-rulers
+               :desc "Style: Set rulers"
+               :params [{:label "Vector of rulers" :example [80]}]
+               :values [[80]]}]}})
+
+(deftest a-control-answers-with-the-type-its-parameter-declared
+  ;; The one place in the settings path where a decision is made, so the one
+  ;; place worth testing exhaustively.
+  (is (= true (actions/parse-value {:type :boolean} true)))
+  (is (= false (actions/parse-value {:type :boolean} nil)))
+  (is (= 13 (actions/parse-value {:type :number} "13")))
+  (is (= 13.5 (actions/parse-value {:type :number} "13.5")))
+  (is (nil? (actions/parse-value {:type :number} "")) "an emptied number box is unset, not zero")
+  (is (= "Menlo" (actions/parse-value {:type :string} "Menlo")))
+  (is (= "dark" (actions/parse-value {:type :list} "dark"))))
+
+(deftest an-untyped-parameter-is-read-the-way-the-file-would-read-it
+  ;; 21 of the 49 settable behaviors declare a label and no type, and their
+  ;; values are not strings. Coercing them to numbers would destroy a ruler
+  ;; setting; leaving them as strings would turn a vector into "[1 80]".
+  (is (= [1 80] (actions/parse-value {:label "Vector of rulers"} "[1 80]")))
+  (is (= {:a 1} (actions/parse-value {:label "map"} "{:a 1}")))
+  (is (= 42 (actions/parse-value {:label "Number"} "42")))
+  (testing "and a half-typed literal keeps what was typed rather than losing it"
+    (is (= "[1 80" (actions/parse-value {:label "Vector of rulers"} "[1 80")))))
+
+(deftest setting-a-parameter-writes-the-whole-argument-list
+  ;; A behavior takes positional arguments, so setting the second one means
+  ;; writing both — there is no way to say "the second one is now 4" in the file.
+  (let [{:keys [state effects]} (act with-settings
+                                     [:settings/set :editor :lt.objs.editor/tab-settings 1 "4"])]
+    (is (= [false 4] (get-in state [:settings :entries 0 :values])))
+    (is (= [[:settings/write :editor :lt.objs.editor/tab-settings [false 4]]] effects))))
+
+(deftest setting-a-parameter-nobody-has-set-yet-pads-the-ones-before-it
+  (let [state (assoc-in with-settings [:settings :entries 0 :values] [])
+        {:keys [state effects]} (act state
+                                     [:settings/set :editor :lt.objs.editor/tab-settings 1 "4"])]
+    (is (= [nil 4] (get-in state [:settings :entries 0 :values]))
+        "or the value would land in the first argument's position")
+    (is (= [[:settings/write :editor :lt.objs.editor/tab-settings [nil 4]]] effects))))
+
+(deftest setting-something-that-is-not-there-is-reported-rather-than-written
+  (let [{:keys [state effects]} (act with-settings [:settings/set :editor :nope/at-all 0 "x"])]
+    (is (= with-settings state))
+    (is (= [[:error/no-such-setting :editor :nope/at-all]] effects))))
+
+(deftest the-filter-and-the-half-you-are-looking-at-are-state-only
+  (is (= :keys (get-in (:state (act with-settings [:settings/show :keys])) [:settings :showing])))
+  (is (= "font" (get-in (:state (act with-settings [:settings/query "font"])) [:settings :query])))
+  (is (empty? (:effects (act with-settings [:settings/query "font"])))))
+
+;;*********************************************************
+;; Rebinding
+;;*********************************************************
+
+(deftest capturing-a-key-takes-the-keyboard-and-gives-it-back
+  ;; Without this, pressing the shortcut you want to assign runs whatever it is
+  ;; currently bound to — so the capture is interrupted by the very thing you
+  ;; were trying to rebind.
+  (let [{:keys [state effects]} (act with-settings [:keymap/capture-start "cmd-s"])]
+    (is (= "cmd-s" (get-in state [:settings :capturing])))
+    (is (= [[:keys/capturing true]] effects))
+    (let [{:keys [state effects]} (act state [:keymap/capture-cancel])]
+      (is (nil? (get-in state [:settings :capturing])))
+      (is (= [[:keys/capturing false]] effects)))))
+
+(deftest a-rebind-moves-the-binding-rather-than-copying-it
+  (let [captured (:state (act with-settings [:keymap/capture-start "cmd-s"]))
+        {:keys [state effects]} (act captured [:keymap/capture "ctrl-s" [[:cmd/exec :save]]])]
+    (is (= {"ctrl-s" [[:cmd/exec :save]]} (:keymap state))
+        "the old key is gone, which is what makes it a move")
+    (is (= [[:keys/capturing false]
+            [:keymap/write "cmd-s" "ctrl-s" [[:cmd/exec :save]]]]
+           effects))))
+
+(deftest a-capture-that-produced-no-key-is-a-cancel
+  (let [captured (:state (act with-settings [:keymap/capture-start "cmd-s"]))
+        {:keys [state effects]} (act captured [:keymap/capture "" [[:cmd/exec :save]]])]
+    (is (= {"cmd-s" [[:cmd/exec :save]]} (:keymap state)) "nothing moved")
+    (is (nil? (get-in state [:settings :capturing])))
+    (is (= [[:keys/capturing false]] effects))))
+
+(deftest a-keystroke-arriving-when-nothing-is-capturing-does-nothing
+  ;; The blur that ends a capture and the keydown that completes one can arrive
+  ;; in either order, and only one of them may write a binding.
+  (let [{:keys [state effects]} (act with-settings [:keymap/capture "ctrl-s" [[:cmd/exec :save]]])]
+    (is (= with-settings state))
+    (is (= [] effects))))
+
+(deftest unbinding-drops-the-row-and-negates-the-key
+  (let [{:keys [state effects]} (act with-settings [:keymap/unbind "cmd-s"])]
+    (is (= {} (:keymap state)))
+    (is (= [[:keymap/write "cmd-s" nil nil]] effects))))

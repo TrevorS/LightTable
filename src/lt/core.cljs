@@ -39,6 +39,7 @@
             [lt.ui.catalogue]
             [lt.ui.kit]
             [lt.ui.pane]
+            [lt.ui.settings :as ui-settings]
             [lt.ui.window]
             [lt.util.style]))
 
@@ -47,6 +48,11 @@
 ;; the kit is a vector where a function was expected, and nothing happens.
 (actions/install!)
 (effects/install!)
+
+;; How a captured keystroke is spelled. The settings screen reads a `keydown`
+;; and has to produce the string the keymap is actually keyed by, which is
+;; `lt.objs.keyboard`'s answer and nobody else's — see [[lt.ui.settings/install!]].
+(ui-settings/install!)
 
 ;; One watcher drives both halves of the design's structural claim: the chrome
 ;; renders from the state by value, and the bands are drawn into the editor's

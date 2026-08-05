@@ -53,7 +53,31 @@
    :workspace {:roots [] :nodes {} :renaming nil :recents nil}
    ;; The connect panel shows the clients or the kinds of client, and
    ;; `:choosing?` is which. The kinds are what the language plugins registered.
-   :connect {:choosing? false :connectors []}})
+   :connect {:choosing? false :connectors []}
+   ;; key -> [action …]. The keymap, which is the dispatch table seen from the
+   ;; keyboard. Projected from `lt.objs.keyboard/keys` for the context you are
+   ;; in — see [[lt.state.objects/keymap]].
+   ;;
+   ;; `:behavior/rebind` has written here since the design, against a key that
+   ;; `initial` did not have and nothing populated. Two surfaces read it now, so
+   ;; it does.
+   :keymap {}
+   ;; The settings screen's own state, which is which half of it you are
+   ;; looking at and what you have typed — not the settings themselves.
+   ;;
+   ;; `:entries` is the *settable* behaviors: those a person can change, with
+   ;; their parameters, their current values and the file each value came from.
+   ;; It is a projection like `:keymap`, and for the same reason — the
+   ;; configuration is a value in the object world, and a view is a function of
+   ;; one value.
+   ;;
+   ;; `:capturing` is the binding whose keystroke is being read, which is a
+   ;; mode: while it is set, the keyboard belongs to the screen rather than to
+   ;; the editor.
+   :settings {:showing :settings   ; :settings | :keys
+              :query ""
+              :entries []
+              :capturing nil}})
 
 (defonce app (atom initial))
 

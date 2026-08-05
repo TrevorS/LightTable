@@ -17,6 +17,7 @@
   (:require [cljs.core :as core]
             [lt.ui.stories.band]
             [lt.ui.stories.chrome]
+            [lt.ui.stories.field]
             [lt.ui.stories.host]
             [lt.ui.stories.pane]
             [lt.ui.stories.row]

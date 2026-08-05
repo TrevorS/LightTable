@@ -7,6 +7,10 @@
   and the way they stop agreeing is that a component is added, renamed or
   quietly given a colour of its own.
 
+  Thirty-one now. The six that are not the document's are [[lt.ui.field]]'s, and
+  this test is how they came to be written down — the settings screen added them
+  and this failed, which is the whole of what it is for.
+
   Aliases are functions in a registry, so this needs no DOM and no editor —
   requiring the three namespaces registers them, and an alias is called the way
   Replicant calls it: `(f attrs children)`."
@@ -15,6 +19,9 @@
             [lt.support.hiccup :as h]
             [lt.ui.band :as band]
             [lt.ui.chrome :as chrome]
+            ;; Required so the registration is this file's doing rather than
+            ;; something another test namespace happened to pull in.
+            [lt.ui.field]
             [lt.ui.row]
             [replicant.alias :as alias]))
 
@@ -47,7 +54,22 @@
     :lt.ui.band/evidence
     :lt.ui.band/proposed-edit
     :lt.ui.band/conflict
-    :lt.ui.band/diagnostic})
+    :lt.ui.band/diagnostic
+
+    ;; The six the settings screen added. Not in the document, which predates
+    ;; it, and written out here for the same reason the twenty-five are: the
+    ;; point of this list is to be the half of the comparison that does not
+    ;; come from the code.
+    ;;
+    ;; They are a family rather than six decisions. A behavior declares its
+    ;; parameters and their types, so what the kit needed was one control per
+    ;; type and two pieces of chrome around them — see [[lt.ui.field]].
+    :lt.ui.field/field
+    :lt.ui.field/text-input
+    :lt.ui.field/number-input
+    :lt.ui.field/toggle
+    :lt.ui.field/choice
+    :lt.ui.field/source})
 
 (defn- registered []
   (set (keys (alias/get-registered-aliases))))
@@ -71,7 +93,30 @@
       ;; A component added to the kit and not written down is the usual way a
       ;; catalogue starts lying, and it is silent — this is the noise.
       (is (empty? (sort (remove documented registered)))))
-    (is (= 25 (count registered)))))
+    (is (= 31 (count registered)))))
+
+(deftest no-component-can-draw-nothing
+  ;; A rule the document does not state and the framework enforces brutally.
+  ;; Replicant takes an alias's return value *as the node*, so an alias that
+  ;; returns nil becomes `createElement(":lt.ui.field/source")` — an
+  ;; `InvalidCharacterError` thrown inside Replicant's own render, which it
+  ;; catches, logs as "you may have misbehaving aliases", and then skips the
+  ;; whole render. Nothing looks broken; a surface is simply blank.
+  ;;
+  ;; `field/source` was written `(when from …)` and `setting-row` passes `:from`
+  ;; for every setting, so the first setting still at its default would have
+  ;; taken the settings screen with it. A story state written to show "this draws
+  ;; nothing" is what found it, in a browser. This is the same question asked
+  ;; without one.
+  ;;
+  ;; Called with no attributes at all, deliberately: that is the state a
+  ;; component is likeliest to be nil in, and any component that cannot survive
+  ;; it is one a view has to remember to guard.
+  (let [empty-handed (for [[k f] (alias/get-registered-aliases)
+                           :when (nil? (f {} nil))]
+                       k)]
+    (is (empty? (sort empty-handed))
+        "an alias must always return an element — see lt.ui.field/source")))
 
 (deftest no-component-owns-a-colour
   ;; The second of the two rules the document states, and the reason the token

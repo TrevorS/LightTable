@@ -763,6 +763,21 @@
 
 .window__body { display: flex; flex: 1; min-height: 0; }
 
+/* One column per tabset, each with its own tab strip above its own editor —
+ * which is what a tabset is. The strip used to sit above the body, outside it,
+ * which drew exactly one however many tabsets there were. */
+.window__column {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* A divider between columns rather than around them, so a single-tabset window
+ * looks exactly as it did. */
+.window__column + .window__column { border-left: 1px solid var(--lt-surface0); }
+
 .sidebar {
   width: 268px;
   flex-shrink: 0;
@@ -938,3 +953,133 @@
 /* An editor, hosted. Replicant is told nothing about what is inside. */
 .pane { flex: 1; min-width: 0; height: 100%; overflow: hidden; }
 .pane .CodeMirror { height: 100%; }
+
+/* ---------------------------------------------------------------------------
+ * The settings screen, and the fields it is made of.
+ *
+ * Every colour here is a role, which is the rule the whole sheet follows: swap
+ * --lt-text and the tints below follow, where a hand-written one stays the
+ * colour it was written at. Nothing in here names a hue.
+ * ------------------------------------------------------------------------- */
+
+.settings-host { height: 100%; overflow: hidden; }
+
+.settings-screen {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* The switch and the filter stay put while the list scrolls. Same reason the
+ * workspace tree's three actions do: a control that scrolls away is one you
+ * have to go looking for. */
+.settings-screen__bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--lt-surface0);
+}
+
+.settings-screen__filter {
+  flex: 1;
+  min-width: 0;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: var(--lt-radius-sm);
+  background: var(--lt-base);
+  font-family: var(--lt-sans);
+  font-size: 12px;
+  color: var(--lt-text);
+}
+
+.settings-screen__filter::placeholder { color: var(--lt-text-disabled); }
+
+.settings-screen .panel {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  margin-bottom: 0;
+  padding: 4px 6px 12px;
+}
+
+/* One setting. The description leads, because it is the thing you are looking
+ * for; the tag and the file it came from are the answer to "why is this not the
+ * default", which is a second question and is drawn as one. */
+.setting { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.setting__desc { color: var(--lt-text); }
+
+.setting__where {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--lt-overlay1);
+}
+
+.setting__tag { font-family: var(--lt-mono); }
+
+.setting__fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin-top: 2px;
+}
+
+/* A label wrapping its control, so clicking the label focuses the right box
+ * without generating an id that would not survive a re-render. */
+.field { display: flex; flex-direction: column; gap: 2px; font-size: 11px; }
+.field__label { color: var(--lt-subtext0); }
+.field__note { color: var(--lt-text-disabled); font-size: 10.5px; }
+
+.field__input,
+.field__select {
+  padding: 4px 6px;
+  border: 0;
+  border-radius: var(--lt-radius-sm);
+  background: var(--lt-base);
+  font-family: var(--lt-mono);
+  font-size: 12px;
+  color: var(--lt-text);
+  box-shadow: inset 0 0 0 1px var(--lt-surface0);
+}
+
+.field__input:focus,
+.field__select:focus {
+  outline: 0;
+  box-shadow: inset 0 0 0 1px var(--lt-result);
+}
+
+.field__input--number { width: 84px; }
+.field__toggle { accent-color: var(--lt-result); }
+
+/* Where a value came from, when it did not come from the defaults. */
+.field__source {
+  font-family: var(--lt-mono);
+  padding: 0 4px;
+  border-radius: var(--lt-radius-sm);
+  background: var(--lt-quiet-tint);
+}
+
+/* Most settings are the default, so most of these are empty. Hidden here rather
+ * than by the alias returning nil, because an alias that returns nil is a
+ * render Replicant throws inside — see lt.ui.field/source. */
+.field__source:empty { display: none; }
+
+/* A binding is the affordance: clicking the key is what rebinds it. */
+.keys__kbd { cursor: pointer; }
+.keys__actions { font-size: 11.5px; color: var(--lt-subtext0); margin-left: auto; }
+
+.keys__capture {
+  width: 96px;
+  padding: 2px 6px;
+  border: 0;
+  border-radius: var(--lt-radius-sm);
+  background: var(--lt-base);
+  font-family: var(--lt-mono);
+  font-size: 11px;
+  color: var(--lt-text);
+  box-shadow: inset 0 0 0 1px var(--lt-result);
+}

@@ -67,11 +67,13 @@ test.describe('the component kit', () => {
         expect(undrawn, 'aliases in the registry with no cell, or cells with no alias').toEqual([]);
 
         const registered = Number(await evalClj(window, '(count (lt.ui.kit/aliases))'));
-        // Twenty-five of the kit, plus the two that host foreign DOM rather
-        // than describing it — the editor pane and `lt.ui.host/host`. The nine
-        // views are functions rather than aliases and are listed separately.
-        expect(registered).toBe(27);
-        expect(await window.locator('.kit__table-row').count()).toBe(registered + 9);
+        // Thirty-one of the kit — twenty-five from the document plus the six
+        // `lt.ui.field` controls the settings screen added — plus the two that
+        // host foreign DOM rather than describing it: the editor pane and
+        // `lt.ui.host/host`. The eleven views are functions rather than aliases
+        // and are listed separately.
+        expect(registered).toBe(33);
+        expect(await window.locator('.kit__table-row').count()).toBe(registered + 11);
     });
 
     test('and every cell is the component, not a picture of it', async ({ window }) => {
@@ -97,7 +99,7 @@ test.describe('the component kit', () => {
     });
 
     test('the views draw themselves from a map, in the page', async ({ window }) => {
-        // Five of the nine are drawn by calling them, which is the same thing
+        // Seven of the eleven are drawn by calling them, which is the same thing
         // the test file does — so a view that throws on a shape takes this down
         // rather than waiting to be noticed in a window.
         // Three from two tabs: a run that is not in the tab list is still a tab,

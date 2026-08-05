@@ -17,10 +17,19 @@
   the editor's own requirements — and it needed nothing added to the kit, which
   is the useful half of the answer.
 
+  `keys-screen` and `settings-screen` are the design's eighth view grown into
+  two and a bar over them. It was one list of keys, and the reason it was eight
+  lines was right: the keymap really is a view over the dispatch table. What it
+  did not survive was being the *settings* screen as well, because a setting is
+  a behavior with parameters rather than a key with an action, and those are two
+  registries. `settings` is the other one, and `lt.ui.field` is what it needed
+  added to the kit.
+
   Handlers are vectors. See [[lt.actions]]."
   (:require [clojure.string :as string]
             [lt.ui.band :as band]
             [lt.ui.chrome :as chrome]
+            [lt.ui.field :as field]
             [lt.ui.row :as row]))
 
 (defn- leaf [path]
@@ -426,12 +435,20 @@
   The alias is named by keyword rather than required, because requiring
   `lt.ui.pane` loads an editor and everything under it — see the docstring
   there. This namespace stays a pure function of a value, which is what lets it
-  be tested without a DOM."
-  [{:keys [tabsets editors]}]
-  (let [{:keys [tabs active]} (first tabsets)
-        path (:path (get (vec tabs) (or active 0)))]
-    (when (contains? editors path)
-      [:lt.ui.pane/pane {:path path}])))
+  be tested without a DOM.
+
+  Two arities, the same shape as [[titlebar]]'s and for the same reason: a
+  tabset is a column of the window and the file you are looking at is *its*
+  active tab, not the first tabset's. This read `(first tabsets)` and was
+  therefore right only in a window with no splits — which is every window until
+  somebody splits one, so it was silent rather than wrong."
+  ([state] (editor-pane state (:id (first (:tabsets state)))))
+  ([{:keys [tabsets editors]} tabset-id]
+   (let [{:keys [tabs active]} (or (first (filter #(= tabset-id (:id %)) tabsets))
+                                   (first tabsets))
+         path (:path (get (vec tabs) (or active 0)))]
+     (when (contains? editors path)
+       [:lt.ui.pane/pane {:path path}]))))
 
 (defn multibuffer
   "Excerpts assembled by run rather than by file.
@@ -474,22 +491,176 @@
 ;; 8 · settings
 ;;*********************************************************
 
-(defn settings
-  "A view over the keymap, which is a view over the dispatch table.
+(defn- matches?
+  "Does `q` appear in any of `strings`? Empty `q` matches everything.
 
-  This is the payoff of handlers being data, and it is why the screen is eight
-  lines rather than a subsystem: there is nothing to build, only something to
-  show."
-  [{:keys [keymap]}]
-  [:div.panel
-   [::chrome/panel-header {:count (count keymap)} "Keys"]
-   (for [[k actions] (sort-by key keymap)]
-     [::row/list-row {:replicant/key k}
-      [::chrome/kbd {:keys k}]
-      [:span.row__actions (pr-str actions)]])
-   (when (empty? keymap)
-     [::chrome/empty-state {:what "No keys bound"}
-      "A binding is a key and an action vector, and this is the map of them."])])
+  One filter for both halves of the settings screen, because the thing a person
+  types is the same thing either way: some of the words they remember."
+  [q & strings]
+  (let [q (string/lower-case (string/trim (or q "")))]
+    (or (string/blank? q)
+        (boolean (some #(string/includes? (string/lower-case (str %)) q) strings)))))
+
+(defn- setting-row
+  "One settable behavior: what it does, where its value came from, and a control
+  per parameter.
+
+  The controls come from the parameter declarations rather than from anything
+  written here — see [[lt.ui.field/control]]. A behavior with no parameters is a
+  switch, because attaching it *is* the setting."
+  [{:keys [tag behavior desc params values from exclusive?]}]
+  [::row/list-row {:replicant/key [tag behavior]
+                   :leading (when (empty? params)
+                              [::field/toggle {:on? true
+                                               :on-change [[:settings/attach tag behavior false]]}])}
+   [:div.setting
+    [:div.setting__desc desc]
+    [:div.setting__where
+     [:span.setting__tag (str tag)]
+     [::field/source {:from from}]
+     (when exclusive? [::chrome/chip {} "one only"])]
+    (when (seq params)
+      [:div.setting__fields
+       (map-indexed
+        (fn [i param]
+          [::field/field {:replicant/key i
+                          :label (:label param (str "argument " (inc i)))
+                          :note (when-let [ex (:example param)] (str "e.g. " (pr-str ex)))}
+           (field/control param
+                          (get values i)
+                          [[:settings/set tag behavior i (field/value-placeholder param)]])])
+        params)])]])
+
+(defn settings
+  "Every setting there is, from the behaviors that say they are yours.
+
+  The screen exists because of one sentence in doc/direction.md — *a settings
+  experience that does not require knowing what a behavior is before changing
+  the font* — and almost none of it is built. A behavior has carried a
+  description, its parameters and each parameter's type since 2013, so what a
+  control should be is a lookup and what it currently says is a projection.
+
+  `\"Configuration is data\" is a root worth keeping, but it is not in tension
+  with a settings screen that writes the data for you.` This is that screen, and
+  what it writes is one line of `user.behaviors` — the same file, in the same
+  format, that it would take to do it by hand."
+  [state]
+  ;; Not `{:keys [settings]}`, which is the obvious way to write this and is a
+  ;; trap: the binding would shadow this function, and in ClojureScript calling
+  ;; a map with one argument is a lookup rather than an error. `settings-screen`
+  ;; below was written that way, and `(settings state)` silently returned nil —
+  ;; an empty half of the screen with nothing logged anywhere.
+  (let [{:keys [entries query]} (:settings state)
+        shown (->> entries
+                   (filter #(matches? query (:desc %) (:tag %) (:behavior %)))
+                   (sort-by (juxt :desc (comp str :tag))))]
+    [:div.panel.settings
+     [::chrome/panel-header {:count (count shown)} "Settings"]
+     (map setting-row shown)
+     (when (empty? shown)
+       (if (seq entries)
+         [::chrome/empty-state {:what "Nothing matches"}
+          "Every setting is a behavior that says it is yours. None of them are called that."]
+         [::chrome/empty-state {:what "No settings loaded"}
+          "A setting is a behavior with `:type :user`. If this is empty the behaviors have not loaded yet."]))]))
+
+;;*********************************************************
+;; 8½ · keys
+;;*********************************************************
+
+(defn- binding-row
+  "One key and what it does, with the key itself as the affordance.
+
+  Clicking the binding is what rebinds it, and then the next thing you press is
+  the new binding. That is the only interaction a keymap editor really has, and
+  the row's rule still holds — what follows the label is not a control, so
+  unbinding is in the menu rather than an `×` a mis-click away from the thing
+  you are reading."
+  [key actions capturing]
+  (let [capturing? (= key capturing)]
+    [::row/list-row
+     {:replicant/key key
+      :selected? capturing?
+      :leading (if capturing?
+                 [:span.keys__capturing
+                  ;; A real input, so the keystroke has somewhere to land and
+                  ;; focus is a thing the browser manages rather than something
+                  ;; this has to fake. `on-mount` because this render is what
+                  ;; creates it — the same reason the tree's rename input
+                  ;; focuses itself there.
+                  [:input.keys__capture
+                   {:value ""
+                    :placeholder "press a key"
+                    :replicant/on-mount (fn [{:replicant/keys [node]}] (.focus node))
+                    :on {:keydown [[:keymap/capture :event/keystr actions]]
+                         :blur [[:keymap/capture-cancel]]}}]]
+                 [:span.keys__kbd {:on {:click [[:keymap/capture-start key]]}}
+                  [::chrome/kbd {:keys key}]])
+      :on-menu [[:keymap/menu key]]}
+     [:span.keys__actions
+      (if-let [labels (seq (for [a actions
+                                 :when (and (coll? a) (= :cmd/exec (first a)))]
+                             (name (second a))))]
+        (string/join ", " labels)
+        (pr-str actions))]]))
+
+(defn keys-screen
+  "The keymap, which is a view over the dispatch table.
+
+  This is the eight-line view that used to be called `settings`, and the claim
+  in its docstring was right — there was nothing to build, only something to
+  show. What it was missing was that nothing showed it: `:keymap` was a state
+  key `:behavior/rebind` wrote to and no projection filled in, so the list was
+  always empty. [[lt.state.objects/keymap]] is the line that made it real.
+
+  The keys are the ones that would fire *now*, from the contexts you are
+  actually in. A screen that listed every context's binding would be listing
+  bindings that cannot happen, which is a worse answer to \"what does this key
+  do\" than showing fewer of them."
+  [state]
+  (let [{:keys [query capturing]} (:settings state)
+        shown (->> (:keymap state)
+                   (filter (fn [[k actions]] (matches? query k (pr-str actions))))
+                   (sort-by key))]
+    [:div.panel.keys
+     [::chrome/panel-header {:count (count shown)} "Keys"]
+     (for [[k actions] shown]
+       (binding-row k actions capturing))
+     (when (empty? shown)
+       (if (seq (:keymap state))
+         [::chrome/empty-state {:what "No key matches"}
+          "Try the command's name rather than the key."]
+         [::chrome/empty-state {:what "No keys bound"}
+          "A binding is a key and an action vector, and this is the map of them."]))]))
+
+(defn settings-screen
+  "Both halves, and which one you are looking at.
+
+  Two surfaces rather than one, because they are two registries — the behaviors
+  and the keymap — and the thing they have in common is only that both are data
+  you can edit. A single list of both would be a list of two kinds of thing.
+
+  The filter is shared, which is the useful half of putting them in one screen:
+  typing `font` finds the setting, and typing `save` finds the key."
+  [state]
+  (let [own (:settings state)
+        showing (:showing own :settings)]
+    [:div.settings-screen
+     [:div.settings-screen__bar
+      [::chrome/action-cluster {}
+       [::chrome/action {:weight (if (= :settings showing) :secondary :tertiary)
+                         :on-select [[:settings/show :settings]]}
+        "settings"]
+       [::chrome/action {:weight (if (= :keys showing) :secondary :tertiary)
+                         :on-select [[:settings/show :keys]]}
+        "keys"]]
+      [:input.settings-screen__filter
+       {:value (:query own "")
+        :placeholder "filter"
+        :on {:input [[:settings/query :event/value]]}}]]
+     (if (= :keys showing)
+       (keys-screen state)
+       (settings state))]))
 
 ;;*********************************************************
 ;; the window
@@ -504,15 +675,25 @@
   The statusbar is here because it belongs on screen and because a test should
   be able to ask for the whole window. The *live* chrome renders it into a root
   of its own instead — it reads the cursor, which is a different clock. See
-  [[lt.ui.window]]."
+  [[lt.ui.window]].
+
+  **A column per tabset**, because that is what a tabset is. This drew one strip
+  and one pane, both the first tabset's, so a split window showed half of itself
+  — and only half silently, since a window with no splits has exactly one tabset
+  and looked correct. The real chrome never had the bug: `lt.objs.tabs` gives
+  each tabset its own strip and the actions carry the tabset id. It was this view,
+  which is drawn beside the real thing in the component kit and in the
+  `Window as a view` tab, that disagreed with it."
   [state]
   [:div.window
-   (titlebar state)
    [:div.window__body
     (sidebar state)
-    ;; The active file when there is one, and the run's excerpts when there is
-    ;; not. A multibuffer is what you look at while reviewing a run; a buffer is
-    ;; what you look at the rest of the time.
-    (or (editor-pane state) (multibuffer state))]
+    (for [{:keys [id]} (:tabsets state)]
+      [:div.window__column {:replicant/key id}
+       (titlebar state id)
+       ;; The active file when there is one, and the run's excerpts when there is
+       ;; not. A multibuffer is what you look at while reviewing a run; a buffer is
+       ;; what you look at the rest of the time.
+       (or (editor-pane state id) (multibuffer state))])]
    (statusbar state)
    (command-bar state)])

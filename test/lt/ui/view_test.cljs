@@ -316,11 +316,127 @@
         (is (= "fs.readdir(dir)" (:before ev)))
         (is (= "fsp.readdir(dir)" (:after ev)))))))
 
-(deftest settings-is-a-view-over-the-keymap
-  (let [rows (h/find-all (view/settings state) :lt.ui.row/list-row)]
-    (is (= 1 (count rows)))
-    (is (re-find #"eval/form" (h/text-of (first rows)))
-        "the binding shows the action vector, because that is what it is")))
+;;*********************************************************
+;; The settings screen
+;;*********************************************************
+
+;; doc/hygiene.md listed "the settings and keymap UI | nothing, at any layer" as
+;; the worst of the coverage gaps. This is most of the answer, and the reason it
+;; is cheap is the reason the views are functions: a settings screen is hard to
+;; drive and trivial to *ask*.
+
+(def ^:private settables
+  "Two settable behaviors, shaped exactly as
+  [[lt.state.objects/settings-entries]] projects them.
+
+  One with typed parameters and one with none, because those are the two kinds
+  of row: a behavior with parameters is a form, and a behavior without is a
+  switch, since attaching it is the setting."
+  [{:behavior :lt.objs.editor/tab-settings
+    :tag :editor
+    :desc "Editor: Set tab settings"
+    :params [{:label "Use tabs?" :type :boolean}
+             {:label "Tab size in spaces" :type :number}]
+    :values [false 2]
+    :exclusive? false
+    :from "/home/u/.lighttable/User/user.behaviors"}
+   {:behavior :lt.objs.style/set-theme
+    :tag :app
+    :desc "Style: Set theme"
+    :params []
+    :values []
+    :exclusive? true
+    :from nil}])
+
+(def ^:private settings-state
+  (assoc state
+         :keymap {"cmd-s" [[:cmd/exec :save]]
+                  "cmd-shift-p" [[:cmd/exec :command-bar]]}
+         :settings {:showing :settings :query "" :entries settables :capturing nil}))
+
+(deftest a-setting-draws-a-control-per-parameter-from-its-declared-type
+  (let [s (view/settings settings-state)]
+    (testing "the types the behaviors declare are the controls, with nothing mapping them by hand"
+      (is (= 1 (count (h/find-all s :lt.ui.field/toggle))))
+      (is (= 1 (count (h/find-all s :lt.ui.field/number-input)))))
+    (testing "and the current value is what the control shows"
+      (is (= "2" (str (:value (h/attrs-of (first (h/find-all s :lt.ui.field/number-input))))))))))
+
+(deftest a-setting-says-which-file-its-value-came-from
+  (testing "the question a settings screen usually cannot answer: why is this not the default"
+    (let [sources (h/find-all (view/settings settings-state) :lt.ui.field/source)]
+      ;; Two entries, and only one of them has a value that came from a file.
+      (is (= 1 (count (filter (comp :from h/attrs-of) sources)))))))
+
+(deftest a-behavior-with-no-parameters-is-a-switch
+  (let [rows (h/find-all (view/settings settings-state) :lt.ui.row/list-row)
+        leading (keep (comp :leading h/attrs-of) rows)]
+    (is (= 1 (count leading))
+        "attaching it is the setting, so the row leads with a toggle and has no fields")))
+
+(deftest the-filter-is-over-both-the-description-and-the-tag
+  (is (= 1 (count (h/find-all (view/settings (assoc-in settings-state [:settings :query] "theme"))
+                              :lt.ui.row/list-row))))
+  (is (= 1 (count (h/find-all (view/settings (assoc-in settings-state [:settings :query] "editor"))
+                              :lt.ui.row/list-row))))
+  (testing "and a query that matches nothing says so rather than drawing an empty list"
+    (let [s (view/settings (assoc-in settings-state [:settings :query] "zzz"))]
+      (is (empty? (h/find-all s :lt.ui.row/list-row)))
+      (is (seq (h/find-all s :lt.ui.chrome/empty-state))))))
+
+(deftest keys-is-a-view-over-the-keymap
+  (let [rows (h/find-all (view/keys-screen settings-state) :lt.ui.row/list-row)]
+    (is (= 2 (count rows)))
+    (testing "and a binding reads as the command it runs rather than as its action vector"
+      ;; It used to print the vector, which is what it is and not what anyone is
+      ;; looking for.
+      (is (re-find #"save" (h/text-of (first rows)))))))
+
+(deftest the-key-being-captured-is-the-only-one-with-an-input
+  (let [s (view/keys-screen (assoc-in settings-state [:settings :capturing] "cmd-s"))
+        rows (h/find-all s :lt.ui.row/list-row)
+        selected (filter (comp :selected? h/attrs-of) rows)]
+    (is (= 1 (count selected)))
+    (testing "and it is the one that was clicked"
+      (is (re-find #"save" (h/text-of (first selected)))))))
+
+(deftest the-keymap-filter-searches-the-command-not-only-the-key
+  (is (= 1 (count (h/find-all (view/keys-screen (assoc-in settings-state [:settings :query] "save"))
+                              :lt.ui.row/list-row)))))
+
+(deftest the-screen-shows-one-half-at-a-time
+  ;; Asserted on the text rather than on the components, because a component
+  ;; handed to a row as `:leading` is invisible to `find-all`: `nodes` descends
+  ;; a vector's children and an attribute map is not one of them. That is worth
+  ;; knowing about this harness rather than working around silently — the
+  ;; keyboard hint in this screen and in the command bar both live there, so
+  ;; neither can be found by tag.
+  (testing "settings by default"
+    (let [s (view/settings-screen settings-state)]
+      (is (seq (h/find-all s :lt.ui.field/number-input)))
+      (is (re-find #"Set tab settings" (h/text-of s)))))
+  (testing "and keys when that is what is showing"
+    (let [s (view/settings-screen (assoc-in settings-state [:settings :showing] :keys))]
+      (is (empty? (h/find-all s :lt.ui.field/number-input)))
+      (is (re-find #"save" (h/text-of s)))
+      (is (not (re-find #"Set tab settings" (h/text-of s)))))))
+
+(deftest an-empty-projection-says-which-kind-of-empty-it-is
+  (testing "nothing loaded is a different sentence from nothing matching"
+    (let [none (view/settings (assoc settings-state :settings {:entries [] :query ""}))
+          no-match (view/settings (assoc-in settings-state [:settings :query] "zzz"))]
+      (is (re-find #"have not loaded" (h/text-of none)))
+      (is (re-find #"None of them are called that" (h/text-of no-match))))))
+
+(deftest an-empty-keymap-says-which-kind-of-empty-it-is-too
+  ;; Both branches, because neither was covered and clj-kondo found an
+  ;; unresolved symbol on one of them that every test here had walked past.
+  ;; On the body rather than on `:what`, which is an attribute and so invisible
+  ;; to `text-of` — the same blind spot the half-at-a-time test records.
+  (let [none (view/keys-screen (assoc settings-state :keymap {}))
+        no-match (view/keys-screen (assoc-in settings-state [:settings :query] "zzz"))]
+    (is (re-find #"is the map of them" (h/text-of none)))
+    (is (re-find #"Try the command's name" (h/text-of no-match)))))
 
 (deftest the-window-is-one-function-of-one-value
   (let [w (view/window state)]
@@ -412,3 +528,50 @@
                  h/attrs-of
                  :on
                  :click))))))
+
+;;*********************************************************
+;; Splits
+;;*********************************************************
+
+(def ^:private split-state
+  "Two tabsets, each with its own active tab — which is what a split is.
+
+  Every other test here has one, and that is exactly why the window view could
+  read `(first tabsets)` twice and look correct: a window with no splits has one
+  tabset, so nothing ever disagreed with it."
+  (assoc state
+         :tabsets [{:id 0 :active? true :active 0
+                    :tabs [{:id "a.cljs" :label "a.cljs" :path "a.cljs"}]}
+                   {:id 1 :active? false :active 1
+                    :tabs [{:id "b.cljs" :label "b.cljs" :path "b.cljs"}
+                           {:id "c.cljs" :label "c.cljs" :path "c.cljs"}]}]
+         :editors {"a.cljs" {:lang :cljs} "b.cljs" {:lang :cljs} "c.cljs" {:lang :cljs}}))
+
+(deftest a-tabset-draws-its-own-strip
+  (let [w (view/window split-state)
+        strips (h/find-all w :div.titlebar)]
+    (is (= 2 (count strips))
+        "one strip per tabset — this drew one, whatever the number of tabsets")))
+
+(deftest a-tabset-draws-its-own-active-file
+  (testing "not the first tabset's, which is what `(first tabsets)` gave every column"
+    (let [panes (h/find-all (view/window split-state) :lt.ui.pane/pane)]
+      (is (= ["a.cljs" "c.cljs"] (mapv (comp :path h/attrs-of) panes))
+          "the second column shows its own active tab, which is index 1"))))
+
+(deftest each-column-is-keyed-by-its-tabset
+  ;; Without a key, adding a split re-creates every column's node — and a pane's
+  ;; node holds a real editor, so rebuilding one throws the editor away.
+  (let [columns (h/find-all (view/window split-state) :div.window__column)]
+    (is (= [0 1] (mapv (comp :replicant/key h/attrs-of) columns)))))
+
+(deftest a-window-with-no-splits-is-unchanged
+  (testing "one tabset, one strip, one pane — the case every other test asserts"
+    (let [w (view/window state)]
+      (is (= 1 (count (h/find-all w :div.titlebar))))
+      (is (= 1 (count (h/find-all w :div.window__column)))))))
+
+(deftest editor-pane-still-defaults-to-the-first-tabset
+  (testing "the one-arity is what the catalogue and the kit call"
+    (is (= "src-worker/fuzzy.ts" (:path (h/attrs-of (view/editor-pane state)))))
+    (is (= "c.cljs" (:path (h/attrs-of (view/editor-pane split-state 1)))))))

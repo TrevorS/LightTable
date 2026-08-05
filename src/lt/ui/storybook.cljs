@@ -6,7 +6,7 @@
   What to draw comes from [[lt.ui.story]], which the catalogue reads too —
   there is no story data here, and that is the point of module 2.
 
-  **Nothing here reaches the editor.** Twenty-six of the twenty-seven aliases
+  **Nothing here reaches the editor.** Thirty-two of the thirty-three aliases
   require nothing but Replicant; the one that does not is `lt.ui.pane/pane`,
   which mounts a real CodeMirror — see [[lt.ui.stories.pane]] for why it has no
   stories rather than a stubbed one. Keeping it out is what lets this be a
@@ -14,13 +14,24 @@
 
   (An earlier version of this docstring said thirty-five aliases and five that
   reach the editor. That came from counting `defalias` with grep, which also
-  counts the `:refer-macros [defalias]` line in every namespace that uses it.)"
+  counts the `:refer-macros [defalias]` line in every namespace that uses it.)
+
+  **The require list below is the third of three that have to agree**, beside
+  [[lt.ui.stories.manifest]]'s and [[lt.ui.catalogue]]'s. Adding
+  `lt.ui.stories.field` to the first two and not to this one is exactly what
+  happened, and the symptom is worth knowing: the generator writes the story
+  files from the manifest, so Storybook lists all fourteen states and every one
+  of them draws nothing, because this bundle has never heard of the namespace
+  that registered them. `script/check-stories.mts` is what turns that into a
+  failure rather than a page of blank cards."
   (:require [lt.ui.band]
             [lt.ui.chrome]
+            [lt.ui.field]
             [lt.ui.host]
             [lt.ui.row]
             [lt.ui.stories.band]
             [lt.ui.stories.chrome]
+            [lt.ui.stories.field]
             [lt.ui.stories.host]
             [lt.ui.stories.pane]
             [lt.ui.stories.row]

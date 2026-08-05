@@ -13,7 +13,8 @@
   It goes away as each surface moves. When the tabs are a view, the tab
   projection below is dead code, and the day the last one is dead this
   namespace is the diff that removes it."
-  (:require [lt.object :as object]
+  (:require [clojure.string :as string]
+            [lt.object :as object]
             [lt.objs.clients :as clients]
             [lt.objs.clients.agent :as agent]
             [lt.objs.command :as cmd]
@@ -22,6 +23,8 @@
             [lt.objs.editor.lsp :as lsp]
             [lt.objs.editor.lsp.situation :as situation]
             [lt.objs.editor.pool :as pool]
+            [lt.objs.keyboard :as kb]
+            [lt.objs.settings :as settings]
             [lt.objs.tabs :as tabs]
             [lt.state :as state]))
 
@@ -147,6 +150,125 @@
   (vec (for [[k c] (:commands @cmd/manager)]
          {:label (or (:desc c) (name k)) :action [:cmd/exec k]})))
 
+(defn keymap
+  "The keys that are live right now, as `key -> [action …]`.
+
+  `lt.objs.keyboard/key-map` rather than `keys`: `keys` is a map per context and
+  `key-map` is the merge of the contexts you are actually in, which is what a
+  keystroke will really do. A screen listing every context's binding would be
+  listing bindings that cannot fire.
+
+  A command becomes `[:cmd/exec …]` so that the keymap and [[lt.actions]]'s
+  table are one list of the same kind of thing. That is the claim
+  [[lt.actions]]'s docstring makes — the keymap is a view over the dispatch
+  table — and it was not true of anything until something projected it."
+  []
+  (into {} (for [[k commands] @kb/key-map]
+             [k (vec (for [c commands]
+                       (if (coll? c)
+                         (into [:cmd/exec] c)
+                         [:cmd/exec c])))])))
+
+(defn- param-values
+  "What a behavior's parameters are currently set to, for `tag`.
+
+  `@object/tags` holds `tag -> [behavior-or-list …]`, where a behavior with
+  arguments is a list of the keyword and its arguments. So the values are
+  already here; nothing computes them."
+  [tag behavior]
+  (->> (get @object/tags tag)
+       (keep (fn [entry]
+               (when (and (coll? entry) (= behavior (first entry)))
+                 (vec (rest entry)))))
+       first))
+
+(defn- attached?
+  [tag behavior]
+  (boolean (some (fn [entry]
+                   (= behavior (if (coll? entry) (first entry) entry)))
+                 (get @object/tags tag))))
+
+(defn- unquoted
+  "`\"dark\"` for `\"\\\"dark\\\"\"`.
+
+  The hinter's completions are EDN literals, quotes included, because what they
+  are for is being inserted into a behaviors file. A `<select>`'s option has to
+  match what `:values` holds, which is the string itself."
+  [s]
+  (if (and (string? s) (> (count s) 1)
+           (string/starts-with? s "\"") (string/ends-with? s "\""))
+    (subs s 1 (dec (count s)))
+    s))
+
+(defn- ->option
+  "One `:list` option, as something a view can draw and compare.
+
+  `get-themes` and `get-skins` answer with the **autocomplete hinter's** objects
+  — `#js {:text \"\\\"dark\\\"\" :completion \"\\\"dark\\\"\"}` — because that is
+  what they were written for. Two calls build two sets of JS objects that are
+  never `=`, so leaving them in place keeps the window permanently disagreeing
+  with itself."
+  [item]
+  (cond
+    (string? item) (unquoted item)
+    (vector? item) item
+    (object? item) (unquoted (or (aget item "completion") (aget item "text") ""))
+    (keyword? item) (name item)
+    :else (str item)))
+
+(defn- resolved-param
+  "One parameter declaration, as data.
+
+  `:items` on a `:list` parameter is a **function** in every declaration in the
+  tree — `get-themes` reads what the plugins provided — and neither the function
+  nor what it answers with may reach the state atom. Three reasons, and the
+  third is the one that bit: the state is data by contract, a function cannot be
+  logged or replayed, and two calls to `snapshot` produce two objects that are
+  not `=`, so `lt.objs.control/drift` reports the window as disagreeing with
+  itself for ever. It did, twice — once for the function and once for the JS
+  objects behind it — and that check is how both were found.
+
+  Resolved here rather than at render, which is also the better place for it: a
+  projection happens on a trigger and a render happens whenever. Defensively,
+  because it reaches into the object world and a throw here would take the whole
+  projection with it."
+  [param]
+  (if-let [items (:items param)]
+    (assoc param :items
+           (try (mapv ->option (if (fn? items) (items) items))
+                (catch :default _ [])))
+    param))
+
+(defn settings-entries
+  "The behaviors a person can set, with what they are set to.
+
+  `:type :user` is the marker Light Table has used since 2013 for \"this one is
+  configuration rather than machinery\", and it is what makes a settings screen
+  generatable rather than written: a behavior already carries a description, its
+  parameters, and each parameter's type. 176 behaviors exist and 49 of them say
+  they are yours.
+
+  What this adds is the two things the registry does not hold — which tag a
+  behavior is attached to, and which file attached it. The second is
+  [[lt.objs.settings/where-from]], and it is the answer to the question a
+  settings screen is otherwise unable to answer: *why is this not the default,
+  and where do I go to change it back?*
+
+  Deliberately not sorted here. Order is a decision about what to show and
+  [[lt.ui.view]] is where those go."
+  []
+  (vec (for [[behavior beh] @object/behaviors
+             :when (= :user (:type beh))
+             tag (keys @object/tags)
+             :when (attached? tag behavior)]
+         {:behavior behavior
+          :tag tag
+          :desc (or (:desc beh) (name behavior))
+          :params (mapv resolved-param (:params beh))
+          :values (or (param-values tag behavior) [])
+          :exclusive? (boolean (:exclusive beh))
+          :from (settings/where-from tag behavior)})))
+
 (defn cursor
   "Where the cursor is, in the editor that has it."
   []
@@ -181,19 +303,28 @@
    :results (results)
    :cursor (or (cursor) {:line 0 :ch 0})
    :lsp (language-server)
+   :keymap (keymap)
+   :settings {:entries (settings-entries)}
    :command-bar {:commands (commands)}})
 
 (defn sync!
   "Put the projection into the state atom, keeping everything it does not own.
 
-  Merged rather than reset, because runs, watches, review and the keymap are
-  the state's own — nothing in the object world has them, and a projection that
-  reset would delete them every time a tab opened."
+  Merged rather than reset, because runs, watches and review are the state's
+  own — nothing in the object world has them, and a projection that reset would
+  delete them every time a tab opened.
+
+  Two keys are *partly* projected, which is why they are spliced rather than
+  merged wholesale: the command bar's list of commands is the object world's and
+  its query and selection are not, and the settings screen's entries are the
+  object world's while which half you are looking at is not. Getting that
+  backwards means a keystroke in a filter box being erased by an unrelated tab
+  opening, which is precisely what happened to the command bar before this
+  distinction existed."
   []
   (swap! state/app
          (fn [s]
            (let [snap (snapshot)]
-             (-> (merge s (dissoc snap :command-bar))
-                 ;; The command bar's own state — open, query, selection — is
-                 ;; the state's, and only its list of commands is projected.
-                 (assoc :command-bar (merge (:command-bar s) (:command-bar snap))))))))
+             (-> (merge s (dissoc snap :command-bar :settings))
+                 (assoc :command-bar (merge (:command-bar s) (:command-bar snap)))
+                 (assoc :settings (merge (:settings s) (:settings snap))))))))
