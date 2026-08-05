@@ -771,12 +771,25 @@
   color: var(--lt-text);
 }
 
+/* `overflow-y: hidden` explicitly, and it is not redundant.
+ *
+ * CSS promotes a `visible` overflow to `auto` on the other axis as soon as one
+ * axis scrolls — so `overflow-x: auto` alone gave this a *vertical* scrollbar as
+ * well. It had something to scroll, because `.tab` is 40px and the box the strip
+ * sits in (`#multi .list`) is 36px, and `align-items: stretch` does not stretch an
+ * item that states its own height. So every window drew a 7px light-slate bar at
+ * the end of its tabs, in every screenshot of this editor, and it read as a
+ * rendering artefact because that is what it was.
+ *
+ * A tab strip is one row of tabs. There is no direction in which it should scroll
+ * vertically, whatever it happens to contain. */
 .titlebar {
   display: flex;
   align-items: stretch;
   flex-shrink: 0;
   background: var(--lt-crust);
   overflow-x: auto;
+  overflow-y: hidden;
 }
 .titlebar::-webkit-scrollbar { height: 0; }
 

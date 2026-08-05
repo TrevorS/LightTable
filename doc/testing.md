@@ -171,14 +171,15 @@ element by element, rather than what it was meant to do.
 ## Looking at the UI, which is a layer of its own
 
 ```sh
-make uiscan                             # every state
-make uiscan ARGS="--only settings,keys"  # just those
-make uiscan ARGS=--strict                # exit 1 if anything is found
+make uiscan                              # every state, both window sizes
+make uiscan ARGS="--only settings,keys"   # just those
+make uiscan ARGS="--size narrow"          # one size
+make uiscan ARGS=--strict                 # exit 1 if anything is found
 ```
 
-`script/uiscan.sh` boots the editor headlessly, drives it into fifteen states,
-writes a PNG of each to `builds/uiscan/`, and audits every one. It exists because
-all four layers above were green while:
+`script/uiscan.sh` boots the editor headlessly, drives it into eighteen states at
+two window sizes, writes a PNG of each to `builds/uiscan/`, and audits every one.
+It exists because all four layers above were green while:
 
 - the settings screen drew each row 60px into the one below it, so the whole
   screen was two layers of text on top of each other
@@ -209,6 +210,23 @@ docs-chip bug turned on. Without that it reported two elements that have a box a
 are not painted. And every check was written against a bug that had shipped, then
 checked against it — restoring the old stylesheets produces 33 findings, and the
 current ones produce none.
+
+**Two sizes**, because a layout that works only when there is room to spare is not
+a layout. The keymap's thousand-pixel gap was invisible at 1024 and a connection
+row's truncation was invisible at 1440, so neither size alone finds both.
+
+**Every state starts from a reset** — the same recipe `fixtures.ts` uses, through
+the same control channel. Without it each screenshot showed the residue of the
+ones before: the narrow pass opened on seven tabs and a console bar left from the
+wide one, and a settings screen with 130px of dead space under it that looked
+exactly like a window which had failed to reflow. It had not. `Escape` closes a
+filter list; it does not close a tab, empty a workspace or hide a bottombar.
+
+**A state that wedges the editor cannot wedge the run.** `app.close()` goes
+through the application's own close path, which asks the *renderer* — so a modal
+left on screen, or an editor left dirty, makes it wait for ever. States clean up
+after themselves, and the close is bounded and then killed, because a scanner that
+does not exit is worse than one that misses a state.
 
 It is a scanner, not a gate: `--strict` makes it one, but the default reports,
 because a `clipped` finding is frequently the right answer and a tool that fails

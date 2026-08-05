@@ -162,37 +162,61 @@ input {
 .popup {
   background: rgba(0,0,0,0.5);
 }
-.popup > div > div {
-  background: #505d6b;
-  color: #c7e6ff;
+/* The card, which was not the card.
+ *
+ * `.popup > div > div` is the full-width wrapper — structure.css gives it
+ * `width: 100%` — and the 600px card is one level further down. So the background
+ * was painted across the whole window and a modal rendered as a slate *band* from
+ * edge to edge with its text centred in the middle of it. It did not look like a
+ * dialog; it looked like a rendering fault, and this is the confirmation you get
+ * before deleting a plugin.
+ *
+ * A card now: on the card, with a radius and a shadow, so the dim behind it reads
+ * as behind it. */
+.popup > div > div > div {
+  background: var(--lt-mantle);
+  color: var(--lt-text);
+  border-radius: var(--lt-radius);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.5);
+}
+.popup h2 {
+  color: var(--lt-text);
 }
 .popup .button {
-  background: transparent;
-  border: 2px solid #c7e6ff;
-  color: #c7e6ff;
+  background: var(--lt-surface0);
+  border: 0;
+  color: var(--lt-text);
 }
 .popup label {
   margin-right: 10px;
   display: block;
 }
 .popup input {
-  background: transparent;
+  background: var(--lt-base);
   padding: 8px 10px;
-  border: 2px solid #c7e6ff;
-  color: #c7e6ff;
+  border: 0;
+  box-shadow: inset 0 0 0 1px var(--lt-surface0);
+  color: var(--lt-text);
   width: 60%;
 }
 .popup input::-webkit-input-placeholder {
-  color: #c7e6ff;
+  color: var(--lt-text-disabled);
 }
+/* Hover and the default action are two different things and were one
+   declaration, set to a pale blue with `!important` on it. Now: hover lifts, and
+   the default button is the one that reads as the answer. */
 .popup .button:hover,
+.popup .button:focus {
+  background: var(--lt-surface2);
+  color: var(--lt-text);
+}
 .popup .button.active {
-  background: #c7e6ff !important;
-  color: #505d6b;
+  background: var(--lt-element-selected);
+  color: var(--lt-text);
 }
 .popup ::-webkit-scrollbar-thumb {
-  background: #c7e6ff;
-  border: 1px solid #c7e6ff;
+  background: var(--lt-surface2);
+  border: 1px solid var(--lt-surface2);
 }
 #version-info {
   background: #202020;

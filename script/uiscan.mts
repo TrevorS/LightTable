@@ -7,6 +7,7 @@
 //
 //     script/uiscan.sh                      every state
 //     script/uiscan.sh --only settings,keys  just those
+//     script/uiscan.sh --size narrow         one window size, not both
 //     script/uiscan.sh --list                what the states are
 //     script/uiscan.sh --strict              exit 1 if anything is found
 //
@@ -77,8 +78,17 @@ import { _electron as electron, type ElectronApplication, type Page } from 'play
 import { ROOT, CORE, electronBinary } from './lib/paths.mts';
 
 const OUT = path.join(ROOT, 'builds', 'uiscan');
-const WIDTH = 1440;
-const HEIGHT = 900;
+/* Two sizes, because a layout that only works when there is room to spare is not
+ * a layout. `wide` is a maximised window on a laptop; `narrow` is the smallest
+ * anybody would actually work in, and roughly the default the app ships with —
+ * which is where a three-column row runs out of width and a fixed column starves
+ * everything beside it. The keymap's thousand-pixel gap was invisible at 1024 and
+ * the connection row's truncation was invisible at 1440, so neither size alone
+ * would have found both. */
+const SIZES: Record<string, { w: number; h: number }> = {
+    wide: { w: 1440, h: 900 },
+    narrow: { w: 1024, h: 700 }
+};
 
 /** One thing to look at: a name, and how to get the editor into that state. */
 interface State {
@@ -91,6 +101,16 @@ interface State {
     settle?: number;
     /** Checks to skip here, with the reason. */
     allow?: string[];
+    /**
+     * Undo whatever `drive` left behind, when Escape is not enough.
+     *
+     * The popup state is why. It opens a modal, Escape did not dismiss it, and
+     * Light Table asks the *renderer* before letting a window close — so
+     * `app.close()` waited on an editor that was waiting on a dialog, and a run
+     * that had already written every screenshot never exited. Twice, for twenty
+     * minutes each.
+     */
+    cleanup?: (page: Page) => Promise<void>;
 }
 
 const STATES: State[] = [
@@ -98,6 +118,67 @@ const STATES: State[] = [
     { name: 'clojure', drive: openSample('sample.clj'), settle: 2500 },
     { name: 'typescript', drive: openSample('sample.ts'), settle: 3500 },
     { name: 'markdown', drive: openSample('notes.md'), settle: 2500 },
+    {
+        // Inline diagnostics, which are drawn by Light Table rather than by
+        // CodeMirror and are the most custom thing in an editor window: a line
+        // widget under the line it is about. The `typescript` state above does not
+        // get them — its file sits in a bare temp directory, and a language server
+        // is rooted at a project, so without `tsconfig.json` beside it nothing
+        // starts. This state exists to have a root.
+        name: 'diagnostics',
+        settle: 9000,
+        drive: async (page) => {
+            await exec(page, ':open-path', path.join(sampleDir, 'project', 'broken.ts'));
+        }
+    },
+    {
+        // A modal, and the one piece of chrome that draws over everything else.
+        name: 'popup',
+        settle: 1200,
+        drive: async (page) => {
+            await page.evaluate(`lt.objs.popup.popup_BANG_(cljs.core.js__GT_clj(
+                { header: "A question with a long enough title to wrap in a narrow window",
+                  body: "Some body text explaining what is about to happen, at the length these actually run to when they are explaining something worth a modal.",
+                  buttons: [{ label: "Do it" }, { label: "Cancel" }] },
+                cljs.core.keyword.call(null, "keywordize-keys"), true))`);
+        },
+        cleanup: async (page) => {
+            await page.evaluate(`(function () {
+                cljs.core.doall(cljs.core.map(lt.object.destroy_BANG_,
+                    lt.object.by_tag(cljs.core.keyword.call(null, "popup"))));
+                Array.from(document.querySelectorAll('.popup')).forEach(function (n) { n.remove(); });
+                return null;
+            })()`);
+        }
+    },
+    {
+        // A tab with unsaved changes, which draws a dot rather than a colour.
+        name: 'dirty',
+        settle: 1200,
+        drive: async (page) => {
+            await exec(page, ':open-path', path.join(sampleDir, 'sample.clj'));
+            await page.waitForTimeout(1200);
+            await page.evaluate(`(function () {
+                var ed = lt.objs.editor.pool.last_active();
+                if (ed) lt.object.merge_BANG_(ed, cljs.core.js__GT_clj({ dirty: true },
+                    cljs.core.keyword.call(null, "keywordize-keys"), true));
+                return null;
+            })()`);
+        },
+        // Cleared again, because Light Table asks before losing changes and there
+        // is nobody here to answer — so a run that ended on this state could not
+        // close the window it had finished with. `test-e2e/fixtures.ts` does the
+        // same thing in `reset()`, and for the same sentence's worth of reason.
+        cleanup: async (page) => {
+            await page.evaluate(`(function () {
+                cljs.core.doall(cljs.core.map(function (ed) {
+                    return lt.object.merge_BANG_(ed, cljs.core.js__GT_clj({ dirty: false },
+                        cljs.core.keyword.call(null, "keywordize-keys"), true));
+                }, lt.object.by_tag(cljs.core.keyword.call(null, "editor"))));
+                return null;
+            })()`);
+        }
+    },
     { name: 'commandbar', command: ':show-commandbar', settle: 1200 },
     { name: 'settings', command: ':settings.screen', settle: 1800 },
     { name: 'keys', command: ':settings.keys', settle: 1800 },
@@ -426,6 +507,52 @@ function dedupe(findings: Finding[]): Finding[] {
     });
 }
 
+/**
+ * Back to an editor with nothing in it, between states.
+ *
+ * Without this every screenshot showed the residue of the ones before it: the
+ * narrow pass opened on seven tabs and a console bar left over from the wide one,
+ * and a settings screen with 130px of dead space under it that looked exactly like
+ * a window that had failed to reflow. It was not. It was the bottombar, still open
+ * from a state four earlier, and I went looking for a resize bug that does not
+ * exist.
+ *
+ * Which is the point: a scanner whose states leak into each other produces
+ * screenshots nobody can attribute and findings that belong to something else.
+ * `Escape` closes a filter list; it does not close a tab, empty a workspace or
+ * hide a bottombar.
+ *
+ * The same recipe `test-e2e/fixtures.ts` uses, and through the same control
+ * channel, so there is one description of what "clean" means. `:dirty false`
+ * first, because Light Table asks before losing changes and nobody here will
+ * answer.
+ */
+async function reset(page: Page): Promise<void> {
+    await page.evaluate(`(function () {
+        try {
+            return lt.objs.control.request('eval', { source: \`
+                (do (doseq [ed (lt.object/by-tag :editor)]
+                      (lt.object/merge! ed {:dirty false}))
+                    (doseq [ts (lt.object/by-tag :tabset)
+                            o (vec (:objs @ts))]
+                      (lt.object/raise o :close))
+                    (doseq [p (lt.object/by-tag :popup)]
+                      (lt.object/raise p :close!))
+                    (lt.object/raise lt.objs.workspace/current-ws :clear!)
+                    (lt.objs.console/clear)
+                    (lt.object/clear-errors!)
+                    ;; The bottombar is hidden by raising :hide! with its active
+                    ;; item and a force flag — there is no hide fn, and the
+                    ;; whole form is inside a catch, so getting this wrong
+                    ;; would make the reset a silent no-op rather than an error.
+                    (lt.object/raise lt.objs.bottombar/bottombar :hide!
+                                     (:active @lt.objs.bottombar/bottombar) true)
+                    :reset)\` });
+        } catch (e) { return 'reset failed: ' + e.message; }
+    })()`);
+    await page.waitForTimeout(400);
+}
+
 async function ready(page: Page): Promise<void> {
     await page.waitForFunction(
         "typeof lt !== 'undefined' && lt.objs && typeof lt.objs.app === 'object'",
@@ -448,6 +575,14 @@ async function main(): Promise<void> {
         ? (argv[argv.indexOf('--only') + 1] ?? '').split(',').map((s) => s.trim()).filter(Boolean)
         : null;
     const strict = argv.includes('--strict');
+    const wanted = argv.includes('--size')
+        ? (argv[argv.indexOf('--size') + 1] ?? '').split(',').map((x) => x.trim()).filter(Boolean)
+        : Object.keys(SIZES);
+    const sizes = Object.entries(SIZES).filter(([name]) => wanted.includes(name));
+    if (!sizes.length) {
+        console.error(`No such size. Known: ${Object.keys(SIZES).join(', ')}`);
+        process.exit(1);
+    }
 
     if (argv.includes('--list')) {
         for (const s of STATES) console.log(s.name);
@@ -472,6 +607,22 @@ async function main(): Promise<void> {
     for (const [file, body] of Object.entries(SAMPLES)) {
         fs.writeFileSync(path.join(sampleDir, file), body);
     }
+    // A directory that looks like a project, so `project-root` finds one and a
+    // language server starts. `tsconfig.json` and `package.json` are the markers
+    // `lt.objs.editor.lsp` looks for; the file itself has to be wrong on purpose.
+    const project = path.join(sampleDir, 'project');
+    fs.mkdirSync(project, { recursive: true });
+    fs.writeFileSync(path.join(project, 'tsconfig.json'),
+                     JSON.stringify({ compilerOptions: { strict: true, noEmit: true } }, null, 2));
+    fs.writeFileSync(path.join(project, 'package.json'),
+                     JSON.stringify({ name: 'uiscan-fixture', version: '0.0.0' }, null, 2));
+    fs.writeFileSync(path.join(project, 'broken.ts'), `export function add(a: number, b: number): number {
+    return a + b;
+}
+
+const wrong: number = "not a number";
+const alsoWrong: string = add(1, 2, 3);
+`);
     // A home of its own, so this does not open whatever was left in the real
     // session — and so two runs see the same editor.
     const home = fs.mkdtempSync(path.join(os.tmpdir(), 'lt-uiscan-home-'));
@@ -489,22 +640,28 @@ async function main(): Promise<void> {
         const page = await app.firstWindow();
         await ready(page);
 
-        // Set from the main process: a window's size is not the page's to change.
-        // Bigger than the 1024x700 default on purpose — a layout that only breaks
-        // when there is room to spare is still broken, and the keymap's
-        // thousand-pixel gap was invisible at 1024.
-        await app.evaluate(({ BrowserWindow }, size) => {
-            const [win] = BrowserWindow.getAllWindows();
-            win!.setSize(size.w, size.h);
-        }, { w: WIDTH, h: HEIGHT });
-        await page.waitForTimeout(700);
+        // A window's size is not the page's to change, so this goes through the
+        // main process.
+        const resize = async (w: number, h: number) => {
+            await app!.evaluate(({ BrowserWindow }, size) => {
+                const [win] = BrowserWindow.getAllWindows();
+                win!.setSize(size.w, size.h);
+            }, { w, h });
+            await page.waitForTimeout(700);
+        };
 
+        for (const [sizeName, size] of sizes) {
+        await resize(size.w, size.h);
         for (const state of states) {
+            // Every state starts from the same editor, so a screenshot shows that
+            // state and not the ones before it.
+            await reset(page);
             if (state.command) await exec(page, state.command);
             if (state.drive) await state.drive(page);
             await page.waitForTimeout(state.settle ?? 900);
 
-            const file = path.join(OUT, `${state.name}.png`);
+            const label = `${state.name}@${sizeName}`;
+            const file = path.join(OUT, `${label}.png`);
             await page.screenshot({ path: file });
 
             const raw = JSON.parse(await page.evaluate(AUDIT) as string) as Finding[];
@@ -521,7 +678,7 @@ async function main(): Promise<void> {
                 return acc;
             }, {});
             const summary = Object.entries(counts).map(([k, n]) => `${n} ${k}`).join(', ');
-            console.log(`${state.name.padEnd(14)} ${path.relative(ROOT, file)}${summary ? '  — ' + summary : ''}`);
+            console.log(`${label.padEnd(22)} ${path.relative(ROOT, file)}${summary ? '  — ' + summary : ''}`);
 
             for (const f of findings) {
                 const extra = [f.by, f.at].filter(Boolean).join(' ');
@@ -533,15 +690,31 @@ async function main(): Promise<void> {
             // Dismiss whatever this opened, so the next state starts from the
             // editor rather than on top of the last panel.
             await page.keyboard.press('Escape');
+            if (state.cleanup) await state.cleanup(page).catch(() => { /* best effort */ });
             await page.waitForTimeout(250);
         }
+        }
     } finally {
-        if (app) await app.close().catch(() => { /* already gone */ });
+        // Bounded, and then killed. `app.close()` goes through the application's
+        // own close path, which asks the renderer — so anything modal left on
+        // screen makes it wait for ever, and a scanner that does not exit is worse
+        // than one that misses a state. Ten seconds is far longer than a healthy
+        // close takes.
+        if (app) {
+            const closed = app.close().catch(() => { /* already gone */ });
+            const gaveUp = new Promise<'timeout'>((r) => setTimeout(() => r('timeout'), 10_000));
+            if (await Promise.race([closed.then(() => 'closed' as const), gaveUp]) === 'timeout') {
+                console.error('the editor did not close; killing it');
+                const pid = app.process().pid;
+                if (pid) { try { process.kill(pid, 'SIGKILL'); } catch { /* already gone */ } }
+            }
+        }
         fs.rmSync(sampleDir, { recursive: true, force: true });
         fs.rmSync(home, { recursive: true, force: true });
     }
 
-    console.log(`\n${states.length} states, ${found} findings. PNGs in ${path.relative(ROOT, OUT)}/`);
+    console.log(`\n${states.length} states × ${sizes.length} sizes, ${found} findings. `
+                + `PNGs in ${path.relative(ROOT, OUT)}/`);
     if (found && strict) process.exit(1);
 }
 
