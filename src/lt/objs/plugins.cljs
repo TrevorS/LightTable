@@ -5,6 +5,7 @@
             [lt.objs.command :as cmd]
             [lt.objs.context :as ctx]
             [lt.objs.console :as console]
+            [lt.objs.plugins.edn-format :as edn-format]
             [lt.objs.app :as app]
             [lt.objs.files :as files]
             [lt.objs.settings :as settings]
@@ -1060,25 +1061,49 @@
                                         plugins
                                         (search-plugins plugins search))))))
 
-(defn save-plugins [plugin-maps]
-  (let [plugin-edn-file (files/join settings/user-plugin-dir "plugin.edn")
-        plugin-edn (-> plugin-edn-file files/open-sync :content (settings/safe-read plugin-edn-file))
-        plugin-name (doto (:name plugin-edn) (assert "User plugin doesn't have a :name"))
-        deps (->> plugin-maps
-                  vals
-                  (remove #(contains? #{plugin-name} (:name %)))
-                  (map (juxt :name :version))
-                  (into (sorted-map)))
-         plugin-edn-body (pr-str (assoc plugin-edn :dependencies deps))]
+(defn save-plugins
+  "Writes the installed plugins into the user plugin's `:dependencies`.
 
-    (files/save plugin-edn-file
-                (-> plugin-edn-body
-                    ;; Until clojurescript gets pprint
-                    ;; one key/val pair or parent key per line for diffing
-                    (string/replace #"(\"\s*,|\{|\},)" #(str % "\n"))
-                    (string/replace-first #"^\{\n" "{")
-                    (string/replace-first #":dependencies"
-                                          ";; Do not edit - :dependencies are auto-generated\n:dependencies")))))
+  This destroyed the file it was writing. `clojure.string/replace` hands a
+  replacement *function* the match as a string when the pattern has no capture
+  groups, and a **vector of `[match & groups]`** when it has any — and this one
+  wrapped its whole alternation in a group it never used. So `(str % \"\\n\")`
+  stringified a vector, and the first time anybody opened the plugin manager their
+  `User/plugin.edn` became:
+
+  ```
+  [\"{\" \"{\"]
+  :name \"User[\"\\\",\" \"\\\",\"]
+  ```
+
+  Which then explained every symptom after it. `read-string` on that returns the
+  leading *vector*, so the next read logged `FAILED to load plugin.edn` and the
+  next save threw `Vector's key for assoc must be a number` from the `assoc`
+  below — reported as `Invalid behavior: save-user-plugin-dependencies`, which is
+  what [[lt.object/raise]] says about a behavior that threw. Three different
+  messages, one missing `first`.
+
+  Found by `script/uiscan.sh`, because the second state that opens the plugin
+  manager is the one that reads back what the first state wrote."
+  [plugin-maps]
+  (let [plugin-edn-file (files/join settings/user-plugin-dir "plugin.edn")
+        plugin-edn (-> plugin-edn-file files/open-sync :content (settings/safe-read plugin-edn-file))]
+    ;; Refuse rather than throw, and say what to do about it. A file already
+    ;; corrupted by the bug above cannot be read as a map, and the `assert` this
+    ;; used to reach reported that as "User plugin doesn't have a :name" — true,
+    ;; unhelpful, and raised on every refresh for ever. Writing into it anyway
+    ;; would be the same mistake a second time.
+    (if-not (map? plugin-edn)
+      (console/error (str "Not writing dependencies: " plugin-edn-file " is not a map. "
+                          "Delete it and restart, and a fresh one will be written from the build."))
+      (let [plugin-name (:name plugin-edn)
+            deps (->> plugin-maps
+                      vals
+                      (remove #(contains? #{plugin-name} (:name %)))
+                      (map (juxt :name :version))
+                      (into (sorted-map)))
+            plugin-edn-body (pr-str (assoc plugin-edn :dependencies deps))]
+        (files/save plugin-edn-file (edn-format/format-edn plugin-edn-body))))))
 
 (behavior ::save-user-plugin-dependencies
           :triggers #{:refresh!}

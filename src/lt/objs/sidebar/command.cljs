@@ -409,7 +409,24 @@
                         (let [s2 (filter-list {:items (fn []
                                                         (->> (:commands @cmd/manager)
                                                              vals
-                                                             (remove :hidden)))
+                                                             (remove :hidden)
+                                                             ;; By what is shown, because `:commands`
+                                                             ;; is a map and `vals` is therefore hash
+                                                             ;; order — so the palette opened on
+                                                             ;; "Editor: Undo the last selection",
+                                                             ;; "Window: Toggle fullscreen", "Paredit:
+                                                             ;; Move up out of the current form",
+                                                             ;; "Window: Zoom out". Arbitrary, stable
+                                                             ;; between runs, and unreadable as a
+                                                             ;; list: the same prefix appeared in four
+                                                             ;; places and nothing was where looking
+                                                             ;; for it would suggest.
+                                                             ;;
+                                                             ;; Only the empty query is affected. Type
+                                                             ;; anything and the fuzzy scorer sorts by
+                                                             ;; score, which is the order that should
+                                                             ;; win once there is a score to sort by.
+                                                             (sort-by (comp str :desc))))
                                                :transform #(command->display % %2 %3 %4)
                                                :key :desc
                                                :empty-what "No command matches"

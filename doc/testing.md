@@ -168,6 +168,52 @@ antialiasing, font loading and a cursor that blinks.
 It is as useful in the other direction: what a new skin is *actually* doing,
 element by element, rather than what it was meant to do.
 
+## Looking at the UI, which is a layer of its own
+
+```sh
+make uiscan                             # every state
+make uiscan ARGS="--only settings,keys"  # just those
+make uiscan ARGS=--strict                # exit 1 if anything is found
+```
+
+`script/uiscan.sh` boots the editor headlessly, drives it into fifteen states,
+writes a PNG of each to `builds/uiscan/`, and audits every one. It exists because
+all four layers above were green while:
+
+- the settings screen drew each row 60px into the one below it, so the whole
+  screen was two layers of text on top of each other
+- the keymap put a key at x=220 and its command at x=1350
+- the docs panel's language chip floated over the tab strip in every window
+- every button in the application turned light grey under the pointer
+- opening the plugin manager rewrote the user's `plugin.edn` as garbage
+
+None of that is invisible. It is just not what an assertion about an element
+looks at. A test asks whether the element is there, holds the right text and
+answers a click, and every one of those was true throughout.
+
+The screenshots are for a person. The audits are for the times nobody looks, and
+each is a measurement rather than a matter of taste:
+
+| check | what it means |
+|---|---|
+| `overlap` | two siblings in normal flow whose boxes intersect. Flow does not overlap, so an intersection is a height that content did not fit |
+| `spill` | a box holding more than it has room for, with nothing clipping it — the surplus is being painted over whatever comes next |
+| `escape` | an absolutely positioned element painted outside the box it is positioned against, which is a panel that forgot `position: relative` |
+| `error` | anything in the console. `lt.object` catches what a behavior throws, so a behavior that failed looks exactly like one that decided not to act |
+| `clipped` | text wider than its box, and by how much. Often correct — a URL has to end somewhere — so it is reported rather than failed |
+
+Two things make it trustworthy rather than noisy. It models **clipping**, and it
+models it the way CSS does: an absolutely positioned element is clipped from its
+containing block upward, not from its parent, which is the exact distinction the
+docs-chip bug turned on. Without that it reported two elements that have a box and
+are not painted. And every check was written against a bug that had shipped, then
+checked against it — restoring the old stylesheets produces 33 findings, and the
+current ones produce none.
+
+It is a scanner, not a gate: `--strict` makes it one, but the default reports,
+because a `clipped` finding is frequently the right answer and a tool that fails
+on those gets turned off.
+
 ## The linter is a pinned binary
 
 `npm run lint:cljs` fetches clj-kondo from its GitHub release, checks it

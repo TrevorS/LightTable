@@ -16,7 +16,7 @@
 .DEFAULT_GOAL := run
 .PHONY: help deps build build-cljs build-main build-plugins run check test \
         test-cljs test-electron test-e2e smoke lint typecheck docs repl clean \
-        clean-all dist screenshot doctor audit
+        clean-all dist screenshot doctor audit uiscan install
 
 help: ## Show this list
 	@grep -hE '^[a-z-]+:.*##' $(MAKEFILE_LIST) \
@@ -58,6 +58,9 @@ repl: ## Boot the editor and attach a REPL to it (see script/lt-repl.sh)
 
 screenshot: ## Screenshot files in the editor — make screenshot FILES="a.ts b.clj"
 	script/screenshot.sh $(FILES)
+
+uiscan: ## Screenshot every UI state and audit each one — make uiscan ARGS="--only settings"
+	script/uiscan.sh $(ARGS)
 
 storybook: ## The component kit in a browser, on http://localhost:6106
 	npm run storybook

@@ -209,8 +209,8 @@ input {
   border: none;
 }
 #version-info .button:hover {
-  background: #ccc;
-  color: #555;
+  background: var(--lt-surface2);
+  color: var(--lt-text);
 }
 #side .content {
   background: #3b3f41;
@@ -235,47 +235,61 @@ input {
 #right-bar .docs-search h3 {
   color: #aaa;
 }
+/* The language selector, on the tokens. It was #888 on #fff with a #616161 menu
+   and a #999 hover — the greys of an application this is no longer trying to be,
+   and the chip is the one piece of the docs panel that shows while the panel is
+   the width of a scrollbar. */
 #right-bar .docs-search .types > span {
-  background: #888;
-  color: #fff;
+  background: var(--lt-surface0);
+  color: var(--lt-subtext1);
+  border-radius: var(--lt-radius-sm);
 }
 #right-bar .docs-search .types ul {
-  background: #3b3f41;
+  background: var(--lt-mantle);
 }
 #right-bar .docs-search .types li {
-  background: #616161;
-  color: #f4f4f4;
+  background: var(--lt-surface0);
+  color: var(--lt-subtext1);
 }
 #right-bar .docs-search .types li:hover {
-  background: #999;
-  color: #fff;
+  background: var(--lt-element-selected);
+  color: var(--lt-text);
 }
 /* The statusbar and the connect panel are not skinned here any more. They are
    views, and every colour in one is a role the token sheet resolves — see
    css/kit.css. A skin that restated them would be the second answer this fork
    is getting rid of. */
 #find-bar input {
-  border-top: 2px solid #3b3f41;
-  background: #202020;
+  border-top: 2px solid var(--lt-surface0);
+  background: var(--lt-base);
+  color: var(--lt-text);
 }
 #find-bar input + input {
-  border-left: 2px solid #3b3f41;
+  border-left: 2px solid var(--lt-surface0);
 }
 #find-bar ::-webkit-input-placeholder {
-  color: #bbb;
+  color: var(--lt-text-disabled);
 }
 #find-bar button {
-  background: #3b3f41;
+  background: var(--lt-surface0);
+  color: var(--lt-text);
 }
 #find-bar button:hover,
-#find-bar button:focus,
+#find-bar button:focus {
+  background: var(--lt-surface2);
+}
+/* `.active` separated from hover, because in the find bar it means *on* — these
+   are the regex and case toggles, and "on" is a state rather than a mouse being
+   nearby. Both were `#ccc`, so a toggle you had switched on looked exactly like
+   one the pointer happened to be over. */
 #find-bar button:active,
 #find-bar button.active {
-  background: #ccc;
+  background: var(--lt-element-selected);
+  color: var(--lt-text);
 }
 #browser input {
-  background: #404040;
-  color: #ccc;
+  background: var(--lt-base);
+  color: var(--lt-text);
 }
 #browser iframe {
   background: #fff;
@@ -293,15 +307,15 @@ input {
   background: var(--lt-surface2);
   border: 1px solid var(--lt-surface2);
 }
-.search-results .path,
+/* `.path` is set again below, to the role it should have had; this pair set it to
+   #bbb and then the next rule set `.line` to #ccc, so the shared declaration only
+   ever applied to `.path` and did so with a value that was immediately overridden
+   for its other half. Two colours a hair apart, one of them dead. */
 .search-results .line {
-  color: #bbb;
-}
-.search-results .line {
-  color: #ccc;
+  color: var(--lt-subtext0);
 }
 .search-results .entry {
-  color: #aaa;
+  color: var(--lt-overlay2);
 }
 .search-results .entry em {
   color: #fff;
@@ -313,17 +327,27 @@ input {
   background: #999;
   color: #3b3f41;
 }
+/* The searcher, on the tokens. Its two inputs and its Replace All button were
+   #616161 and #3b3f41 — three light-grey boxes across the bottom of the results
+   pane — and the result lines were the same #c7e6ff and #7ffffd pastels the
+   plugin rows were using.
+ *
+ * A path recedes and the file does not, which is the rule `.path__dir` and
+ * `.path__leaf` already state in css/kit.css; this is the same pair of roles for
+ * the same pair of things. */
 .search-results .path {
-  color: #c7e6ff;
+  color: var(--lt-overlay2);
 }
 .search-results .file {
-  color: #7ffffd;
+  color: var(--lt-subtext1);
 }
 .search-results input {
-  background: #616161;
+  background: var(--lt-base);
+  color: var(--lt-text);
 }
 .search-results button {
-  background: #3b3f41;
+  background: var(--lt-surface0);
+  color: var(--lt-text);
 }
 .watch-result {
   display: inline-block;

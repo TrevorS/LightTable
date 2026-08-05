@@ -205,7 +205,13 @@
          (raise obj :object.behavior.time r time trigger)))
        (catch :default e
          (traced! {:kind :threw :behavior r :trigger trigger :error (str e)})
-         (safe-report-error (str "Invalid behavior: " (-> (->behavior r) :name)
+         ;; "threw", not "Invalid behavior", which is what this said and is not
+         ;; what happened: the behavior exists, is attached, ran, and failed. The
+         ;; wording sent a real investigation looking for a behavior that was not
+         ;; defined and a `default.behaviors` line that named it wrongly — both
+         ;; fine — while the actual cause was in the next line of output, which
+         ;; reads as a second unrelated error.
+         (safe-report-error (str "Behavior threw: " (-> (->behavior r) :name)
                                  (when-let [file (@behavior-source (-> (->behavior r) :name))]
                                    (str ", attached by " file))))
          (safe-report-error e))))))
